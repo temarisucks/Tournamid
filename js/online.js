@@ -396,6 +396,7 @@ function onlineTick(dt) {
 
 function onlineSendHostSync(dt) {
     if (onlineState.slot !== 0 || introSequence && !introSequence.done) return;
+    if (onlineInUltimateCinematic()) return;
     onlineState.syncTimer += dt;
     if (onlineState.syncTimer < ONLINE_SYNC_RATE) return;
     onlineState.syncTimer = 0;
@@ -481,6 +482,7 @@ function onlineRandom() {
 }
 
 function onlineMaybeRollback(frame, actualInput) {
+    if (onlineState.slot !== 0) return;
     if (onlineInUltimateCinematic()) return;
     if (frame >= onlineState.frame) return;
     if (onlineState.frame - frame > ONLINE_MAX_ROLLBACK_FRAMES) return;
@@ -641,10 +643,10 @@ function onlineCaptureSyncState() {
 
 function onlineApplyHostSync(msg) {
     if (onlineState.slot !== 1 || !msg || !msg.state || gameState !== 'PLAYING') return;
+    if (onlineInUltimateCinematic()) return;
     let hostFrame = Number(msg.frame);
     let frameDrift = Number.isFinite(hostFrame) ? Math.abs(hostFrame - onlineState.frame) : 0;
     let state = msg.state;
-    let inCinematic = onlineInUltimateCinematic() || !!state.ultActiveIndex || (state.players || []).some(p => p && (p.state === 'ULT' || p.ult));
     let maxPosDrift = 0;
     let hardMismatch = false;
 
@@ -657,26 +659,14 @@ function onlineApplyHostSync(msg) {
                 maxPosDrift = Math.max(maxPosDrift, Math.hypot((remote.x || 0) - local.x, (remote.y || 0) - local.y));
                 if (remote.state !== local.state) hardMismatch = true;
             }
-            if (Math.abs((remote.hp || 0) - local.hp) > 0.5 || remote.state === 'DEAD' || local.state === 'DEAD') hardMismatch = true;
+            if (remote.state === 'DEAD' || local.state === 'DEAD') hardMismatch = true;
         }
     }
 
     if (frameDrift <= 8 && maxPosDrift < 55 && !hardMismatch) return;
 
-    if (!inCinematic) {
-        onlineApplyPartialHostSync(state);
-        if (Number.isFinite(hostFrame) && frameDrift > 20) onlineState.frame = hostFrame;
-        onlineState.syncCorrections++;
-        onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
-        updateHUD();
-        return;
-    }
-
-    let localKeys = onlineClonePlain(keys);
-    let localPreviousKeys = onlineClonePlain(previousKeys);
-    onlineRestoreState({ ...state, keys: localKeys, previousKeys: localPreviousKeys });
-    if (Number.isFinite(hostFrame)) onlineState.frame = hostFrame;
-    onlineState.accumulator = 0;
+    onlineApplyPartialHostSync(state);
+    if (Number.isFinite(hostFrame) && frameDrift > 20) onlineState.frame = hostFrame;
     onlineState.syncCorrections++;
     onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
     updateHUD();
@@ -696,8 +686,8 @@ function onlineApplyPartialHostSync(state) {
         if (!p || !src || p.charType !== src.charType) continue;
         if (i === localIndex) {
             // Keep local controls smooth. Only accept authoritative combat/resource state.
-            p.hp = src.hp;
-            p.meter = src.meter;
+            if (Math.abs(src.hp - p.hp) > 6 || src.hp <= 0 || p.hp <= 0) p.hp = src.hp;
+            if (Math.abs(src.meter - p.meter) > 15) p.meter = src.meter;
             p.blockHealth = src.blockHealth;
             if (src.state === 'DEAD' || p.state === 'DEAD') {
                 p.x = src.x; p.y = src.y; p.vx = src.vx; p.vy = src.vy;

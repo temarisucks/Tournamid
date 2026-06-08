@@ -275,7 +275,7 @@ function loop(timestamp) {
 
     frameRealDt = realDt;
     updateCinematics(realDt);
-    if (currentMode === 'ONLINE') onlineFixedUpdate(realDt * timeScale);
+    if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
     else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
     draw();
     drawCharacterSelectPreview(realDt);
