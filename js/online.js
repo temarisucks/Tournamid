@@ -14,6 +14,11 @@ const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 
 const ONLINE_FIXED_DT = 1 / 60;
 const ONLINE_MAX_ROLLBACK_FRAMES = 10;
 const ONLINE_ROLLBACK_COOLDOWN_FRAMES = 3;
+// When the local peer is running this many frames further ahead of confirmed
+// remote input than the remote peer is, it stalls one frame to let them catch up.
+// This is the GGPO-style time sync that keeps both frame counters from drifting
+// apart (drift past ONLINE_MAX_ROLLBACK_FRAMES is the root cause of hard desync).
+const ONLINE_FRAME_ADV_LIMIT = 2;
 const ONLINE_SYNC_RATE = 0.25;
 const ONLINE_STATE_BUFFER_FRAMES = 90;
 const ONLINE_PING_RATE = 1.0;
@@ -36,6 +41,8 @@ let onlineState = {
     stateBuffer: new Map(),
     lastLocalInput: null,
     lastRemoteInput: null,
+    maxRemoteFrame: 0,
+    remoteAdvantage: 0,
     rollbackCount: 0,
     rollbackFrames: 0,
     lastRollbackFrame: -999,
@@ -93,6 +100,8 @@ function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.stateBuffer = new Map();
     onlineState.lastLocalInput = onlineBlankInput();
     onlineState.lastRemoteInput = onlineBlankInput();
+    onlineState.maxRemoteFrame = 0;
+    onlineState.remoteAdvantage = 0;
     onlineState.rollbackCount = 0;
     onlineState.rollbackFrames = 0;
     onlineState.lastRollbackFrame = -999;
@@ -272,6 +281,8 @@ function onlineHandleMessage(event) {
             let input = onlineCloneInput(msg.input);
             onlineState.remoteInputs.set(frame, input);
             onlineState.lastRemoteInput = input;
+            if (frame > onlineState.maxRemoteFrame) onlineState.maxRemoteFrame = frame;
+            if (Number.isFinite(msg.adv)) onlineState.remoteAdvantage = msg.adv;
             onlineMaybeRollback(frame, input);
         } else {
             onlineApplyRemoteInput(msg.input || {});
@@ -433,8 +444,21 @@ function onlineFixedUpdate(realDt) {
     }
 
     onlineState.accumulator += Math.min(0.1, realDt);
+    // Time sync: if we're running further ahead of confirmed remote input than the
+    // peer is (and they're still live), hold one frame so they can catch up. The
+    // comparison is antisymmetric — only the peer that's ahead stalls — so it can't
+    // deadlock, and it keeps the two frame counters within the rollback window.
+    let localAdvantage = onlineState.frame - onlineState.maxRemoteFrame;
+    let stallFrames = (!onlineState.remoteInputStale &&
+        localAdvantage - onlineState.remoteAdvantage >= ONLINE_FRAME_ADV_LIMIT) ? 1 : 0;
     let steps = 0;
     while (onlineState.accumulator >= ONLINE_FIXED_DT && steps < 8) {
+        if (stallFrames > 0) {
+            // Consume this tick's time without advancing the frame (a held frame).
+            onlineState.accumulator -= ONLINE_FIXED_DT;
+            stallFrames--; steps++;
+            continue;
+        }
         onlinePrepareLocalInput();
         onlineSimulateFrame(onlineState.frame, false);
         onlineState.frame++;
@@ -449,7 +473,10 @@ function onlinePrepareLocalInput() {
     let input = onlineReadLocalInput();
     onlineState.localInputs.set(frame, input);
     onlineState.lastLocalInput = input;
-    onlineSend('input', { frame, input });
+    // Piggyback our frame advantage (how far ahead of confirmed remote input we are)
+    // so the peer can run the symmetric time-sync comparison.
+    let adv = frame - onlineState.maxRemoteFrame;
+    onlineSend('input', { frame, input, adv });
 }
 
 function onlineInputForFrame(map, frame, lastInput, isRemote) {
@@ -968,6 +995,8 @@ function onlineDisconnect() {
         stateBuffer: new Map(),
         lastLocalInput: null,
         lastRemoteInput: null,
+        maxRemoteFrame: 0,
+        remoteAdvantage: 0,
         rollbackCount: 0,
         rollbackFrames: 0,
         lastRollbackFrame: -999,
