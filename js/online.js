@@ -62,6 +62,9 @@ let onlineState = {
     lastRemoteInputAt: 0,
     lastRemoteInputMs: null,
     remoteInputStale: false,
+    postMatchLocal: null,
+    postMatchRemote: null,
+    disconnecting: false,
     status: ''
 };
 
@@ -102,6 +105,9 @@ function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.lastRemoteInput = onlineBlankInput();
     onlineState.maxRemoteFrame = 0;
     onlineState.remoteAdvantage = 0;
+    onlineState.postMatchLocal = null;
+    onlineState.postMatchRemote = null;
+    onlineState.disconnecting = false;
     onlineState.rollbackCount = 0;
     onlineState.rollbackFrames = 0;
     onlineState.lastRollbackFrame = -999;
@@ -230,8 +236,14 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'peer-left') {
         onlineState.peerConnected = false;
-        onlineResetRuntimeStats();
-        onlineSetStatus('Friend left the room.');
+        // If we're in or just finished a match, the opponent vanishing mid-flow needs
+        // a visible heads-up, then an automatic exit. In the lobby it's just a status.
+        if (currentMode === 'ONLINE' && ['PLAYING', 'ROUND_END', 'END'].includes(gameState)) {
+            onlineHandleOpponentDisconnect();
+        } else {
+            onlineResetRuntimeStats();
+            onlineSetStatus('Friend left the room.');
+        }
         return;
     }
 
@@ -257,6 +269,10 @@ function onlineHandleMessage(event) {
         selectedStage = msg.stageId || selectedStage;
         p1Selection = msg.p1Selection || p1Selection;
         p2Selection = msg.p2Selection || p2Selection;
+        onlineState.postMatchLocal = null;
+        onlineState.postMatchRemote = null;
+        hideNetMessage();
+        document.getElementById('end-screen').classList.add('hidden');
         onlineResetRuntimeStats(msg.seed);
         startGame();
         return;
@@ -292,6 +308,13 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'ping-game') {
         onlineHandlePing(msg);
+        return;
+    }
+
+    if (msg.type === 'post-match') {
+        onlineState.postMatchRemote = msg.choice;
+        onlineUpdatePostMatchUI();
+        onlineResolvePostMatch();
         return;
     }
 
@@ -387,6 +410,114 @@ function onlineStartGame() {
     onlineSetStatus('Starting online match...');
     onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, seed: Math.floor(Math.random() * 0xFFFFFFFF) });
     return true;
+}
+
+// ---------------- NETWORK MESSAGE OVERLAY ----------------
+function showNetMessage(title, sub) {
+    let el = document.getElementById('net-message');
+    if (!el) return;
+    let t = document.getElementById('net-message-title');
+    let s = document.getElementById('net-message-sub');
+    if (t) t.innerText = title || '';
+    if (s) s.innerText = sub || '';
+    el.classList.remove('hidden');
+}
+
+function hideNetMessage() {
+    let el = document.getElementById('net-message');
+    if (el) el.classList.add('hidden');
+}
+
+// ---------------- DISCONNECT HANDLING ----------------
+function onlineHandleOpponentDisconnect() {
+    if (onlineState.disconnecting) return;
+    onlineState.disconnecting = true;
+    document.getElementById('end-screen').classList.add('hidden');
+    showNetMessage('OPPONENT DISCONNECTED', 'Returning to the main menu…');
+    setTimeout(() => {
+        hideNetMessage();
+        returnToMenu(); // onlineDisconnect() inside resets onlineState, clearing the flag
+    }, 3000);
+}
+
+// ---------------- POST-MATCH (rematch / change / leave) ----------------
+const ONLINE_POSTMATCH_LABELS = { rematch: 'REMATCH', change: 'NEW CHARACTER' };
+
+// Called when the END screen appears in an online match: relabel the three buttons
+// to their online meanings and reflect the negotiation state. The choices are NOT
+// reset here (that happens at match start) — the two end screens can appear at
+// different times, so the opponent may have already sent a choice before ours shows.
+function onlineBeginPostMatch() {
+    hideNetMessage();
+    let r = document.getElementById('end-btn-rematch');
+    let c = document.getElementById('end-btn-change');
+    let m = document.getElementById('end-btn-menu');
+    if (r) r.innerText = 'Rematch';
+    if (c) c.innerText = 'Change Character';
+    if (m) m.innerText = 'Leave';
+    onlineSetEndButtonsDisabled(false);
+    let status = document.getElementById('end-status');
+    if (status) status.innerText = '';
+    onlineUpdatePostMatchUI();   // show any choice that already arrived
+    onlineResolvePostMatch();    // ...and act if both are somehow already in
+}
+
+function onlineSetEndButtonsDisabled(disabled) {
+    // Leaving is always allowed; only the two "continue" choices lock after a pick.
+    ['end-btn-rematch', 'end-btn-change'].forEach(id => {
+        let b = document.getElementById(id);
+        if (b) b.disabled = !!disabled;
+    });
+}
+
+// Wired to the end-screen buttons (via restartMatch / returnToCharacterSelect / returnToMenu).
+function onlinePostMatchChoose(choice) {
+    if (currentMode !== 'ONLINE') return false;
+    if (choice === 'leave') { returnToMenu(); return true; } // disconnects; peer sees the dc overlay
+    if (onlineState.postMatchLocal) return true;             // already committed
+    onlineState.postMatchLocal = choice;
+    onlineSend('post-match', { choice });
+    onlineUpdatePostMatchUI();
+    onlineResolvePostMatch();
+    return true;
+}
+
+function onlineUpdatePostMatchUI() {
+    let status = document.getElementById('end-status');
+    let local = onlineState.postMatchLocal, remote = onlineState.postMatchRemote;
+    if (status) {
+        if (local && !remote) status.innerText = `You chose ${ONLINE_POSTMATCH_LABELS[local]} — waiting for opponent…`;
+        else if (!local && remote) status.innerText = `Opponent chose ${ONLINE_POSTMATCH_LABELS[remote]} — make your choice.`;
+        else if (local && remote) status.innerText = 'Both ready!';
+        else status.innerText = '';
+    }
+    if (local) onlineSetEndButtonsDisabled(true);
+}
+
+function onlineResolvePostMatch() {
+    let local = onlineState.postMatchLocal, remote = onlineState.postMatchRemote;
+    if (!local || !remote) return; // still waiting on someone
+    // "Change character" takes precedence: if either side wants a new fighter, both re-pick.
+    let decision = (local === 'change' || remote === 'change') ? 'change' : 'rematch';
+    onlineState.postMatchLocal = null;
+    onlineState.postMatchRemote = null;
+    document.getElementById('end-screen').classList.add('hidden');
+    if (decision === 'change') {
+        // Wipe both selections so each player must choose anew; the normal online
+        // char-select → stage → start flow then takes over.
+        onlineState.localSelection = null;
+        onlineState.remoteSelection = null;
+        p1Selection = null;
+        p2Selection = null;
+        goToCharSelect('ONLINE');
+    } else {
+        // Rematch with the same fighters. The host drives the synchronized start;
+        // both peers receive the relayed 'start' and reset together.
+        showNetMessage('REMATCH', 'Starting…');
+        if (Number(onlineState.slot) === 0) {
+            onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, seed: Math.floor(Math.random() * 0xFFFFFFFF) });
+        }
+    }
 }
 
 function onlineLocalControls() {
@@ -1016,6 +1147,9 @@ function onlineDisconnect() {
         lastRemoteInputAt: 0,
         lastRemoteInputMs: null,
         remoteInputStale: false,
+        postMatchLocal: null,
+        postMatchRemote: null,
+        disconnecting: false,
         status: ''
     };
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });

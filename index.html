@@ -50,6 +50,7 @@
         <h2 class="menu-sub-title">Choose Your Battle</h2>
         <div class="menu-buttons">
             <button class="btn menu-btn mode-cpu" onclick="goToCharSelect('CPU')"><span>Player vs CPU</span><small>Best of 3 vs the AI</small></button>
+            <button class="btn menu-btn mode-ladder" onclick="goToCharSelect('LADDER')"><span>Ladder</span><small>Climb the gauntlet of every fighter</small></button>
             <button class="btn menu-btn mode-pvp" onclick="goToCharSelect('PVP')"><span>Player vs Player</span><small>Best of 3, local 2P</small></button>
             <button class="btn menu-btn mode-online" onclick="showOnlineScreen()"><span>Online Friend Room</span><small>Host or join with a room code</small></button>
             <button class="btn menu-btn mode-pve" onclick="goToCharSelect('PVE')"><span>PvE Wave Match</span><small>Survive the endless horde</small></button>
@@ -148,6 +149,18 @@
                 <canvas class="stage-thumb" width="260" height="130" data-stage-preview="platform"></canvas>
                 <span>Sky Platform</span>
             </button>
+            <button class="stage-card" data-stage="pStreet" onclick="selectStage('pStreet', this)">
+                <canvas class="stage-thumb" width="260" height="130" data-stage-preview="pStreet"></canvas>
+                <span>P Street</span>
+            </button>
+            <button class="stage-card" data-stage="bloodBall" onclick="selectStage('bloodBall', this)">
+                <canvas class="stage-thumb" width="260" height="130" data-stage-preview="bloodBall"></canvas>
+                <span>Blood Ball</span>
+            </button>
+            <button class="stage-card random-stage-card" data-stage="random" onclick="selectRandomStage(this)">
+                <div class="stage-thumb random-stage-thumb">?</div>
+                <span>Random</span>
+            </button>
         </div>
         <p style="color:#aaa; font-size:0.9rem;">Esc: Back</p>
     </div>
@@ -193,9 +206,16 @@
     <div id="end-screen" class="screen hidden">
         <h1 id="end-title">PLAYER 1 WINS</h1>
         <p id="end-subtitle" class="subtitle">Flawless Victory</p>
-        <button class="btn" onclick="returnToCharacterSelect()">Character Select</button>
-        <button class="btn" onclick="returnToMenu()">Main Menu</button>
-        <button class="btn" onclick="restartMatch()">Rematch</button>
+        <p id="end-status" class="subtitle"></p>
+        <button id="end-btn-rematch" class="btn" onclick="restartMatch()">Rematch</button>
+        <button id="end-btn-change" class="btn" onclick="returnToCharacterSelect()">Character Select</button>
+        <button id="end-btn-menu" class="btn" onclick="returnToMenu()">Main Menu</button>
+    </div>
+
+    <!-- Network message overlay (disconnects, rematch handoff) -->
+    <div id="net-message" class="hidden">
+        <h1 id="net-message-title"></h1>
+        <p id="net-message-sub"></p>
     </div>
 
     <canvas id="gameCanvas" width="1024" height="576"></canvas>

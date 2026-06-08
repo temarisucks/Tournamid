@@ -343,7 +343,10 @@ class Fighter {
         this.team = team;
         this.isAI = isAI;
         this.aiTimer = 0;
-        
+        this.aiReactTimer = 0;   // cooldown between reactive defensive actions (anti-spam)
+        this.aiBlockTimer = 0;   // how long the current committed block holds
+        this.aiLevel = 0.5;      // 0..1 difficulty scalar; Ladder raises this per rung
+
         // Combat state
         this.attacks = stats.attacks;
         this.currentAttack = null;
@@ -1100,6 +1103,21 @@ class Fighter {
         const onGround = this.y >= GROUND_Y;
         const spd = this.slowTimer > 0 ? this.speed * 0.45 : this.speed;
 
+        // AI pacing timers + difficulty scalar (0..1). These throttle reactive defense
+        // so the CPU can't turtle/parry-spam every frame.
+        this.aiReactTimer -= dt;
+        this.aiBlockTimer -= dt;
+        const lvl = this.aiLevel == null ? 0.5 : this.aiLevel;
+
+        // Hold a committed block for its duration rather than re-deciding it each frame.
+        if (this.aiBlockTimer > 0 && onGround && ['IDLE', 'WALK', 'BLOCK', 'CROUCH'].includes(this.state)) {
+            this.dir = toward;
+            this.vx *= 0.55;
+            if (this.state !== 'BLOCK') this.changeState('BLOCK');
+            return;
+        }
+        if (this.state === 'BLOCK' && this.aiBlockTimer <= 0) this.changeState('IDLE');
+
         // Unleash ultimate when charged and the opponent is in a sensible range
         if (this.meter >= this.meterMax && this.charType !== 'ZOMBIE' && onGround) {
             let want = this.charType === 'BRAWLER' ? dist < 110         // counter up close
@@ -1107,7 +1125,7 @@ class Fighter {
                      : this.charType === 'DARK_RULER' ? dist < 130      // grab range
                      : this.charType === 'TELEPATH' ? dist < 120        // psychic snare range
                      : dist < 460;                                      // mage/ranger ranged
-            if (want && Math.random() < 0.04) { this.tryUltimate(); return; }
+            if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
 
         // Archetype tuning: preferred spacing, whether they kite, jump tendency
@@ -1121,24 +1139,40 @@ class Fighter {
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
-        // ---------- REACTIVE LAYER (every frame) ----------
-        // Dodge / block an incoming projectile
-        const proj = this.aiIncomingProjectile();
-        if (proj && onGround && this.charType !== 'ZOMBIE') {
-            if (this.charType === 'MAGE' && Math.random() < 0.05) { this.startAttack('specUp'); return; }   // blink away
-            if (this.charType === 'RANGER' && Math.random() < 0.06) { this.startAttack('specDown'); return; } // roll
-            if (Math.random() < 0.10) { this.vy = this.jumpForce; this.changeState('JUMP'); return; }         // hop over
-            this.changeState('BLOCK'); return;
-        }
-        // Block / counter an incoming melee swing
-        if (onGround && this.charType !== 'ZOMBIE' && target.state === 'ATTACK' &&
-            target.currentAttack && !target.currentAttack.isProj && dist < 135) {
-            const rr = Math.random();
-            if (this.charType === 'SWORDSMAN' && rr < 0.4) { this.startAttack('specDown'); return; } // parry attempt
-            if (this.charType === 'RANGER' && rr < 0.3) { this.startAttack('specDown'); return; }    // roll out
-            if (rr < 0.7) { this.changeState('BLOCK'); return; }
-        } else if (this.state === 'BLOCK') {
-            this.changeState('IDLE');
+        // ---------- REACTIVE DEFENSE (gated by aiReactTimer so it can't be spammed) ----------
+        // Only ever consider a defensive reaction once per cooldown window. When a threat
+        // appears we make a SINGLE weighted decision and then commit, instead of re-rolling
+        // a block/parry/roll/blink on every frame (which made 0.7-per-frame ≈ always).
+        if (onGround && this.charType !== 'ZOMBIE' && this.aiReactTimer <= 0) {
+            const proj = this.aiIncomingProjectile();
+            const meleeThreat = target.state === 'ATTACK' && target.currentAttack &&
+                                !target.currentAttack.isProj && dist < 135;
+            if (proj || meleeThreat) {
+                const defendChance = 0.32 + lvl * 0.4;   // 0.32..0.72 — never a guaranteed turtle
+                const pick = Math.random();
+                if (Math.random() < defendChance) {
+                    if (proj) {
+                        if (this.charType === 'MAGE' && pick < 0.4) this.startAttack('specUp');          // blink away
+                        else if (this.charType === 'RANGER' && pick < 0.4) this.startAttack('specDown');  // roll
+                        else if (pick < 0.55) { this.vy = this.jumpForce; this.vx = spd * toward; this.changeState('JUMP'); } // hop over
+                        else { this.dir = toward; this.aiBlockTimer = 0.18 + Math.random() * 0.2; this.changeState('BLOCK'); }
+                    } else {
+                        if (this.charType === 'SWORDSMAN' && pick < 0.35) this.startAttack('specDown');   // parry attempt
+                        else if (this.charType === 'RANGER' && pick < 0.3) this.startAttack('specDown');  // roll out
+                        else { this.dir = toward; this.aiBlockTimer = 0.16 + Math.random() * 0.22; this.changeState('BLOCK'); }
+                    }
+                    // Commit: no further defensive reaction for a beat (shorter at higher level).
+                    this.aiReactTimer = Math.max(0.18, 0.5 + Math.random() * 0.5 - lvl * 0.18);
+                    return;
+                } else {
+                    // Stand our ground: brief lock so we don't re-roll instantly, then maybe punish.
+                    this.aiReactTimer = 0.28 + Math.random() * 0.3;
+                    if (dist < 100 && Math.random() < 0.35 + lvl * 0.3) {
+                        this.startPlayerAttack(Math.random() < 0.6 ? 'L' : 'H');
+                        return;
+                    }
+                }
+            }
         }
 
         // ---------- MOVEMENT (every frame, hold toward preferred spacing) ----------
@@ -1157,7 +1191,7 @@ class Fighter {
         // ---------- DECISION THROTTLE (offense only) ----------
         this.aiTimer -= dt;
         if (this.aiTimer > 0) return;
-        this.aiTimer = 0.12 + Math.random() * 0.22;
+        this.aiTimer = (0.12 + Math.random() * 0.22) * (1.15 - lvl * 0.4); // sharper at higher level
         const r = Math.random();
 
         // Air offense: keep it simple

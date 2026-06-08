@@ -15,6 +15,8 @@ function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
     if (winnerIdx !== 0 && winnerIdx !== 1) return false;
+    // Ladder: the player finishing the very last challenger earns the overkill.
+    if (currentMode === 'LADDER') return winnerIdx === 0 && ladder.active && ladder.index >= ladder.queue.length - 1;
     return roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
 }
 
@@ -56,6 +58,7 @@ function triggerOverkill(attacker, victim) {
         });
     }
     spawnParticles(victim.x, victim.y - 48, 35, '#fff');
+    stageActorsFlee(); // background spectators/dancers scatter
 }
 
 // Chaos Bolt "split" element: shatters into three fragments shortly after firing
@@ -210,6 +213,7 @@ function checkWinCondition() {
 // One round decided (CPU/PVP). winnerIdx: 0=P1, 1=P2, -1=draw.
 function endRound(winnerIdx, subtitle) {
     if (gameState !== 'PLAYING') return;
+    if (currentMode === 'LADDER') { ladderEndRound(winnerIdx); return; }
     if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('round-result', { winnerIdx, subtitle });
     gameState = 'ROUND_END';
     if (winnerIdx >= 0) roundWins[winnerIdx]++;
@@ -226,11 +230,28 @@ function endRound(winnerIdx, subtitle) {
     setTimeout(nextRound, 2000);
 }
 
+// ---- LADDER mode: each rung is a single decisive round vs the next fighter ----
+function ladderEndRound(winnerIdx) {
+    gameState = 'ROUND_END';
+    if (winnerIdx === 0) { // player cleared this challenger
+        ladder.index++;
+        if (ladder.index >= ladder.queue.length) {
+            endGame("LADDER CLEARED", "You conquered every challenger.");
+        } else {
+            roundAnnounce = { text: "RUNG " + ladder.index + " CLEARED", t: 0, dur: 1.8 };
+            setTimeout(ladderNextRung, 2000);
+        }
+    } else {
+        endGame("DEFEATED", `Fell at rung ${ladder.index + 1} of ${ladder.queue.length}`);
+    }
+}
+
 function nextRound() {
     if (gameState !== 'ROUND_END') return;
     if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('next-round');
     currentRound++;
     hitboxes = []; projectiles = []; particles = []; bodyParts = [];
+    initStageActors(); // bring fled spectators back for the new round
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
@@ -268,6 +289,7 @@ function endGame(title, subtitle) {
     }
     setTimeout(() => {
         document.getElementById('end-screen').classList.remove('hidden');
+        if (currentMode === 'ONLINE') onlineBeginPostMatch();
     }, overkillFx ? 3200 : 1500); // Dramatic delay
 }
 
@@ -296,6 +318,7 @@ function updateCinematics(realDt) {
     if (ultBanner) { ultBanner.t += realDt; if (ultBanner.t > ultBanner.dur) ultBanner = null; }
     if (roundAnnounce) { roundAnnounce.t += realDt; if (roundAnnounce.t > roundAnnounce.dur) roundAnnounce = null; }
     if (overkillFx) { overkillFx.t += realDt; if (overkillFx.t > overkillFx.dur) overkillFx = null; }
+    updateStageActors(realDt);
     updateIntroSequence(realDt);
 }
 
@@ -533,6 +556,116 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         // main island (deep) then the floating platforms
         slab(lay.main.left, lay.main.right, lay.main.top, Math.max(34, height * 0.13), '#e8e8e8');
         lay.platforms.forEach(p => slab(p.left, p.right, p.top, Math.max(14, height * 0.05), '#9ad8ff'));
+    } else if (stageId === 'pStreet') {
+        // ---- P STREET: greyscale downtown at night ----
+        let sky = targetCtx.createLinearGradient(0, 0, 0, height);
+        sky.addColorStop(0, '#0b0b0b'); sky.addColorStop(0.6, '#060606'); sky.addColorStop(1, '#0e0e0e');
+        targetCtx.fillStyle = sky;
+        targetCtx.fillRect(0, 0, width, height);
+
+        let horizon = groundY - height * 0.06;
+        let bw = width / 7;
+        for (let i = 0; i < 8; i++) {
+            let bx = i * bw - bw * 0.25;
+            let bh = height * (0.22 + ((i * 53) % 17) / 17 * 0.28);
+            let shade = 16 + ((i * 7) % 5) * 4;
+            targetCtx.fillStyle = `rgb(${shade},${shade},${shade})`;
+            targetCtx.fillRect(bx, horizon - bh, bw * 0.92, bh + 60);
+            for (let wy = horizon - bh + 12; wy < horizon - 10; wy += 16) {
+                for (let wx = bx + 8; wx < bx + bw * 0.92 - 8; wx += 14) {
+                    let lit = ((Math.floor(wx) * 13 + Math.floor(wy) * 7) % 5) < 2;
+                    targetCtx.fillStyle = lit ? 'rgba(225,225,225,0.45)' : 'rgba(110,110,110,0.10)';
+                    targetCtx.fillRect(wx, wy, 7, 9);
+                }
+            }
+        }
+        // road + sidewalk
+        targetCtx.fillStyle = '#0f0f0f';
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 3;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
+        targetCtx.strokeStyle = '#262626'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY + 16); targetCtx.lineTo(width, groundY + 16); targetCtx.stroke();
+        targetCtx.fillStyle = '#3a3a3a';
+        for (let x = 20; x < width; x += 90) targetCtx.fillRect(x, groundY + (height - groundY) * 0.62, 44, 5);
+        // streetlights with soft cones
+        [width * 0.15, width * 0.85].forEach(lx => {
+            let top = horizon - height * 0.02;
+            targetCtx.strokeStyle = '#444'; targetCtx.lineWidth = 4;
+            targetCtx.beginPath(); targetCtx.moveTo(lx, groundY); targetCtx.lineTo(lx, top); targetCtx.stroke();
+            targetCtx.save();
+            targetCtx.globalAlpha = 0.5; targetCtx.fillStyle = '#dcdcdc';
+            targetCtx.beginPath(); targetCtx.arc(lx, top, 6, 0, Math.PI * 2); targetCtx.fill();
+            targetCtx.globalAlpha = 0.10;
+            targetCtx.beginPath(); targetCtx.moveTo(lx - 34, groundY); targetCtx.lineTo(lx, top); targetCtx.lineTo(lx + 34, groundY); targetCtx.closePath(); targetCtx.fill();
+            targetCtx.restore();
+        });
+        if (targetCtx !== ctx) { // static spectators in thumbnails (live draws animated ones)
+            let s = height / 430;
+            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.12 + i * 0.18), horizon + height * 0.05, s, 85, 'spectate', i * 1.3, 1);
+        }
+    } else if (stageId === 'bloodBall') {
+        // ---- BLOOD BALL: greyscale disco club ----
+        let t = performance.now() / 1000;
+        let sky = targetCtx.createRadialGradient(width * 0.5, height * 0.18, 10, width * 0.5, height * 0.5, height * 0.95);
+        sky.addColorStop(0, '#1b1b1b'); sky.addColorStop(0.5, '#0a0a0a'); sky.addColorStop(1, '#040404');
+        targetCtx.fillStyle = sky;
+        targetCtx.fillRect(0, 0, width, height);
+
+        let cx = width * 0.5, cy = height * 0.17, br = height * 0.085;
+        // rotating light beams
+        targetCtx.save();
+        targetCtx.globalAlpha = 0.09;
+        for (let i = 0; i < 6; i++) {
+            let ang = t * 0.6 + i * Math.PI / 3;
+            targetCtx.fillStyle = i % 2 ? '#fff' : '#888';
+            targetCtx.beginPath();
+            targetCtx.moveTo(cx, cy);
+            targetCtx.lineTo(cx + Math.cos(ang) * width, cy + Math.abs(Math.sin(ang)) * height * 1.3);
+            targetCtx.lineTo(cx + Math.cos(ang + 0.16) * width, cy + Math.abs(Math.sin(ang + 0.16)) * height * 1.3);
+            targetCtx.closePath(); targetCtx.fill();
+        }
+        targetCtx.restore();
+        // pulsing dance floor
+        let fT = groundY - height * 0.02;
+        let cols = 8;
+        for (let r = 0; r < 4; r++) {
+            let yy = fT + (height - fT) * (r / 4), yy2 = fT + (height - fT) * ((r + 1) / 4);
+            for (let cI = 0; cI < cols; cI++) {
+                let x0 = width * (0.16 + 0.68 * (cI / cols)), x1 = width * (0.16 + 0.68 * ((cI + 1) / cols));
+                let pulse = 0.5 + 0.5 * Math.sin(t * 4 + cI + r * 1.7);
+                let v = Math.floor(34 + pulse * 150);
+                targetCtx.fillStyle = `rgb(${v},${v},${v})`;
+                targetCtx.fillRect(x0, yy, x1 - x0 - 2, yy2 - yy - 2);
+            }
+        }
+        // disco ball
+        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(cx, 0); targetCtx.lineTo(cx, cy - br); targetCtx.stroke();
+        targetCtx.save();
+        targetCtx.translate(cx, cy);
+        targetCtx.beginPath(); targetCtx.arc(0, 0, br, 0, Math.PI * 2); targetCtx.clip();
+        let spin = t * 0.8, fs = br / 3.2;
+        for (let yy = -br; yy < br; yy += fs) {
+            for (let xx = -br; xx < br; xx += fs) {
+                let b = 0.5 + 0.5 * Math.sin((xx / fs) * 0.9 + spin * 3 + (yy / fs) * 0.5);
+                let v = Math.floor(40 + b * 205);
+                targetCtx.fillStyle = `rgb(${v},${v},${v})`;
+                targetCtx.fillRect(xx, yy, fs - 1.5, fs - 1.5);
+            }
+        }
+        targetCtx.restore();
+        targetCtx.strokeStyle = 'rgba(0,0,0,0.5)'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.arc(cx, cy, br, 0, Math.PI * 2); targetCtx.stroke();
+        targetCtx.fillStyle = 'rgba(255,255,255,0.85)';
+        targetCtx.beginPath(); targetCtx.arc(cx - br * 0.35, cy - br * 0.35, br * 0.12, 0, Math.PI * 2); targetCtx.fill();
+        // floor line
+        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
+        if (targetCtx !== ctx) {
+            let s = height / 430;
+            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.2 + i * 0.15), groundY - height * 0.01, s, 95, 'dance', i * 1.7 + t, 1);
+        }
     } else {
         targetCtx.fillStyle = '#050505';
         targetCtx.fillRect(0, 0, width, height);
@@ -543,6 +676,116 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         targetCtx.lineTo(width, groundY);
         targetCtx.stroke();
     }
+}
+
+// ---------------- ANIMATED STAGE BACKGROUND ACTORS ----------------
+// P Street spectators / Blood Ball dancers. Purely cosmetic; they animate in place
+// and all flee toward the nearest edge when an overkill happens.
+function initStageActors() {
+    stageActors = null;
+    if (selectedStage === 'pStreet') {
+        let arr = [], n = 9;
+        for (let i = 0; i < n; i++) {
+            let x = 55 + i * (WIDTH - 110) / (n - 1) + (Math.random() * 28 - 14);
+            arr.push({ x, y: GROUND_Y - HEIGHT * 0.10, phase: Math.random() * Math.PI * 2,
+                       rate: 1.4 + Math.random() * 1.2, scale: 0.6 + Math.random() * 0.14,
+                       shade: 70 + Math.floor(Math.random() * 60), dir: Math.random() < 0.5 ? 1 : -1,
+                       fleeing: false, gone: false });
+        }
+        stageActors = { type: 'pStreet', actors: arr };
+    } else if (selectedStage === 'bloodBall') {
+        let arr = [], n = 8;
+        for (let i = 0; i < n; i++) {
+            let x = WIDTH * 0.16 + i * (WIDTH * 0.68) / (n - 1) + (Math.random() * 22 - 11);
+            arr.push({ x, y: GROUND_Y - HEIGHT * 0.015, phase: Math.random() * Math.PI * 2,
+                       rate: 2.6 + Math.random() * 2.4, scale: 0.58 + Math.random() * 0.16,
+                       shade: 80 + Math.floor(Math.random() * 60), dir: Math.random() < 0.5 ? 1 : -1,
+                       fleeing: false, gone: false });
+        }
+        stageActors = { type: 'bloodBall', actors: arr };
+    }
+}
+
+function updateStageActors(dt) {
+    if (!stageActors) return;
+    for (let a of stageActors.actors) {
+        if (a.gone) continue;
+        a.phase += dt * a.rate;
+        if (a.fleeing) {
+            a.x += a.fleeDir * 520 * dt;
+            if (a.x < -50 || a.x > WIDTH + 50) a.gone = true;
+        }
+    }
+}
+
+function stageActorsFlee() {
+    if (!stageActors) return;
+    for (let a of stageActors.actors) {
+        if (a.gone || a.fleeing) continue;
+        a.fleeing = true;
+        a.fleeDir = a.x < WIDTH / 2 ? -1 : 1; // bolt for the nearest edge
+        a.rate = 7 + Math.random() * 3;        // frantic limbs
+    }
+}
+
+function drawStageActors(c) {
+    if (!stageActors) return;
+    let resting = stageActors.type === 'bloodBall' ? 'dance' : 'spectate';
+    for (let a of stageActors.actors) {
+        if (a.gone) continue;
+        let mode = a.fleeing ? 'run' : resting;
+        drawBgStickman(c, a.x, a.y, a.scale, a.shade, mode, a.phase, a.fleeing ? a.fleeDir : a.dir);
+    }
+}
+
+// A small greyscale background stickman. mode: 'spectate' | 'dance' | 'run'.
+function drawBgStickman(c, x, gy, s, shade, mode, ph, dir) {
+    const col = `rgb(${shade},${shade},${shade})`;
+    const HIP = -44, SH = -70, HEAD = -82, HR = 8;
+    let sway = 0, bob = 0, legA, legB, armA, armB;
+
+    if (mode === 'run') {
+        let sw = Math.sin(ph) * 16;
+        legA = { x: sw, y: -Math.max(0, Math.sin(ph)) * 8 };
+        legB = { x: -sw, y: -Math.max(0, -Math.sin(ph)) * 8 };
+        armA = { x: -sw, y: SH + 10 };
+        armB = { x: sw, y: SH + 10 };
+        bob = -Math.abs(Math.sin(ph * 2)) * 4;
+    } else if (mode === 'dance') {
+        sway = Math.sin(ph) * 5;
+        bob = -Math.abs(Math.sin(ph * 2)) * 7;
+        let sw = Math.sin(ph) * 5;
+        legA = { x: 8 + sw * 0.3, y: 0 };
+        legB = { x: -8 + sw * 0.3, y: 0 };
+        armA = { x: 15 + Math.sin(ph * 1.2) * 6, y: SH - 20 + Math.cos(ph) * 5 };
+        armB = { x: -15 + Math.sin(ph * 1.2 + 1) * 6, y: SH - 20 + Math.cos(ph + 1) * 5 };
+    } else { // spectate — stand and gently shift, occasional little cheer
+        sway = Math.sin(ph * 0.6) * 2;
+        bob = -Math.abs(Math.sin(ph * 0.6)) * 1.5;
+        legA = { x: 7, y: 0 };
+        legB = { x: -7, y: 0 };
+        let lift = Math.max(0, Math.sin(ph * 0.5)) * 22;
+        armA = { x: 9, y: SH + 18 - lift };
+        armB = { x: -9, y: SH + 18 - lift };
+    }
+
+    c.save();
+    c.translate(x, gy);
+    c.scale(s * (dir || 1), s);
+    c.translate(sway, bob);
+    c.strokeStyle = col; c.fillStyle = col;
+    c.lineWidth = 4.5; c.lineCap = 'round'; c.lineJoin = 'round';
+    drawBgLimb(c, 0, HIP, legA.x, legA.y);   // legs
+    drawBgLimb(c, 0, HIP, legB.x, legB.y);
+    c.beginPath(); c.moveTo(0, HIP); c.lineTo(0, SH); c.stroke();   // torso
+    drawBgLimb(c, 0, SH, armA.x, armA.y);     // arms
+    drawBgLimb(c, 0, SH, armB.x, armB.y);
+    c.beginPath(); c.arc(0, HEAD, HR, 0, Math.PI * 2); c.fill();    // head
+    c.restore();
+}
+function drawBgLimb(c, x0, y0, x1, y1) {
+    let mx = (x0 + x1) / 2, my = (y0 + y1) / 2 + 3; // slight bend = natural joint
+    c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(mx, my, x1, y1); c.stroke();
 }
 
 function draw() {
@@ -565,6 +808,7 @@ function draw() {
     ctx.translate(-camNow.x, -camNow.y);
 
     drawStage(ctx, selectedStage, WIDTH, HEIGHT, GROUND_Y);
+    drawStageActors(ctx);
     drawOverkillBackground(ctx);
 
     // Blood Stains (Draw first so they are on the floor)

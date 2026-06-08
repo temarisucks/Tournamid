@@ -226,8 +226,14 @@ let charSelectPreview = {
 const STAGES = {
     dojo: { name: 'Original' },
     moonBridge: { name: 'Moon Bridge' },
-    platform: { name: 'Sky Platform' }
+    platform: { name: 'Sky Platform' },
+    pStreet: { name: 'P Street' },
+    bloodBall: { name: 'Blood Ball' }
 };
+
+// Ladder mode progression + animated stage background actors (set up in engine/ui)
+let ladder = { queue: [], index: 0, active: false };
+let stageActors = null;
 
 // --- STAGE GEOMETRY ---
 // Each stage describes the surfaces fighters collide with:

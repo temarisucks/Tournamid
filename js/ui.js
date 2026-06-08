@@ -357,7 +357,9 @@ function goToCharSelect(mode) {
     if (p1Selection) charSelectPreview.p1 = p1Selection;
     if (p2Selection) charSelectPreview.p2 = p2Selection;
     document.querySelectorAll('.char-card').forEach(c => c.classList.remove('locked', 'selected'));
-    document.getElementById('char-select-title').innerText = currentMode === 'ONLINE' ? "Select Your Fighter" : "Select Player 1";
+    document.getElementById('char-select-title').innerText =
+        (currentMode === 'ONLINE' || currentMode === 'LADDER' || currentMode === 'PVE' || currentMode === 'TRAINING')
+            ? "Select Your Fighter" : "Select Player 1";
     updateSelectionLabels();
     if (currentMode === 'ONLINE') updateOnlineSelectTitle();
     showScreen('char-select-screen');
@@ -379,7 +381,7 @@ function selectCharacter(charType, cardEl) {
         charSelectPreview.p1Burst = 1;
         markRosterSelection(resolvedType, 'p1');
         updateSelectionLabels();
-        if (currentMode === 'PVE' || currentMode === 'TRAINING') {
+        if (currentMode === 'PVE' || currentMode === 'TRAINING' || currentMode === 'LADDER') {
             setTimeout(() => {
                 if (gameState === 'CHAR_SELECT' && p1Selection === resolvedType) goToStageSelect();
             }, 650);
@@ -419,7 +421,7 @@ function backFromStageSelect() {
         updateOnlineSelectTitle();
         return;
     }
-    let solo = currentMode === 'PVE' || currentMode === 'TRAINING';
+    let solo = currentMode === 'PVE' || currentMode === 'TRAINING' || currentMode === 'LADDER';
     if (solo) {
         p1Selection = null;
         charSelectPreview.p1 = null;
@@ -431,7 +433,7 @@ function backFromStageSelect() {
     }
     document.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
     if (solo) document.querySelectorAll('.char-card').forEach(c => c.classList.remove('locked'));
-    document.getElementById('char-select-title').innerText = solo ? "Select Player 1" : (currentMode === 'CPU' ? "Select CPU Opponent" : "Select Player 2");
+    document.getElementById('char-select-title').innerText = solo ? "Select Your Fighter" : (currentMode === 'CPU' ? "Select CPU Opponent" : "Select Player 2");
     updateSelectionLabels();
     showScreen('char-select-screen');
     gameState = 'CHAR_SELECT';
@@ -472,7 +474,8 @@ function startGame() {
     bloodStains = [];
     bodyParts = [];
     overkillFx = null;
-    
+    initStageActors(); // animated background figures for the chosen stage
+
     trainingMode = (currentMode === 'TRAINING');
     infiniteMeter = false;
     document.getElementById('training-panel').classList.toggle('hidden', !trainingMode);
@@ -498,6 +501,20 @@ function startGame() {
         document.getElementById('timer').classList.add('hidden');
         document.getElementById('wave-counter').classList.remove('hidden');
         startPvEWave();
+    } else if (currentMode === 'LADDER') {
+        // The gauntlet: every fighter, shuffled, each rung harder than the last.
+        ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH']);
+        ladder.index = 0; ladder.active = true;
+        let oppType = ladder.queue[0];
+        let opp = new Fighter('P2', WIDTH * 0.75, oppType, true, 1);
+        opp.aiLevel = ladderLevelFor(0, ladder.queue.length);
+        players.push(opp);
+        document.getElementById('p2-name').innerText = "RUNG 1 - " + CHARACTERS[oppType].name;
+        document.getElementById('timer').classList.remove('hidden');
+        document.getElementById('wave-counter').classList.remove('hidden');
+        document.getElementById('wave-counter').innerText = "RUNG 1/" + ladder.queue.length;
+        matchTimer = 99;
+        document.getElementById('timer').innerText = matchTimer;
     } else {
         players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU', 1));
         document.getElementById('p2-name').innerText = currentMode === 'CPU' ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
@@ -545,8 +562,68 @@ function startPvEWave() {
     updateHUD();
 }
 
+// ---------------- LADDER MODE ----------------
+function ladderShuffle(arr) {
+    let a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+function ladderLevelFor(index, total) {
+    if (total <= 1) return 0.6;
+    return Math.min(1, 0.3 + (index / (total - 1)) * 0.7); // first rung 0.3 → last 1.0
+}
+
+function ladderNextRung() {
+    if (gameState !== 'ROUND_END') return;
+    hitboxes = []; projectiles = []; particles = []; bodyParts = [];
+    initStageActors();
+    let geo = getStageGeo();
+    let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
+    let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
+
+    // Reset the player to a fresh, full-health state for the new challenger.
+    let p1 = players[0];
+    p1.x = lx; p1.y = GROUND_Y; p1.vx = 0; p1.vy = 0;
+    p1.hp = p1.maxHp; p1.meter = 0; p1.state = 'IDLE'; p1.stateTimer = 0; p1.dir = 1;
+    p1.blockHealth = p1.blockMax; p1.ledge = null; p1.comboCount = 0; p1.slowTimer = 0;
+    p1.invulnTimer = 0; p1.ult = null; p1._ringedOut = false; p1._overkilled = false;
+    p1.overkillRed = false; p1.pose = null;
+
+    // Spawn the next, tougher challenger.
+    let oppType = ladder.queue[ladder.index];
+    let opp = new Fighter('P2', rx, oppType, true, 1);
+    opp.dir = -1;
+    opp.aiLevel = ladderLevelFor(ladder.index, ladder.queue.length);
+    opp.maxHp = Math.floor(opp.maxHp * (1 + ladder.index * 0.06)); // mild stat ramp
+    opp.hp = opp.maxHp;
+    players[1] = opp;
+
+    document.getElementById('p2-name').innerText = "RUNG " + (ladder.index + 1) + " - " + CHARACTERS[oppType].name;
+    document.getElementById('wave-counter').innerText = "RUNG " + (ladder.index + 1) + "/" + ladder.queue.length;
+    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
+    matchTimer = 99;
+    document.getElementById('timer').innerText = matchTimer;
+    matchTimerAccumulator = 0;
+    roundAnnounce = { text: CHARACTERS[oppType].name + "!", t: 0, dur: 1.6 };
+    beginIntroSequence('round1');
+    updateHUD();
+    gameState = 'PLAYING';
+}
+
+function selectRandomStage(cardEl) {
+    let ids = Object.keys(STAGES);
+    let pick = ids[Math.floor(Math.random() * ids.length)];
+    let realCard = document.querySelector(`.stage-card[data-stage="${pick}"]`);
+    selectStage(pick, realCard || cardEl); // reveals which stage was rolled, then proceeds
+}
+
 function returnToMenu() {
     if (currentMode === 'ONLINE') onlineDisconnect();
+    if (typeof hideNetMessage === 'function') hideNetMessage();
     gameState = 'MENU';
     pausedFromState = null;
     trainingMode = false;
@@ -562,6 +639,9 @@ function returnToMenu() {
 
 function returnToCharacterSelect() {
     if (currentMode === 'ONLINE') {
+        // On the post-match END screen this is the negotiated "Change Character" choice.
+        // Anywhere else online (e.g. the pause menu) it still means leave the match.
+        if (gameState === 'END') { onlinePostMatchChoose('change'); return; }
         onlineDisconnect();
         returnToMenu();
         return;
@@ -596,6 +676,8 @@ function toggleInfiniteMeter() {
 }
 
 function restartMatch() {
+    // In online play the "Rematch" button is a negotiated choice, not an instant restart.
+    if (currentMode === 'ONLINE') { onlinePostMatchChoose('rematch'); return; }
     startGame();
 }
 
