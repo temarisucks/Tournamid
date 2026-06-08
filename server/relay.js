@@ -70,7 +70,7 @@ wss.on('connection', ws => {
     const code = ws.roomCode;
     if (!code || !rooms.has(code)) return;
     const room = rooms.get(code);
-    const relayTypes = new Set(['select', 'stage', 'start', 'input', 'snapshot', 'round-result', 'next-round', 'game-over', 'ping-game']);
+    const relayTypes = new Set(['select', 'stage', 'start', 'input', 'round-result', 'next-round', 'game-over', 'ping-game']);
     if (relayTypes.has(msg.type)) {
       broadcast(room, msg.type, { ...msg, slot: ws.slot }, ws);
     }

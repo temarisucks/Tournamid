@@ -12,8 +12,8 @@ const ONLINE_REMOTE_BINDINGS = {
 
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
 const ONLINE_FIXED_DT = 1 / 60;
-const ONLINE_INPUT_DELAY_FRAMES = 3;
-const ONLINE_MAX_ROLLBACK_FRAMES = 18;
+const ONLINE_MAX_ROLLBACK_FRAMES = 10;
+const ONLINE_ROLLBACK_COOLDOWN_FRAMES = 3;
 const ONLINE_STATE_BUFFER_FRAMES = 90;
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 240;
@@ -37,6 +37,8 @@ let onlineState = {
     lastRemoteInput: null,
     rollbackCount: 0,
     rollbackFrames: 0,
+    lastRollbackFrame: -999,
+    lastRollbackSize: 0,
     rngSeed: 0xC0FFEE,
     lastInputSent: 0,
     snapshotTimer: 0,
@@ -88,6 +90,8 @@ function onlineResetRuntimeStats() {
     onlineState.lastRemoteInput = onlineBlankInput();
     onlineState.rollbackCount = 0;
     onlineState.rollbackFrames = 0;
+    onlineState.lastRollbackFrame = -999;
+    onlineState.lastRollbackSize = 0;
     onlineState.rngSeed = 0xC0FFEE;
     onlineState.lastInputSent = 0;
     onlineState.snapshotTimer = 0;
@@ -98,10 +102,8 @@ function onlineResetRuntimeStats() {
     onlineState.lastRemoteInputAt = 0;
     onlineState.lastRemoteInputMs = null;
     onlineState.remoteInputStale = false;
-    for (let i = 0; i < ONLINE_INPUT_DELAY_FRAMES; i++) {
-        onlineState.localInputs.set(i, onlineBlankInput());
-        onlineState.remoteInputs.set(i, onlineBlankInput());
-    }
+    onlineState.localInputs.set(0, onlineBlankInput());
+    onlineState.remoteInputs.set(0, onlineBlankInput());
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
 
@@ -260,11 +262,6 @@ function onlineHandleMessage(event) {
         return;
     }
 
-    if (msg.type === 'snapshot' && onlineState.slot === 1 && currentMode === 'ONLINE') {
-        onlineApplySnapshot(msg.snapshot);
-        return;
-    }
-
     if (msg.type === 'round-result' && onlineState.slot === 1 && currentMode === 'ONLINE') {
         endRound(msg.winnerIdx, msg.subtitle || '');
         return;
@@ -406,7 +403,7 @@ function onlineFixedUpdate(realDt) {
 }
 
 function onlinePrepareLocalInput() {
-    let frame = onlineState.frame + ONLINE_INPUT_DELAY_FRAMES;
+    let frame = onlineState.frame;
     let input = onlineReadLocalInput();
     onlineState.localInputs.set(frame, input);
     onlineState.lastLocalInput = input;
@@ -459,15 +456,19 @@ function onlineRandom() {
 function onlineMaybeRollback(frame, actualInput) {
     if (frame >= onlineState.frame) return;
     if (onlineState.frame - frame > ONLINE_MAX_ROLLBACK_FRAMES) return;
+    if (onlineState.frame - onlineState.lastRollbackFrame < ONLINE_ROLLBACK_COOLDOWN_FRAMES) return;
     let predicted = onlineState.predictedRemoteInputs.get(frame);
     if (!predicted || onlineSameInput(predicted, actualInput)) return;
     let state = onlineState.stateBuffer.get(frame);
     if (!state) return;
 
     let targetFrame = onlineState.frame;
+    let rollbackSize = targetFrame - frame;
     onlineRestoreState(state);
     onlineState.rollbackCount++;
-    onlineState.rollbackFrames += targetFrame - frame;
+    onlineState.rollbackFrames += rollbackSize;
+    onlineState.lastRollbackFrame = targetFrame;
+    onlineState.lastRollbackSize = rollbackSize;
     let oldSuppress = suppressRollbackEffects;
     suppressRollbackEffects = true;
     for (let f = frame; f < targetFrame && gameState === 'PLAYING'; f++) {
@@ -681,57 +682,11 @@ function onlineUpdateNetHud() {
     let rbEl = document.getElementById('online-net-rollback');
     if (pingEl) pingEl.innerText = ping == null ? 'PING --' : `PING ${ping}`;
     if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : `INPUT ${age}`;
-    if (rbEl) rbEl.innerText = `RB ${onlineState.rollbackCount}`;
+    if (rbEl) rbEl.innerText = `RB ${onlineState.lastRollbackSize}`;
     let level = 'good';
     if ((ping != null && ping > 130) || (age != null && age > 120)) level = 'warn';
     if ((ping != null && ping > 220) || (age != null && age > ONLINE_REMOTE_STALE_MS)) level = 'bad';
     panel.classList.add(level);
-}
-
-function onlineSnapshot() {
-    return {
-        matchTimer,
-        currentRound,
-        roundWins: [...roundWins],
-        players: players.slice(0, 2).map(p => ({
-            id: p.id,
-            x: p.x, y: p.y, vx: p.vx, vy: p.vy,
-            hp: p.hp, meter: p.meter,
-            state: p.state, stateTimer: p.stateTimer,
-            dir: p.dir, blockHealth: p.blockHealth,
-            charType: p.charType
-        }))
-    };
-}
-
-function onlineApplySnapshot(snapshot) {
-    if (!snapshot || !Array.isArray(snapshot.players)) return;
-    matchTimer = snapshot.matchTimer;
-    currentRound = snapshot.currentRound;
-    if (Array.isArray(snapshot.roundWins)) roundWins = snapshot.roundWins;
-    for (let i = 0; i < snapshot.players.length; i++) {
-        let src = snapshot.players[i];
-        let p = players[i];
-        if (!p || !src || p.charType !== src.charType) continue;
-        const localIndex = onlineState.slot;
-        const isLocal = i === localIndex;
-        const blend = isLocal ? 0.35 : 1;
-        p.x += (src.x - p.x) * blend;
-        p.y += (src.y - p.y) * blend;
-        p.vx = src.vx;
-        p.vy = src.vy;
-        p.hp = src.hp;
-        p.meter = src.meter;
-        p.dir = src.dir;
-        p.blockHealth = src.blockHealth;
-        if (!isLocal || Math.abs(src.x - p.x) > 80 || p.state === 'DEAD') {
-            p.state = src.state;
-            p.stateTimer = src.stateTimer;
-        }
-    }
-    if (document.getElementById('timer')) document.getElementById('timer').innerText = matchTimer;
-    renderRoundPips();
-    updateHUD();
 }
 
 function onlineDisconnect() {
@@ -758,6 +713,8 @@ function onlineDisconnect() {
         lastRemoteInput: null,
         rollbackCount: 0,
         rollbackFrames: 0,
+        lastRollbackFrame: -999,
+        lastRollbackSize: 0,
         rngSeed: 0xC0FFEE,
         lastInputSent: 0,
         snapshotTimer: 0,
