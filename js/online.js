@@ -251,6 +251,11 @@ function onlineHandleMessage(event) {
         return;
     }
 
+    if (msg.type === 'ult-sync') {
+        onlineApplyUltSync(msg);
+        return;
+    }
+
     if (msg.type === 'input') {
         onlineState.lastRemoteInputAt = performance.now();
         onlineState.lastRemoteInputMs = 0;
@@ -476,6 +481,7 @@ function onlineRandom() {
 }
 
 function onlineMaybeRollback(frame, actualInput) {
+    if (onlineInUltimateCinematic()) return;
     if (frame >= onlineState.frame) return;
     if (onlineState.frame - frame > ONLINE_MAX_ROLLBACK_FRAMES) return;
     if (onlineState.frame - onlineState.lastRollbackFrame < ONLINE_ROLLBACK_COOLDOWN_FRAMES) return;
@@ -499,6 +505,10 @@ function onlineMaybeRollback(frame, actualInput) {
     suppressRollbackEffects = oldSuppress;
     onlineState.frame = targetFrame;
     updateHUD();
+}
+
+function onlineInUltimateCinematic() {
+    return !!(ultActive || players.some(p => p && (p.state === 'ULT' || p.ult)) || timeScale < 0.95);
 }
 
 function onlineClonePlain(value) {
@@ -634,6 +644,7 @@ function onlineApplyHostSync(msg) {
     let hostFrame = Number(msg.frame);
     let frameDrift = Number.isFinite(hostFrame) ? Math.abs(hostFrame - onlineState.frame) : 0;
     let state = msg.state;
+    let inCinematic = onlineInUltimateCinematic() || !!state.ultActiveIndex || (state.players || []).some(p => p && (p.state === 'ULT' || p.ult));
     let maxPosDrift = 0;
     let hardMismatch = false;
 
@@ -641,12 +652,25 @@ function onlineApplyHostSync(msg) {
         for (let i = 0; i < Math.min(players.length, state.players.length); i++) {
             let local = players[i], remote = state.players[i];
             if (!local || !remote) continue;
-            maxPosDrift = Math.max(maxPosDrift, Math.hypot((remote.x || 0) - local.x, (remote.y || 0) - local.y));
-            if (Math.abs((remote.hp || 0) - local.hp) > 0.5 || remote.state !== local.state) hardMismatch = true;
+            let isLocal = i === onlineState.slot;
+            if (!isLocal) {
+                maxPosDrift = Math.max(maxPosDrift, Math.hypot((remote.x || 0) - local.x, (remote.y || 0) - local.y));
+                if (remote.state !== local.state) hardMismatch = true;
+            }
+            if (Math.abs((remote.hp || 0) - local.hp) > 0.5 || remote.state === 'DEAD' || local.state === 'DEAD') hardMismatch = true;
         }
     }
 
     if (frameDrift <= 8 && maxPosDrift < 55 && !hardMismatch) return;
+
+    if (!inCinematic) {
+        onlineApplyPartialHostSync(state);
+        if (Number.isFinite(hostFrame) && frameDrift > 20) onlineState.frame = hostFrame;
+        onlineState.syncCorrections++;
+        onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
+        updateHUD();
+        return;
+    }
 
     let localKeys = onlineClonePlain(keys);
     let localPreviousKeys = onlineClonePlain(previousKeys);
@@ -655,6 +679,67 @@ function onlineApplyHostSync(msg) {
     onlineState.accumulator = 0;
     onlineState.syncCorrections++;
     onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
+    updateHUD();
+}
+
+function onlineApplyPartialHostSync(state) {
+    if (!state || !Array.isArray(state.players)) return;
+    matchTimer = state.matchTimer;
+    matchTimerAccumulator = state.matchTimerAccumulator;
+    roundWins = [...state.roundWins];
+    currentRound = state.currentRound;
+    timeScale = Math.min(timeScale, state.timeScale || 1);
+    let localIndex = onlineState.slot;
+    for (let i = 0; i < Math.min(players.length, state.players.length); i++) {
+        let p = players[i];
+        let src = state.players[i];
+        if (!p || !src || p.charType !== src.charType) continue;
+        if (i === localIndex) {
+            // Keep local controls smooth. Only accept authoritative combat/resource state.
+            p.hp = src.hp;
+            p.meter = src.meter;
+            p.blockHealth = src.blockHealth;
+            if (src.state === 'DEAD' || p.state === 'DEAD') {
+                p.x = src.x; p.y = src.y; p.vx = src.vx; p.vy = src.vy;
+                p.state = src.state; p.stateTimer = src.stateTimer;
+            }
+            continue;
+        }
+        let drift = Math.hypot(src.x - p.x, src.y - p.y);
+        let blend = drift > 90 ? 1 : 0.35;
+        p.x += (src.x - p.x) * blend;
+        p.y += (src.y - p.y) * blend;
+        p.vx = src.vx;
+        p.vy = src.vy;
+        p.hp = src.hp;
+        p.meter = src.meter;
+        p.dir = src.dir;
+        p.blockHealth = src.blockHealth;
+        p.state = src.state;
+        p.stateTimer = src.stateTimer;
+    }
+    if (document.getElementById('timer')) document.getElementById('timer').innerText = matchTimer;
+    renderRoundPips();
+}
+
+function onlineSendUltSync(fighter, event) {
+    if (currentMode !== 'ONLINE' || onlineState.slot !== 0 || suppressRollbackEffects) return;
+    onlineSend('ult-sync', {
+        event,
+        fighterIndex: players.indexOf(fighter),
+        state: onlineCaptureSyncState(),
+        frame: onlineState.frame
+    });
+}
+
+function onlineApplyUltSync(msg) {
+    if (onlineState.slot !== 1 || !msg || !msg.state || gameState !== 'PLAYING') return;
+    let localKeys = onlineClonePlain(keys);
+    let localPreviousKeys = onlineClonePlain(previousKeys);
+    onlineRestoreState({ ...msg.state, keys: localKeys, previousKeys: localPreviousKeys });
+    if (Number.isFinite(msg.frame)) onlineState.frame = msg.frame;
+    onlineState.accumulator = 0;
+    onlineState.syncCorrections++;
     updateHUD();
 }
 

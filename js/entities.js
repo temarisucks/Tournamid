@@ -681,6 +681,7 @@ class Fighter {
         timeScale = 0.18; // dramatic hush while the line drops
         sfx.playDeath();
         playUltVoice(this.charType);
+        onlineSendUltSync(this, 'start');
     }
 
     endUlt() {
@@ -707,6 +708,7 @@ class Fighter {
         else if (this.ult.kind === 'mindbreak') this.ult.phase = 'vice';
         if (this.ult.kind === 'orb') playAudio(attackSfx.magic);
         else sfx.playHit();
+        onlineSendUltSync(this, 'connect');
     }
 
     spawnUltActivation() {

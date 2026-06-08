@@ -78,7 +78,7 @@ wss.on('connection', ws => {
       return;
     }
 
-    const relayTypes = new Set(['select', 'stage', 'input', 'sync', 'round-result', 'next-round', 'game-over', 'ping-game']);
+    const relayTypes = new Set(['select', 'stage', 'input', 'sync', 'ult-sync', 'round-result', 'next-round', 'game-over', 'ping-game']);
     if (relayTypes.has(msg.type)) {
       broadcast(room, msg.type, { ...msg, slot: ws.slot }, ws);
     }
