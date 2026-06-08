@@ -99,7 +99,7 @@ function checkCollisions() {
                     } else {
                         // Melee swing sound plays only on contact (whiffs stay silent)
                         if (h.atk && h.owner) h.owner.playAttackSound(h.atk);
-                        let landed = p.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab });
+                        let landed = p.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab || !!h.unblockableUlt });
                         if (landed && h.ultActivator) h.ultActivator.onUltConnect(p);
                     }
                 }
@@ -135,6 +135,10 @@ function checkCollisions() {
 
                     // On-hit elemental effects
                     if (proj.slow) p.slowTimer = Math.max(p.slowTimer, proj.slow);
+                    if (proj.markTarget) {
+                        p.beastMarkedTimer = Math.max(p.beastMarkedTimer || 0, 4.0);
+                        spawnParticles(p.x, p.y - 70, 12, '#ff0033');
+                    }
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby
                         let bx = proj.x + proj.w/2, by = proj.y + proj.h/2;
@@ -874,7 +878,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];

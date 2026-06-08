@@ -66,6 +66,16 @@ const CHAR_INFO = [
             ["Up", "Psi Lift", "rising psychic burst — anti-air launcher + altitude"],
             ["Down", "Tele Crash", "in air: dive-bomb shockwave; grounded: low psychic sweep"]
         ]
+    },
+    {
+        name: "THE BEAST TAMER", role: "Adaptive stance fighter / monster commander",
+        passive: "Passive - Active Beast: neutral special cycles Serpent, Brute, and Raven. Each beast changes every other special.",
+        specials: [
+            ["Neutral", "Call Beast", "cycle active monster; the companion visibly changes beside you"],
+            ["Side", "Command", "Serpent bite, Brute rush, or Raven dive depending on active beast"],
+            ["Up", "Command", "Serpent coil recovery, Brute uppercut, or Raven lift"],
+            ["Down", "Command", "Venom puddle, Brute stomp, or Raven mark"]
+        ]
     }
 ];
 
@@ -261,7 +271,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -299,7 +309,8 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
             MAGE: 'specNeutral',
             RANGER: 'specNeutral',
             DARK_RULER: 'heavy',
-            TELEPATH: 'heavy'
+            TELEPATH: 'heavy',
+            BEAST_TAMER: 'specNeutral'
         };
         let move = moveByCharacter[charType] || 'light';
         fighter.state = 'ATTACK';
@@ -572,7 +583,7 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH']);
+    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER']);
     ladder.index = 0; ladder.active = true;
     showLadderScreen(false); // light up rung 1, then drop into the fight
 }

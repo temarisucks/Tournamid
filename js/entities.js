@@ -306,6 +306,19 @@ class Projectile {
             ctx.globalAlpha = 0.8; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
             ctx.rotate(now * 3); ctx.scale(1, 0.4);
             ctx.beginPath(); ctx.arc(0, 0, r * 1.35, 0, Math.PI * 2); ctx.stroke();
+        } else if (this.subtype === 'serpentBite') {
+            ctx.translate(cx, cy); ctx.rotate(Math.atan2(this.vy, this.vx));
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+            ctx.beginPath(); ctx.moveTo(-r * 1.4, 0); ctx.quadraticCurveTo(-r * 0.3, -r * 0.8, r * 0.8, 0); ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(r * 0.9, -2, 2, 0, Math.PI * 2); ctx.arc(r * 0.9, 2, 2, 0, Math.PI * 2); ctx.fill();
+        } else if (this.subtype === 'ravenDive' || this.subtype === 'ravenMark') {
+            ctx.translate(cx, cy); ctx.rotate(Math.atan2(this.vy, this.vx));
+            ctx.strokeStyle = this.subtype === 'ravenMark' ? '#ff0033' : '#bbb'; ctx.lineWidth = 3; ctx.shadowBlur = 12; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r * 0.7); ctx.closePath(); ctx.stroke();
+        } else if (this.subtype === 'venom') {
+            ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.ellipse(cx, cy + 4, this.w / 2, this.h / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(cx + Math.sin(now * 6) * 12, cy, 2.5, 0, Math.PI * 2); ctx.fill();
         } else if ((this.owner ? this.owner.charType : this.ownerCharType) === 'MAGE') {
             // Basic arcane sigil: glowing ringed orb with a spinning rune
             ctx.translate(cx, cy);
@@ -365,6 +378,10 @@ class Fighter {
         this.invulnTimer = 0;   // dodge i-frames (Combat Roll / Blink)
         this.manaFontTimer = 0; // Mage: next spell empowered
         this.specialDone = false; // one-shot trigger guard for blink/roll/etc
+        this.beastIndex = 0;      // Beast Tamer: 0 serpent, 1 brute, 2 raven
+        this.beastSwapFlash = 0;
+        this.beastMarkedTimer = 0;
+        this.beastAnimTimer = 0;
 
         // Ledge grab (ring-out stages)
         this.ledge = null;       // {x, top, side} of the lip being gripped
@@ -394,6 +411,7 @@ class Fighter {
         if (ultActive === this) dt = frameRealDt; // the ult performer acts in real time
 
         this.animTimer += dt;
+        this.beastAnimTimer += dt;
         this.inputTimer += dt;
         this.comboTimer -= dt;
         if (this.comboTimer <= 0) this.comboCount = 0;
@@ -401,6 +419,8 @@ class Fighter {
         if (this.slowTimer > 0) this.slowTimer -= dt;
         if (this.invulnTimer > 0) this.invulnTimer -= dt;
         if (this.manaFontTimer > 0) this.manaFontTimer -= dt;
+        if (this.beastSwapFlash > 0) this.beastSwapFlash -= dt;
+        if (this.beastMarkedTimer > 0) this.beastMarkedTimer -= dt;
         if (this.regrabTimer > 0) this.regrabTimer -= dt;
 
         // Guard slowly regenerates while not actively blocking
@@ -686,7 +706,7 @@ class Fighter {
     }
 
     startUltimate() {
-        let kind = { BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb', DARK_RULER: 'darkslash', TELEPATH: 'mindbreak' }[this.charType];
+        let kind = { BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb', DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm' }[this.charType];
         if (!kind) return; // Zombie has no ultimate
         this.state = 'ULT';
         this.stateTimer = 0;
@@ -722,6 +742,7 @@ class Fighter {
         else if (this.ult.kind === 'orb') this.ult.phase = 'payoff';
         else if (this.ult.kind === 'bomb') this.ult.phase = 'blast';
         else if (this.ult.kind === 'mindbreak') this.ult.phase = 'vice';
+        else if (this.ult.kind === 'beaststorm') this.ult.phase = 'alphaBind';
         if (this.ult.kind === 'orb') playAudio(attackSfx.magic);
         else sfx.playHit();
         onlineSendUltSync(this, 'connect');
@@ -747,6 +768,10 @@ class Fighter {
             let hb = new Hitbox(this.x + (this.dir > 0 ? 8 : -88), this.y - 90, 80, 96, 3, { x: 0, y: 0 }, 0.2, this, 0.4);
             hb.ultActivator = this; hb.unblockableUlt = true; hitboxes.push(hb);
             playAudio(attackSfx.magic);
+        } else if (u.kind === 'beaststorm') {
+            let hb = new Hitbox(this.x + (this.dir > 0 ? 0 : -110), this.y - 92, 110, 92, 4, { x: 120 * this.dir, y: -80 }, 0.25, this, 0.45);
+            hb.ultActivator = this; hb.unblockableUlt = true; hitboxes.push(hb);
+            playAudio(attackSfx.magic);
         }
     }
 
@@ -757,7 +782,7 @@ class Fighter {
         // u.target is re-linked by index. If that link fails (trimmed projectile,
         // length mismatch) the payoff phases would deref a null target and crash.
         // Any connected payoff phase without a live target simply ends the ult.
-        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice'];
+        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice', 'alphaBind', 'alphaBrute', 'alphaRaven', 'alphaWhip'];
         if (PAYOFF_PHASES.includes(u.phase) && (!u.target || u.target.state === 'DEAD')) {
             this.endUlt();
             return;
@@ -777,6 +802,82 @@ class Fighter {
                 else if (u.kind === 'bomb') { u.phase = 'throw'; this.spawnUltActivation(); }
                 else if (u.kind === 'darkslash') { u.phase = 'swing'; }
                 else if (u.kind === 'mindbreak') { u.phase = 'snare'; this.spawnUltActivation(); }
+                else if (u.kind === 'beaststorm') { u.phase = 'snare'; this.spawnUltActivation(); }
+            }
+            return;
+        }
+
+        // ---- BEAST TAMER Alpha Command ----
+        if (u.kind === 'beaststorm') {
+            if (u.phase === 'snare') {
+                if (u.t > 0.55) this.endUlt();
+            } else if (u.phase === 'alphaBind') {
+                let tg = u.target;
+                timeScale = 0.32;
+                tg.state = 'HITSTUN'; tg.stateTimer = 2.6; tg.vx = 0; tg.vy = 0;
+                this.dir = tg.x >= this.x ? 1 : -1;
+                tg.x = this.x + this.dir * 82 + Math.sin(u.t * 30) * 3;
+                tg.y = GROUND_Y - 44 + Math.sin(u.t * 34) * 3;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 80, zoom: 1.55 };
+                if (!u.bound) {
+                    u.bound = true;
+                    tg.takeDamage(6, { x: 0, y: 0 }, 0.35, this, { isUlt: true, unblockable: true });
+                    spawnParticles(tg.x, tg.y - 55, 18, '#fff');
+                    playAudio(attackSfx.snake);
+                }
+                if (u.t > 0.62) {
+                    u.phase = 'alphaBrute'; u.t = 0;
+                    u.bruteStartX = tg.x; u.bruteEndX = Math.max(70, Math.min(WIDTH - 70, tg.x + this.dir * 430));
+                    u.bruteY = tg.y;
+                }
+            } else if (u.phase === 'alphaBrute') {
+                let tg = u.target;
+                timeScale = 0.38;
+                tg.state = 'HITSTUN'; tg.stateTimer = 2.2; tg.vx = 0; tg.vy = 0;
+                let p = Math.min(1, u.t / 0.62);
+                let ease = 1 - Math.pow(1 - p, 3);
+                tg.x = u.bruteStartX + (u.bruteEndX - u.bruteStartX) * ease;
+                tg.y = u.bruteY - Math.sin(p * Math.PI) * 34;
+                ultCamera = { fx: tg.x, fy: GROUND_Y - 95, zoom: 1.4 };
+                if (!u.bruteHit && u.t > 0.12) {
+                    u.bruteHit = true;
+                    tg.takeDamage(18, { x: 0, y: 0 }, 0.45, this, { isUlt: true, unblockable: true });
+                    spawnParticles(tg.x, tg.y - 40, 28, '#ff0033');
+                    playAudio(attackSfx.brute);
+                    sfx.playDeath();
+                }
+                if (u.t > 0.68) { u.phase = 'alphaRaven'; u.t = 0; u.ravenHits = 0; }
+            } else if (u.phase === 'alphaRaven') {
+                let tg = u.target;
+                timeScale = 0.42;
+                tg.state = 'HITSTUN'; tg.stateTimer = 1.8; tg.vx = 0; tg.vy = 0;
+                tg.y = GROUND_Y - 58 + Math.sin(u.t * 18) * 5;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 105, zoom: 1.48 };
+                if (u.ravenHits < 2 && u.t > 0.16 + u.ravenHits * 0.2) {
+                    u.ravenHits++;
+                    tg.takeDamage(7, { x: 0, y: -70 }, 0.25, this, { isUlt: true, unblockable: true });
+                    spawnParticles(tg.x + (u.ravenHits === 1 ? -24 : 24), tg.y - 44, 20, '#fff');
+                    playAudio(attackSfx.raven);
+                }
+                if (u.t > 0.62) {
+                    u.phase = 'alphaWhip'; u.t = 0; u.whipDone = false;
+                    this.x = Math.max(55, Math.min(WIDTH - 55, tg.x - this.dir * 78));
+                    this.y = GROUND_Y;
+                }
+            } else if (u.phase === 'alphaWhip') {
+                let tg = u.target;
+                timeScale = 0.5;
+                this.dir = tg.x >= this.x ? 1 : -1;
+                tg.state = 'HITSTUN'; tg.stateTimer = 1.2; tg.vx = 0; tg.vy = 0;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 85, zoom: 1.55 };
+                if (!u.whipDone && u.t > 0.26) {
+                    u.whipDone = true;
+                    tg.takeDamage(24, { x: 980 * this.dir, y: -340 }, 0.75, this, { isUlt: true, unblockable: true });
+                    spawnParticles(tg.x, tg.y - 48, 34, '#ff0033');
+                    playAudio(attackSfx.knife);
+                    sfx.playDeath();
+                }
+                if (u.t > 0.78) this.endUlt();
             }
             return;
         }
@@ -1125,6 +1226,7 @@ class Fighter {
                      : this.charType === 'SWORDSMAN' ? dist < 150       // dash opener
                      : this.charType === 'DARK_RULER' ? dist < 130      // grab range
                      : this.charType === 'TELEPATH' ? dist < 120        // psychic snare range
+                     : this.charType === 'BEAST_TAMER' ? dist < 170
                      : dist < 460;                                      // mage/ranger ranged
             if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
@@ -1137,6 +1239,7 @@ class Fighter {
             RANGER:    { range: 220, kite: true,  jumpy: 0.10 },
             DARK_RULER:{ range: 64,  kite: false, jumpy: 0.06 },
             TELEPATH:  { range: 120, kite: false, jumpy: 0.30 },
+            BEAST_TAMER:{ range: 150, kite: false, jumpy: 0.16 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -1206,6 +1309,7 @@ class Fighter {
             if (this.charType === 'BRAWLER' && r < 0.30) { this.startAttack('specSide'); return; }
             if (this.charType === 'SWORDSMAN' && r < 0.40) { this.startAttack('specSide'); return; }
             if (this.charType === 'RANGER' && r < 0.25) { this.startAttack('specSide'); return; }
+            if (this.charType === 'BEAST_TAMER' && r < 0.35) { this.startAttack('specSide'); return; }
         }
 
         // Jump to chase an airborne target up close, or hop the gap when far
@@ -1246,6 +1350,12 @@ class Fighter {
                     else if (r < 0.78) this.startPlayerAttack('H');          // kick / finisher
                     else if (r < 0.90) this.startAttack('specNeutral');      // Haymaker
                     else this.startAttack('specDown');                       // Ground Breaker
+                } else if (this.charType === 'BEAST_TAMER') {
+                    if (r < 0.16) this.startAttack('specNeutral');
+                    else if (r < 0.44) this.startAttack('specSide');
+                    else if (r < 0.60) this.startAttack('specDown');
+                    else if (r < 0.74) this.startAttack('specUp');
+                    else this.startPlayerAttack(r < 0.88 ? 'L' : 'H');
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -1285,8 +1395,12 @@ class Fighter {
         
         let atk = this.attacks[atkName] || createAttackVariant(this, atkName);
         if (!atk) return;
+        if (this.charType === 'BEAST_TAMER') atk = this.beastAttackFor(atkName, atk);
 
         this.currentAttack = { ...atk, name: atkName };
+        if (this.charType === 'BEAST_TAMER' && (atkName === 'specSide' || atkName === 'specUp' || atkName === 'specDown')) {
+            this.beastAnimTimer = 0;
+        }
         
         // Passives integration
         let spdMult = (this.parryBuffTimer > 0) ? 0.6 : 1.0;
@@ -1318,6 +1432,10 @@ class Fighter {
         if (t === 'updraftShot') { this.vy = -620; }
         if (t === 'parry') this.vx = 0;
         if (t === 'combatRoll') { this.vx = 680 * this.dir; this.invulnTimer = 0.32; this.tacticalReload = true; }
+        if (t === 'beastBruteRush') this.vx = 780 * this.dir;
+        if (t === 'beastSerpentLift') { this.vy = -620; this.vx = 80 * this.dir; }
+        if (t === 'beastBruteUpper') { this.vy = -520; this.vx = 70 * this.dir; }
+        if (t === 'beastRavenLift') { this.vy = -720; this.vx = 130 * this.dir; this.invulnTimer = 0.16; }
         if (t === 'airHeavy') this.vy = Math.max(this.vy, 120);
         if (t === 'lowHeavy') this.vx = 80 * this.dir;
         if (atk.combo === 'LLH') this.vx = 120 * this.dir;
@@ -1327,6 +1445,13 @@ class Fighter {
     playAttackSound(atk) {
         if (this.charType === 'TELEPATH') {
             playAudio(attackSfx.tele);
+            return;
+        }
+        if (this.charType === 'BEAST_TAMER') {
+            if (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentLift' || atk.type === 'beastSerpentVenom') playAudio(attackSfx.snake);
+            else if (atk.type === 'beastRavenDive' || atk.type === 'beastRavenLift' || atk.type === 'beastRavenMark') playAudio(attackSfx.raven);
+            else if (atk.type === 'beastBruteRush' || atk.type === 'beastBruteUpper' || atk.type === 'beastBruteStomp') playAudio(attackSfx.brute);
+            else playAudio(attackSfx.punch);
             return;
         }
         if (this.charType === 'MAGE' || atk.type === 'chaosBolt' || atk.type === 'arcaneRoulette' || atk.type === 'runeTrap' || atk.type === 'blink') {
@@ -1378,6 +1503,11 @@ class Fighter {
             this.doBlink();
         }
 
+        if (atk.type === 'beastSwitch' && !this.specialDone && t >= atk.startup) {
+            this.specialDone = true;
+            this.cycleBeast();
+        }
+
         // Telekinetic Crash dive-bomb: detonate the moment she slams into the ground
         if (atk.type === 'teleCrash' && this._diving && this.y >= GROUND_Y && !this._crashed) {
             this._crashed = true; this._diving = false; this.hasSpawnedHitbox = true; this.vx = 0;
@@ -1406,8 +1536,12 @@ class Fighter {
                 hitboxes.push(new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, {x: 60 * this.dir, y: 200}, atk.stun, this, atk.active));
                 playAudio(attackSfx.shot);
                 for (let i = 0; i < 8; i++) particles.push(new Particle(this.x, this.y - 6, (Math.random()-0.5)*240, 160+Math.random()*220, 0.4, '#fff', 2));
-            } else if (atk.type === 'combatRoll' || atk.type === 'blink') {
+            } else if (atk.type === 'combatRoll' || atk.type === 'blink' || atk.type === 'beastSwitch') {
                 // movement-only specials, no hitbox spawned here
+            } else if (atk.type === 'beastSerpentVenom') {
+                this.spawnBeastVenom(dmgMod);
+            } else if (atk.type === 'beastRavenMark') {
+                this.spawnBeastRavenMark(dmgMod);
             } else if (atk.type === 'teleCrash') {
                 // Ground version = a low psychic sweep; the air dive detonates on landing (handled above)
                 if (!this._diving) {
@@ -1435,6 +1569,47 @@ class Fighter {
         } else if (t >= atk.startup + atk.active + atk.recovery) {
             this.changeState(this.y < GROUND_Y ? (this.vy < 0 ? 'JUMP' : 'FALL') : 'IDLE');
         }
+    }
+
+    beastAttackFor(atkName, baseAtk) {
+        const beast = this.beastIndex || 0;
+        if (atkName === 'specSide') {
+            if (beast === 0) return { ...baseAtk, startup: 0.12, active: 0.1, recovery: 0.28, dmg: 8, isProj: true, pSpeed: 850, pLife: 0.72, w: 26, h: 18, oy: -58, kb: { x: 230, y: -90 }, stun: 0.34, type: 'beastSerpentBite' };
+            if (beast === 1) return { ...baseAtk, startup: 0.16, active: 0.24, recovery: 0.34, dmg: 13, w: 74, h: 56, ox: 24, oy: -58, kb: { x: 340, y: -150 }, stun: 0.48, type: 'beastBruteRush', armor: true };
+            return { ...baseAtk, startup: 0.14, active: 0.1, recovery: 0.3, dmg: 9, isProj: true, pSpeed: 700, pLife: 0.85, w: 30, h: 26, oy: -96, kb: { x: 190, y: 160 }, stun: 0.34, type: 'beastRavenDive' };
+        }
+        if (atkName === 'specUp') {
+            if (beast === 0) return { ...baseAtk, startup: 0.1, active: 0.22, recovery: 0.28, dmg: 8, w: 60, h: 88, ox: 6, oy: -102, kb: { x: 100, y: -560 }, stun: 0.4, type: 'beastSerpentLift' };
+            if (beast === 1) return { ...baseAtk, startup: 0.16, active: 0.22, recovery: 0.32, dmg: 14, w: 70, h: 92, ox: 14, oy: -104, kb: { x: 130, y: -650 }, stun: 0.5, type: 'beastBruteUpper', armor: true };
+            return { ...baseAtk, startup: 0.08, active: 0.18, recovery: 0.34, dmg: 7, w: 72, h: 70, ox: 0, oy: -94, kb: { x: 120, y: -420 }, stun: 0.34, type: 'beastRavenLift' };
+        }
+        if (atkName === 'specDown') {
+            if (beast === 0) return { ...baseAtk, startup: 0.18, active: 0.1, recovery: 0.36, dmg: 6, w: 46, h: 20, ox: 100, oy: -12, kb: { x: 80, y: -130 }, stun: 0.3, type: 'beastSerpentVenom' };
+            if (beast === 1) return { ...baseAtk, startup: 0.28, active: 0.2, recovery: 0.42, dmg: 16, w: 170, h: 36, ox: 0, oy: -18, kb: { x: 250, y: -380 }, stun: 0.55, type: 'beastBruteStomp', armor: true };
+            return { ...baseAtk, startup: 0.16, active: 0.1, recovery: 0.32, dmg: 4, isProj: true, pSpeed: 760, pLife: 0.9, w: 24, h: 24, oy: -92, kb: { x: 80, y: -60 }, stun: 0.25, type: 'beastRavenMark' };
+        }
+        return baseAtk;
+    }
+
+    cycleBeast() {
+        this.beastIndex = ((this.beastIndex || 0) + 1) % 3;
+        this.beastSwapFlash = 0.6;
+        spawnParticles(this.x, this.y - 55, 18, this.beastIndex === 0 ? '#fff' : this.beastIndex === 1 ? '#ff0033' : '#aaa');
+        playAudio(attackSfx.beastSwitch);
+    }
+
+    spawnBeastVenom(dmgMod) {
+        let p = new Projectile(this.x + this.dir * 110, GROUND_Y - 18, 0, 0, 62, 18, 6 * dmgMod, { x: 70 * this.dir, y: -130 }, 0.3, this, 4.2, null);
+        p.subtype = 'venom'; p.slow = 2.4; p.pierce = true;
+        projectiles.push(p);
+        playAudio(attackSfx.snake);
+    }
+
+    spawnBeastRavenMark(dmgMod) {
+        let p = new Projectile(this.x + this.dir * 16, this.y - 92, 760 * this.dir, 170, 24, 24, 4 * dmgMod, { x: 90 * this.dir, y: -80 }, 0.3, this, 0.9, null);
+        p.subtype = 'ravenMark'; p.markTarget = true;
+        projectiles.push(p);
+        playAudio(attackSfx.raven);
     }
 
     // Mage Blink: vanish, reappear forward with a small hop, plus an RNG kicker
@@ -1524,6 +1699,12 @@ class Fighter {
             subtype = 'dark';
         } else if (atk.type === 'mindGrip') {
             subtype = 'tether';
+        } else if (atk.type === 'beastSerpentBite') {
+            subtype = 'serpentBite';
+            homing = true;
+        } else if (atk.type === 'beastRavenDive') {
+            subtype = 'ravenDive';
+            vy = 170;
         }
 
         if (this.charType === 'MAGE') {
@@ -1535,6 +1716,8 @@ class Fighter {
             playAudio(attackSfx.shot);
         } else if (this.charType === 'TELEPATH') {
             playAudio(attackSfx.tele);
+        } else if (this.charType === 'BEAST_TAMER') {
+            playAudio(subtype === 'ravenDive' ? attackSfx.raven : attackSfx.snake);
         }
 
         let proj = new Projectile(px, py, vx, vy, w, h, dmg * dmgMod, {x: atk.kb.x * this.dir, y: atk.kb.y}, atk.stun, this, life, logic);
@@ -1647,6 +1830,11 @@ class Fighter {
         if (attacker && attacker.charType === 'DARK_RULER' && !blocked && attacker.hp > 0) {
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 0.2);
         }
+        if (attacker && attacker.charType === 'BEAST_TAMER' && this.beastMarkedTimer > 0 && !blocked) {
+            amount += 3;
+            this.beastMarkedTimer = 0;
+            spawnParticles(this.x, this.y - 62, 14, '#ff0033');
+        }
 
         this.hp -= amount;
         this.vx = kb.x;
@@ -1683,6 +1871,124 @@ class Fighter {
         this._winFxTimer = 0;
     }
 
+    drawBeastCompanion(ctx) {
+        let beast = this.beastIndex || 0;
+        let t = this.beastAnimTimer || this.animTimer;
+        let flash = Math.max(0, this.beastSwapFlash || 0);
+        let atk = this.state === 'ATTACK' ? this.currentAttack : null;
+        let atkProgress = atk ? Math.max(0, Math.min(1, (this.stateTimer - atk.startup) / Math.max(0.01, atk.active))) : 0;
+        let alpha = this.state === 'ULT' && this.ult && this.ult.kind === 'beaststorm' ? this.ult : null;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowBlur = flash > 0 ? 18 : 4;
+        ctx.shadowColor = beast === 1 ? '#ff0033' : '#fff';
+        if (alpha) {
+            let bind = alpha.phase === 'alphaBind';
+            let brute = alpha.phase === 'alphaBrute';
+            let raven = alpha.phase === 'alphaRaven';
+            let whip = alpha.phase === 'alphaWhip';
+            // Serpent binding coil.
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = bind ? 5 : 3; ctx.shadowBlur = bind ? 18 : 8; ctx.shadowColor = '#fff';
+            ctx.beginPath();
+            for (let i = 0; i < 24; i++) {
+                let u = i / 23;
+                let x = 34 + u * 78;
+                let y = -55 + Math.sin(u * Math.PI * 6 + t * 9) * (bind ? 15 : 9);
+                i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+            }
+            ctx.stroke();
+            // Brute smash body.
+            let bx = brute ? 42 + Math.sin(Math.min(1, alpha.t / 0.62) * Math.PI) * 62 : -62;
+            let by = brute ? -48 - Math.sin(Math.min(1, alpha.t / 0.62) * Math.PI) * 14 : -44;
+            ctx.fillStyle = '#050505'; ctx.strokeStyle = '#ddd'; ctx.lineWidth = 4; ctx.shadowBlur = brute ? 18 : 6; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.ellipse(bx, by + 8, 26, 36, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(bx + 5, by - 28, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 8;
+            ctx.beginPath(); ctx.moveTo(bx + 12, by - 5); ctx.lineTo(bx + 50 + (brute ? 24 : 0), by - 16); ctx.stroke();
+            // Raven slash passes.
+            let rp = raven ? Math.min(1, alpha.t / 0.62) : 0;
+            let rx = raven ? -90 + rp * 210 : -24 + Math.sin(t * 2.4) * 8;
+            let ry = raven ? -118 + Math.sin(rp * Math.PI * 2) * 22 : -102;
+            ctx.strokeStyle = '#bbb'; ctx.lineWidth = raven ? 5 : 3; ctx.shadowBlur = raven ? 16 : 6; ctx.shadowColor = '#ff0033';
+            ctx.beginPath();
+            ctx.moveTo(rx, ry); ctx.lineTo(rx - 30, ry - 10); ctx.moveTo(rx, ry); ctx.lineTo(rx + 30, ry - 10);
+            ctx.moveTo(rx, ry); ctx.lineTo(rx + 10, ry + 16); ctx.stroke();
+            if (whip) {
+                ctx.strokeStyle = 'rgba(255,0,51,0.8)'; ctx.lineWidth = 5; ctx.shadowBlur = 20; ctx.shadowColor = '#ff0033';
+                ctx.beginPath(); ctx.arc(48, -52, 86, -0.25, 0.45 + Math.min(1, alpha.t / 0.32) * 0.8); ctx.stroke();
+            }
+        } else if (beast === 0) {
+            // Serpent: animated spine segments ripple around the Tamer.
+            let attacking = atk && (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentLift' || atk.type === 'beastSerpentVenom');
+            let segs = 13;
+            let pts = [];
+            for (let i = 0; i < segs; i++) {
+                let u = i / (segs - 1);
+                let sweep = attacking ? atkProgress * 54 : 0;
+                let angle = t * 4.2 + u * 4.9;
+                let radius = attacking ? 22 + u * 42 : 38 + Math.sin(t * 2 + u * 5) * 5;
+                let x = Math.cos(angle) * radius + sweep * u;
+                let y = -54 + Math.sin(angle) * 18 + Math.sin(t * 8 + u * 10) * 5;
+                pts.push({ x, y });
+            }
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            pts.forEach((p, i) => {
+                let size = 3.8 - i * 0.15;
+                ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1.6, size), 0, Math.PI * 2); ctx.fill();
+            });
+            let head = pts[0];
+            ctx.fillStyle = '#ff0033';
+            ctx.beginPath(); ctx.arc(head.x + 3, head.y - 1, 2.2 + flash, 0, Math.PI * 2); ctx.fill();
+        } else if (beast === 1) {
+            // Brute: hulking black mass guarding the flank, then lunging for brute commands.
+            let rush = atk && atk.type === 'beastBruteRush' ? Math.sin(atkProgress * Math.PI) * 74 : 0;
+            let upper = atk && atk.type === 'beastBruteUpper' ? Math.sin(atkProgress * Math.PI) * -32 : 0;
+            let stomp = atk && atk.type === 'beastBruteStomp' ? Math.sin(atkProgress * Math.PI) * 18 : 0;
+            let bx = -54 + Math.sin(t * 1.5) * 3 + rush;
+            let by = -46 + Math.cos(t * 2) * 2 + upper + stomp;
+            ctx.fillStyle = '#050505'; ctx.strokeStyle = '#ddd'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.ellipse(bx, by + 8, 24 + flash * 4, 34, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(bx + 4, by - 26, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(bx - 14, by - 38); ctx.lineTo(bx - 24, by - 54); ctx.moveTo(bx + 14, by - 38); ctx.lineTo(bx + 24, by - 54); ctx.stroke();
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 7;
+            let armLift = atk && atk.type === 'beastBruteUpper' ? -42 * Math.sin(atkProgress * Math.PI) : 0;
+            let armReach = atk && atk.type === 'beastBruteRush' ? 42 * Math.sin(atkProgress * Math.PI) : 0;
+            ctx.beginPath();
+            ctx.moveTo(bx + 12, by - 4);
+            ctx.lineTo(bx + 35 + armReach, by - 10 + armLift);
+            ctx.moveTo(bx - 12, by - 2);
+            ctx.lineTo(bx - 34, by + 18 + stomp);
+            ctx.stroke();
+            if (atk && atk.type === 'beastBruteStomp' && atkProgress > 0) {
+                ctx.strokeStyle = 'rgba(255,0,51,0.7)'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(bx - 18, 0, 18 + atkProgress * 42, 0.15, Math.PI - 0.15); ctx.stroke();
+            }
+        } else {
+            // Raven: angular scout above the shoulder.
+            let rx = -30 + Math.sin(t * 2.6) * 12;
+            let ry = -98 + Math.cos(t * 3.1) * 7;
+            let flap = Math.sin(t * 12) * 8;
+            ctx.strokeStyle = '#bbb'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx - 26, ry - 8 + flap);
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx + 26, ry - 8 - flap);
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(rx + 8, ry + 13);
+            ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(rx + 3, ry - 2, 2.5 + flash, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
     draw(ctx) {
         if (this.state === 'DEAD' && this._overkilled) return;
         
@@ -1706,7 +2012,7 @@ class Fighter {
         ctx.strokeStyle = '#fff';
         if (this.state === 'HITSTUN') ctx.strokeStyle = '#f55'; // Red flash on hit
         if (this.overkillRed) ctx.strokeStyle = '#ff0033';
-        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : 4; // bigger = thicker
+        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : 4; // bigger = thicker
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
@@ -1774,6 +2080,15 @@ class Fighter {
                 leftLegAngle = -0.12 + hover * 0.05; rightLegAngle = 0.14 + hover * 0.05; // dangling
                 leftLegBend = 0.1; rightLegBend = 0.14;
                 torsoLean = Math.sin(t * 1.7) * 0.03;
+            } else if (this.charType === 'BEAST_TAMER') {
+                let command = Math.sin(t * 3.2);
+                headY += command * 1.5;
+                leftArmAngle = 1.15 + command * 0.14;
+                rightArmAngle = -0.38 + Math.cos(t * 2.6) * 0.1;
+                leftArmBend = -0.72; rightArmBend = 0.32;
+                leftLegAngle = 0.34; rightLegAngle = -0.3;
+                leftLegBend = -0.34; rightLegBend = 0.34;
+                torsoLean = -0.04 + command * 0.02;
             } else if (this.charType === 'ZOMBIE') {
                 let sway = Math.sin(t * 1.9);
                 headY += 11 + sway * 3; // Slouched
@@ -1826,6 +2141,23 @@ class Fighter {
                 leftLegAngle = 0.28; rightLegAngle = -0.2;
                 leftLegBend = -0.3; rightLegBend = 0.34;
                 torsoLean = -0.06; headY += Math.sin(t * 3) * 1.5;
+            } else if (this.charType === 'BEAST_TAMER') {
+                if (atk.type === 'beastSwitch') {
+                    leftArmAngle = mix(0.8, 2.25, ex); leftArmBend = -0.65;
+                    rightArmAngle = mix(-0.25, 1.4, ex); rightArmBend = 0.35;
+                    leftLegAngle = -0.34; rightLegAngle = 0.38; torsoLean = -0.05;
+                } else if (atk.type === 'beastBruteRush' || atk.type === 'beastBruteUpper' || atk.type === 'beastBruteStomp') {
+                    leftArmAngle = mix(1.25, 1.75, ex); leftArmBend = -0.8; // command staff thrust
+                    rightArmAngle = mix(0.15, 1.25, ex); rightArmBend = 0.15;
+                    leftLegAngle = -0.42; rightLegAngle = mix(0.34, 0.58, ex);
+                    leftLegBend = 0.44; rightLegBend = 0.52; torsoLean = mix(-0.04, 0.18, ex);
+                } else {
+                    // Whip crack / serpent / raven commands: rear-load, then snap the whip forward.
+                    rightArmAngle = mix(2.65, 1.1, ex); rightArmBend = mix(-0.75, -0.08, ex);
+                    leftArmAngle = mix(1.35, 1.65, ex); leftArmBend = -0.65;
+                    leftLegAngle = -0.38; rightLegAngle = mix(0.28, 0.54, ex);
+                    leftLegBend = 0.36; rightLegBend = 0.48; torsoLean = mix(-0.16, 0.2, ex);
+                }
             } else if (this.charType === 'DARK_RULER') {
                 // hoist the greatsword overhead, dark power trembling off the blade
                 let tremor = Math.sin(t * 18) * 0.03;
@@ -1844,6 +2176,14 @@ class Fighter {
                 leftLegAngle = -0.1 + hover * 0.05; rightLegAngle = 0.12 + hover * 0.05;
                 leftLegBend = 0.12; rightLegBend = 0.14;
                 torsoLean = Math.sin(t * 1.5) * 0.03;
+            } else if (this.charType === 'BEAST_TAMER') {
+                let flourish = Math.sin(t * 7);
+                headY += -3 + Math.abs(flourish) * 2;
+                leftArmAngle = 1.95 + flourish * 0.12; leftArmBend = -0.65;
+                rightArmAngle = -1.1 + flourish * 0.25; rightArmBend = 0.35;
+                leftLegAngle = 0.46; rightLegAngle = -0.38;
+                leftLegBend = -0.42; rightLegBend = 0.38;
+                torsoLean = -0.08;
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
@@ -2305,6 +2645,22 @@ class Fighter {
                     leftLegAngle = -0.22; rightLegAngle = 0.22; leftLegBend = 0.3; rightLegBend = 0.3;
                     headY -= 4; torsoLean = -0.04;
                 }
+            } else if (this.charType === 'BEAST_TAMER') {
+                if (dec || u.phase === 'snare') {
+                    leftArmAngle = 1.95; leftArmBend = -0.7;
+                    rightArmAngle = 2.35; rightArmBend = -0.75;
+                    torsoLean = -0.08; headY -= 2;
+                } else if (u.phase === 'alphaWhip') {
+                    let crack = Math.min(1, u.t / 0.32);
+                    rightArmAngle = 2.85 - crack * 1.8; rightArmBend = -0.7 + crack * 0.55;
+                    leftArmAngle = 1.25; leftArmBend = -0.6;
+                    rightLegAngle = 0.58; leftLegAngle = -0.44;
+                    torsoLean = -0.18 + crack * 0.42;
+                } else {
+                    leftArmAngle = 1.7; leftArmBend = -0.75;
+                    rightArmAngle = 1.2; rightArmBend = 0.1;
+                    torsoLean = 0.12; headY -= 1;
+                }
             }
         } else if (this.state === 'LEDGE') {
             // Hanging from a stage lip. dir faces into the stage, so +x (local)
@@ -2354,8 +2710,8 @@ class Fighter {
         // bend: POSITIVE pushes the knee toward the facing dir (forward = natural).
         // The rear (left) leg sits behind the body, the lead (right) leg ahead,
         // giving a staggered fighter stance with both feet under the torso.
-        const rearStance  = { BRAWLER: -0.30, SWORDSMAN: -0.34, MAGE: -0.16, RANGER: -0.26, DARK_RULER: -0.40, TELEPATH: -0.12, ZOMBIE: -0.20 };
-        const leadStance  = { BRAWLER:  0.34, SWORDSMAN:  0.40, MAGE:  0.18, RANGER:  0.30, DARK_RULER:  0.44, TELEPATH:  0.14, ZOMBIE:  0.16 };
+        const rearStance  = { BRAWLER: -0.30, SWORDSMAN: -0.34, MAGE: -0.16, RANGER: -0.26, DARK_RULER: -0.40, TELEPATH: -0.12, BEAST_TAMER: -0.28, ZOMBIE: -0.20 };
+        const leadStance  = { BRAWLER:  0.34, SWORDSMAN:  0.40, MAGE:  0.18, RANGER:  0.30, DARK_RULER:  0.44, TELEPATH:  0.14, BEAST_TAMER: 0.34, ZOMBIE:  0.16 };
         const rearAng = rearStance[this.charType] ?? -0.26;
         const leadAng = leadStance[this.charType] ?? 0.30;
         if (this.state === 'IDLE') {
@@ -2409,7 +2765,7 @@ class Fighter {
         // BELOW them (both bends the same sign, never mirrored), so the arms
         // read as a ready guard instead of a T-pose. The Mage (casting) and
         // Zombie (reaching) keep their own characterful arm poses.
-        const meleeGuard = this.charType === 'BRAWLER' || this.charType === 'SWORDSMAN' || this.charType === 'RANGER' || this.charType === 'DARK_RULER';
+        const meleeGuard = this.charType === 'BRAWLER' || this.charType === 'SWORDSMAN' || this.charType === 'RANGER' || this.charType === 'DARK_RULER' || this.charType === 'BEAST_TAMER';
         if (meleeGuard && (this.state === 'IDLE' || this.state === 'WALK')) {
             // Each fighter carries their arms differently. Hands ride up/forward
             // with elbows bowing below (consistent direction), but the height,
@@ -2439,6 +2795,10 @@ class Fighter {
                 let s = Math.sin(t * 1.9) * 0.05;
                 rightArmAngle = -2.42 + s; rightArmBend = -0.55; // hand by the shoulder, blade up & back
                 leftArmAngle  = 0.7 + s;   leftArmBend  = 0.4;   // off-hand relaxed at the side
+            } else if (this.charType === 'BEAST_TAMER') {
+                let c = Math.sin(t * 3.2) * 0.08;
+                leftArmAngle = 1.32 + c - armSwing * 0.4; leftArmBend = -0.75;
+                rightArmAngle = -0.18 + c + armSwing * 0.25; rightArmBend = 0.38;
             }
         }
 
@@ -2480,6 +2840,8 @@ class Fighter {
         P.tl  += (torsoLean - P.tl) * sm; torsoLean = P.tl;
         P.cd  += (crouchDrop - P.cd) * sm; crouchDrop = P.cd;
         ctx.rotate(torsoLean);
+
+        if (this.charType === 'BEAST_TAMER') this.drawBeastCompanion(ctx);
 
         // --- DRAWING ---
         ctx.beginPath();
@@ -2599,6 +2961,10 @@ class Fighter {
             // faint psychic aura
             ctx.strokeStyle = 'rgba(155,227,255,0.22)'; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(0, headY + 4, 26 + Math.sin(t * 2.4) * 2, 0, Math.PI * 2); ctx.stroke();
+        } else if (this.charType === 'BEAST_TAMER') {
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(-10, headY - 8); ctx.lineTo(10, headY - 8); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(-9, headY - 11); ctx.lineTo(-17, headY - 15); ctx.moveTo(9, headY - 11); ctx.lineTo(17, headY - 15); ctx.stroke();
         } else if (this.charType === 'ZOMBIE') {
             // Missing eye / exposed skull detail
             ctx.fillStyle = '#ff0033';
@@ -2695,6 +3061,19 @@ class Fighter {
             ctx.stroke();
             ctx.lineCap = 'round';
         }
+        function drawWhip(hx, hy, ang) {
+            let dx = Math.cos(ang), dy = Math.sin(ang);
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(hx - dx * 6, hy - dy * 6);
+            ctx.lineTo(hx + dx * 12, hy + dy * 12);
+            ctx.stroke();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(hx + dx * 8, hy + dy * 8);
+            ctx.quadraticCurveTo(hx + dx * 28 + dy * 14, hy + dy * 28 - dx * 14, hx + dx * 56, hy + dy * 30);
+            ctx.stroke();
+        }
 
         if (this.charType === 'TELEPATH') {
             // Telekinetic energy glows at both palms; attacks project psychic constructs.
@@ -2748,6 +3127,11 @@ class Fighter {
             // the gun during gun attacks; otherwise the lead hand slashes the knife.
             drawKnife(rHandX, rHandY, rForeAng);
             drawGun(lHandX, lHandY, lForeAng);
+        } else if (this.charType === 'BEAST_TAMER') {
+            drawWhip(rHandX, rHandY, rForeAng);
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(lHandX, lHandY - 13); ctx.lineTo(lHandX, lHandY + 15); ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(lHandX, lHandY - 15, 3, 0, Math.PI * 2); ctx.fill();
         } else if (this.charType === 'MAGE') {
             // Staff/Wand
             ctx.beginPath();

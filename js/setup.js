@@ -47,14 +47,15 @@ let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
 let suppressRollbackEffects = false;
 
-const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, ZOMBIE: 40 };
+const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, ZOMBIE: 40 };
 const ULT_LINES = {
     BRAWLER: "YOU'RE DEAD",
     SWORDSMAN: "OUTPLAYED.",
     MAGE: "HEY LOSER, CATCH!",
     RANGER: "DON'T BLINK",
     DARK_RULER: "KNEEL.",
-    TELEPATH: "IDIOT"
+    TELEPATH: "IDIOT",
+    BEAST_TAMER: "ALPHA COMMAND."
 };
 
 // Ultimate voice lines (played when an ultimate is activated)
@@ -64,7 +65,8 @@ const ultVoices = {
     MAGE: new Audio('audio/voicelines/mageult.wav'),
     RANGER: new Audio('audio/voicelines/rangerult.wav'),
     DARK_RULER: new Audio('audio/voicelines/darkrulerult.wav'),
-    TELEPATH: new Audio('audio/voicelines/telepathult.wav')
+    TELEPATH: new Audio('audio/voicelines/telepathult.wav'),
+    BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -144,7 +146,11 @@ const attackSfx = {
     ice: makeAudio('audio/sfx/icespell.wav', 0.66, 3),
     lightning: makeAudio('audio/sfx/lightningspell.wav', 0.66, 3),
     block: makeAudio('audio/sfx/block.wav', 0.6, 3),
-    tele: makeAudioSet(['audio/sfx/telehit1.wav', 'audio/sfx/telehit2.wav', 'audio/sfx/telehit3.wav'], 0.7) // Telepath
+    tele: makeAudioSet(['audio/sfx/telehit1.wav', 'audio/sfx/telehit2.wav', 'audio/sfx/telehit3.wav'], 0.7), // Telepath
+    snake: makeAudio('audio/sfx/snake.wav', 0.68, 3),
+    raven: makeAudio('audio/sfx/raven.wav', 0.68, 3),
+    brute: makeAudioSet(['audio/sfx/brute1.wav', 'audio/sfx/brute2.wav'], 0.72),
+    beastSwitch: makeAudio('audio/sfx/switch.wav', 0.66, 3)
 };
 const selectVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawler.wav', 0.92),
@@ -152,7 +158,8 @@ const selectVoices = {
     MAGE: makeAudio('audio/voicelines/mage.wav', 0.92),
     RANGER: makeAudio('audio/voicelines/ranger.wav', 0.92),
     DARK_RULER: makeAudio('audio/voicelines/darkruler.wav', 0.92),
-    TELEPATH: makeAudio('audio/voicelines/telepath.wav', 0.92)
+    TELEPATH: makeAudio('audio/voicelines/telepath.wav', 0.92),
+    BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -160,7 +167,8 @@ const winVoices = {
     MAGE: makeAudio('audio/voicelines/magewin.wav', 0.95),
     RANGER: makeAudio('audio/voicelines/rangerwin.wav', 0.95),
     DARK_RULER: makeAudio('audio/voicelines/darkrulerwin.wav', 0.95),
-    TELEPATH: makeAudio('audio/voicelines/telepathwin.wav', 0.95)
+    TELEPATH: makeAudio('audio/voicelines/telepathwin.wav', 0.95),
+    BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95)
 };
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
@@ -423,6 +431,17 @@ const CHARACTERS = {
             specSide: { startup: 0.16, active: 0.1, recovery: 0.36, dmg: 6, isProj: true, pSpeed: 1150, pLife: 0.5, w: 24, h: 24, oy: -55, kb: {x: -760, y: -150}, stun: 0.5, type: 'mindGrip' }, // Mind Grip (pull)
             specUp: { startup: 0.12, active: 0.22, recovery: 0.3, dmg: 10, w: 72, h: 90, ox: 6, oy: -100, kb: {x: 80, y: -640}, stun: 0.5, type: 'psiLift' }, // Psi Lift (launcher + altitude)
             specDown: { startup: 0.1, active: 0.22, recovery: 0.3, dmg: 12, w: 150, h: 48, ox: 0, oy: -18, kb: {x: 200, y: -240}, stun: 0.45, type: 'teleCrash' } // Telekinetic Crash (dive / sweep)
+        }
+    },
+    BEAST_TAMER: {
+        name: "THE BEAST TAMER", hp: 100, speed: 285, jump: -575, width: 36, height: 90,
+        attacks: {
+            light: { startup: 0.09, active: 0.11, recovery: 0.17, dmg: 5, w: 58, h: 24, ox: 26, oy: -55, kb: {x: 130, y: -70}, stun: 0.25, type: 'whipJab' },
+            heavy: { startup: 0.22, active: 0.16, recovery: 0.3, dmg: 11, w: 84, h: 30, ox: 28, oy: -50, kb: {x: 250, y: -140}, stun: 0.42, type: 'whipCrack' },
+            specNeutral: { startup: 0.1, active: 0.08, recovery: 0.24, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'beastSwitch' },
+            specSide: { startup: 0.14, active: 0.16, recovery: 0.3, dmg: 8, w: 48, h: 30, ox: 24, oy: -50, kb: {x: 220, y: -100}, stun: 0.35, type: 'beastSide' },
+            specUp: { startup: 0.12, active: 0.18, recovery: 0.32, dmg: 8, w: 54, h: 76, ox: 8, oy: -92, kb: {x: 90, y: -520}, stun: 0.38, type: 'beastUp' },
+            specDown: { startup: 0.18, active: 0.18, recovery: 0.34, dmg: 9, w: 90, h: 34, ox: 10, oy: -22, kb: {x: 180, y: -180}, stun: 0.4, type: 'beastDown' }
         }
     },
     ZOMBIE: {
