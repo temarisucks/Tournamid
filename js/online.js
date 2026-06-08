@@ -42,7 +42,9 @@ let onlineState = {
     lastRollbackSize: 0,
     syncTimer: 0,
     syncCorrections: 0,
+    lastUltSyncSig: '',
     rngSeed: 0xC0FFEE,
+    rngBaseSeed: 0xC0FFEE,
     lastInputSent: 0,
     snapshotTimer: 0,
     lastSnapshotAt: 0,
@@ -97,7 +99,9 @@ function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.lastRollbackSize = 0;
     onlineState.syncTimer = 0;
     onlineState.syncCorrections = 0;
+    onlineState.lastUltSyncSig = '';
     onlineState.rngSeed = seed >>> 0;
+    onlineState.rngBaseSeed = seed >>> 0;
     onlineState.lastInputSent = 0;
     onlineState.snapshotTimer = 0;
     onlineState.lastSnapshotAt = 0;
@@ -107,6 +111,7 @@ function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.lastRemoteInputAt = 0;
     onlineState.lastRemoteInputMs = null;
     onlineState.remoteInputStale = false;
+    onlineMarkRemoteTraffic();
     onlineState.localInputs.set(0, onlineBlankInput());
     onlineState.remoteInputs.set(0, onlineBlankInput());
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
@@ -247,19 +252,19 @@ function onlineHandleMessage(event) {
     }
 
     if (msg.type === 'sync') {
+        onlineMarkRemoteTraffic();
         onlineApplyHostSync(msg);
         return;
     }
 
     if (msg.type === 'ult-sync') {
+        onlineMarkRemoteTraffic();
         onlineApplyUltSync(msg);
         return;
     }
 
     if (msg.type === 'input') {
-        onlineState.lastRemoteInputAt = performance.now();
-        onlineState.lastRemoteInputMs = 0;
-        onlineState.remoteInputStale = false;
+        onlineMarkRemoteTraffic();
         let frame = Number(msg.frame);
         if (Number.isFinite(frame)) {
             let input = onlineCloneInput(msg.input);
@@ -481,6 +486,27 @@ function onlineRandom() {
     return onlineState.rngSeed / 4294967296;
 }
 
+function onlineHash32(text) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+}
+
+function onlineDeterministicRandom(label, fighter = null) {
+    if (currentMode !== 'ONLINE') return Math.random();
+    let slot = fighter ? players.indexOf(fighter) : -1;
+    let frame = onlineState.frame || 0;
+    let seed = onlineState.rngBaseSeed >>> 0;
+    let h = onlineHash32(`${seed}|${frame}|${slot}|${label}`);
+    h ^= h << 13; h >>>= 0;
+    h ^= h >>> 17; h >>>= 0;
+    h ^= h << 5; h >>>= 0;
+    return (h >>> 0) / 4294967296;
+}
+
 function onlineMaybeRollback(frame, actualInput) {
     if (onlineState.slot !== 0) return;
     if (onlineInUltimateCinematic()) return;
@@ -506,6 +532,7 @@ function onlineMaybeRollback(frame, actualInput) {
     }
     suppressRollbackEffects = oldSuppress;
     onlineState.frame = targetFrame;
+    if (ultActive && ultActive.ult) onlineSendUltSync(ultActive, 'rollback');
     updateHUD();
 }
 
@@ -623,6 +650,7 @@ function onlineCaptureState() {
         ultCamera: onlineClonePlain(ultCamera),
         overkillFx: onlineClonePlain(overkillFx),
         rngSeed: onlineState.rngSeed,
+        rngBaseSeed: onlineState.rngBaseSeed,
         keys: onlineClonePlain(keys),
         previousKeys: onlineClonePlain(previousKeys),
         players: players.map(onlineCaptureFighter),
@@ -663,12 +691,11 @@ function onlineApplyHostSync(msg) {
         }
     }
 
-    if (frameDrift <= 8 && maxPosDrift < 55 && !hardMismatch) return;
+    if (maxPosDrift < 55 && !hardMismatch) return;
 
     onlineApplyPartialHostSync(state);
-    if (Number.isFinite(hostFrame) && frameDrift > 20) onlineState.frame = hostFrame;
     onlineState.syncCorrections++;
-    onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
+    onlineState.lastRollbackSize = Math.round(maxPosDrift);
     updateHUD();
 }
 
@@ -714,6 +741,9 @@ function onlineApplyPartialHostSync(state) {
 
 function onlineSendUltSync(fighter, event) {
     if (currentMode !== 'ONLINE' || onlineState.slot !== 0 || suppressRollbackEffects) return;
+    let sig = `${event}:${players.indexOf(fighter)}:${fighter && fighter.ult ? fighter.ult.kind : ''}:${fighter && fighter.ult ? fighter.ult.phase : ''}:${fighter && fighter.ult ? fighter.ult.connected : ''}`;
+    if (sig === onlineState.lastUltSyncSig) return;
+    onlineState.lastUltSyncSig = sig;
     onlineSend('ult-sync', {
         event,
         fighterIndex: players.indexOf(fighter),
@@ -726,9 +756,11 @@ function onlineApplyUltSync(msg) {
     if (onlineState.slot !== 1 || !msg || !msg.state || gameState !== 'PLAYING') return;
     let localKeys = onlineClonePlain(keys);
     let localPreviousKeys = onlineClonePlain(previousKeys);
+    let localFrame = onlineState.frame;
+    let localAccumulator = onlineState.accumulator;
     onlineRestoreState({ ...msg.state, keys: localKeys, previousKeys: localPreviousKeys });
-    if (Number.isFinite(msg.frame)) onlineState.frame = msg.frame;
-    onlineState.accumulator = 0;
+    onlineState.frame = localFrame;
+    onlineState.accumulator = localAccumulator;
     onlineState.syncCorrections++;
     updateHUD();
 }
@@ -747,6 +779,7 @@ function onlineRestoreState(state) {
     ultCamera = onlineClonePlain(state.ultCamera);
     overkillFx = onlineClonePlain(state.overkillFx);
     onlineState.rngSeed = state.rngSeed;
+    onlineState.rngBaseSeed = state.rngBaseSeed || onlineState.rngBaseSeed;
     Object.keys(keys).forEach(k => delete keys[k]);
     Object.assign(keys, onlineClonePlain(state.keys || {}));
     Object.keys(previousKeys).forEach(k => delete previousKeys[k]);
@@ -804,6 +837,12 @@ function onlineGuardRemoteInput() {
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
 
+function onlineMarkRemoteTraffic() {
+    onlineState.lastRemoteInputAt = performance.now();
+    onlineState.lastRemoteInputMs = 0;
+    onlineState.remoteInputStale = false;
+}
+
 function onlineUpdateNetHud() {
     let panel = document.getElementById('online-net-panel');
     if (!panel) return;
@@ -814,8 +853,8 @@ function onlineUpdateNetHud() {
     let ageEl = document.getElementById('online-net-age');
     let rbEl = document.getElementById('online-net-rollback');
     if (pingEl) pingEl.innerText = ping == null ? 'PING --' : `PING ${ping}`;
-    if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : `INPUT ${age}`;
-    if (rbEl) rbEl.innerText = onlineState.syncCorrections ? `SYNC ${onlineState.syncCorrections}` : `RB ${onlineState.lastRollbackSize}`;
+    if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : age > ONLINE_REMOTE_STALE_MS ? `STALE ${age}` : `INPUT ${age}`;
+    if (rbEl) rbEl.innerText = onlineState.syncCorrections ? `SYNC ${onlineState.lastRollbackSize}` : `RB ${onlineState.lastRollbackSize}`;
     let level = 'good';
     if ((ping != null && ping > 130) || (age != null && age > 120)) level = 'warn';
     if ((ping != null && ping > 220) || (age != null && age > ONLINE_REMOTE_STALE_MS)) level = 'bad';
@@ -850,7 +889,9 @@ function onlineDisconnect() {
         lastRollbackSize: 0,
         syncTimer: 0,
         syncCorrections: 0,
+        lastUltSyncSig: '',
         rngSeed: 0xC0FFEE,
+        rngBaseSeed: 0xC0FFEE,
         lastInputSent: 0,
         snapshotTimer: 0,
         lastSnapshotAt: 0,
