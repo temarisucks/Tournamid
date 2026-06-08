@@ -11,6 +11,10 @@ const ONLINE_REMOTE_BINDINGS = {
 };
 
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
+const ONLINE_INPUT_RATE = 1 / 60;
+const ONLINE_SNAPSHOT_RATE = 1 / 20;
+const ONLINE_PING_RATE = 1.0;
+const ONLINE_REMOTE_STALE_MS = 240;
 let onlineState = {
     active: false,
     socket: null,
@@ -24,6 +28,13 @@ let onlineState = {
     lastInputSent: 0,
     snapshotTimer: 0,
     lastSnapshotAt: 0,
+    pingTimer: 0,
+    pingSeq: 0,
+    pendingPings: {},
+    pingMs: null,
+    lastRemoteInputAt: 0,
+    lastRemoteInputMs: null,
+    remoteInputStale: false,
     status: ''
 };
 
@@ -37,6 +48,19 @@ function onlineSetStatus(text) {
     onlineState.status = text;
     let el = document.getElementById('online-status');
     if (el) el.innerText = text;
+}
+
+function onlineResetRuntimeStats() {
+    onlineState.lastInputSent = 0;
+    onlineState.snapshotTimer = 0;
+    onlineState.lastSnapshotAt = 0;
+    onlineState.pingTimer = 0;
+    onlineState.pendingPings = {};
+    onlineState.pingMs = null;
+    onlineState.lastRemoteInputAt = 0;
+    onlineState.lastRemoteInputMs = null;
+    onlineState.remoteInputStale = false;
+    ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
 
 function onlineGetUrl() {
@@ -124,6 +148,7 @@ function onlineHandleMessage(event) {
         onlineState.peerConnected = msg.type === 'joined';
         onlineState.localSelection = null;
         onlineState.remoteSelection = null;
+        onlineResetRuntimeStats();
         onlineSetStatus(msg.type === 'created'
             ? `Room ${msg.code}. Send this code to your friend.`
             : `Joined room ${msg.code}.`);
@@ -142,6 +167,7 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'peer-left') {
         onlineState.peerConnected = false;
+        onlineResetRuntimeStats();
         onlineSetStatus('Friend left the room.');
         return;
     }
@@ -166,12 +192,21 @@ function onlineHandleMessage(event) {
         selectedStage = msg.stageId || selectedStage;
         p1Selection = msg.p1Selection || p1Selection;
         p2Selection = msg.p2Selection || p2Selection;
+        onlineResetRuntimeStats();
         startGame();
         return;
     }
 
     if (msg.type === 'input') {
+        onlineState.lastRemoteInputAt = performance.now();
+        onlineState.lastRemoteInputMs = 0;
+        onlineState.remoteInputStale = false;
         onlineApplyRemoteInput(msg.input || {});
+        return;
+    }
+
+    if (msg.type === 'ping-game') {
+        onlineHandlePing(msg);
         return;
     }
 
@@ -262,6 +297,7 @@ function onlineSelectStage(stageId) {
 
 function onlineStartGame() {
     if (onlineState.slot !== 0) return false;
+    onlineResetRuntimeStats();
     onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection });
     return true;
 }
@@ -286,18 +322,70 @@ function onlineApplyRemoteInput(input) {
 function onlineTick(dt) {
     if (currentMode !== 'ONLINE' || gameState !== 'PLAYING') return;
     onlineState.lastInputSent += dt;
-    if (onlineState.lastInputSent >= 1 / 30) {
+    if (onlineState.lastInputSent >= ONLINE_INPUT_RATE) {
         onlineState.lastInputSent = 0;
         onlineSend('input', { input: onlineReadLocalInput() });
     }
 
     if (onlineState.slot === 0) {
         onlineState.snapshotTimer += dt;
-        if (onlineState.snapshotTimer >= 1 / 10) {
+        if (onlineState.snapshotTimer >= ONLINE_SNAPSHOT_RATE) {
             onlineState.snapshotTimer = 0;
             onlineSend('snapshot', { snapshot: onlineSnapshot() });
         }
     }
+
+    onlineState.pingTimer += dt;
+    if (onlineState.pingTimer >= ONLINE_PING_RATE) {
+        onlineState.pingTimer = 0;
+        onlineSendPing();
+    }
+
+    onlineGuardRemoteInput();
+    onlineUpdateNetHud();
+}
+
+function onlineSendPing() {
+    const id = ++onlineState.pingSeq;
+    onlineState.pendingPings[id] = performance.now();
+    onlineSend('ping-game', { mode: 'ping', id });
+}
+
+function onlineHandlePing(msg) {
+    if (msg.mode === 'ping') {
+        onlineSend('ping-game', { mode: 'pong', id: msg.id });
+        return;
+    }
+    if (msg.mode !== 'pong') return;
+    let startedAt = onlineState.pendingPings[msg.id];
+    if (!startedAt) return;
+    delete onlineState.pendingPings[msg.id];
+    let sample = performance.now() - startedAt;
+    onlineState.pingMs = onlineState.pingMs == null ? sample : onlineState.pingMs * 0.75 + sample * 0.25;
+}
+
+function onlineGuardRemoteInput() {
+    if (!onlineState.lastRemoteInputAt) return;
+    onlineState.lastRemoteInputMs = performance.now() - onlineState.lastRemoteInputAt;
+    if (onlineState.lastRemoteInputMs < ONLINE_REMOTE_STALE_MS || onlineState.remoteInputStale) return;
+    onlineState.remoteInputStale = true;
+    ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
+}
+
+function onlineUpdateNetHud() {
+    let panel = document.getElementById('online-net-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden', 'good', 'warn', 'bad');
+    let ping = onlineState.pingMs == null ? null : Math.round(onlineState.pingMs);
+    let age = onlineState.lastRemoteInputMs == null ? null : Math.round(onlineState.lastRemoteInputMs);
+    let pingEl = document.getElementById('online-net-ping');
+    let ageEl = document.getElementById('online-net-age');
+    if (pingEl) pingEl.innerText = ping == null ? 'PING --' : `PING ${ping}`;
+    if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : `INPUT ${age}`;
+    let level = 'good';
+    if ((ping != null && ping > 130) || (age != null && age > 120)) level = 'warn';
+    if ((ping != null && ping > 220) || (age != null && age > ONLINE_REMOTE_STALE_MS)) level = 'bad';
+    panel.classList.add(level);
 }
 
 function onlineSnapshot() {
@@ -363,7 +451,16 @@ function onlineDisconnect() {
         lastInputSent: 0,
         snapshotTimer: 0,
         lastSnapshotAt: 0,
+        pingTimer: 0,
+        pingSeq: 0,
+        pendingPings: {},
+        pingMs: null,
+        lastRemoteInputAt: 0,
+        lastRemoteInputMs: null,
+        remoteInputStale: false,
         status: ''
     };
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
+    let panel = document.getElementById('online-net-panel');
+    if (panel) panel.classList.add('hidden');
 }
