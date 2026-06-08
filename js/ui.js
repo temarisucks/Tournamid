@@ -478,6 +478,8 @@ function startGame() {
     bloodStains = [];
     bodyParts = [];
     overkillFx = null;
+    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
+    camNow.x = WIDTH / 2; camNow.y = HEIGHT / 2; camNow.zoom = 1;
     initStageActors(); // animated background figures for the chosen stage
 
     trainingMode = (currentMode === 'TRAINING');
@@ -596,6 +598,9 @@ function startLadderBattle(index) {
     document.getElementById('hud').classList.remove('hidden');
     players = []; hitboxes = []; projectiles = []; particles = []; bloodStains = []; bodyParts = [];
     overkillFx = null;
+    // start clean: no lingering ult slow-mo / zoom from the previous fight
+    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
+    camNow.x = WIDTH / 2; camNow.y = HEIGHT / 2; camNow.zoom = 1;
     selectedStage = ['dojo', 'moonBridge', 'platform', 'pStreet', 'bloodBall'][Math.floor(Math.random() * 5)];
     initStageActors();
     trainingMode = false; infiniteMeter = false;

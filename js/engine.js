@@ -268,6 +268,14 @@ function endGame(title, subtitle) {
     document.getElementById('end-subtitle').innerText = subtitle;
     let gear = document.getElementById('settings-btn'); if (gear) gear.classList.remove('hidden');
 
+    // The match is over — tear down any in-progress ultimate cinematic. updateUlt
+    // (which would normally call endUlt) stops running once gameState is END, so
+    // without this ultActive/ultCamera linger and the view stays zoomed + in slow-mo.
+    ultActive = null;
+    ultCamera = null;
+    ultBanner = null;
+    players.forEach(p => { if (p) p.ult = null; }); // timeScale eases back now that ultActive is null
+
     // Work out the winner and let them play a victory animation before the menu shows.
     let winnerIdx = roundWins[0] > roundWins[1] ? 0
                   : roundWins[1] > roundWins[0] ? 1
