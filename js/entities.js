@@ -113,11 +113,18 @@ class Projectile {
         this.w = w; this.h = h; this.damage = damage; 
         this.knockback = knockback; this.stun = stun;
         this.owner = owner; this.lifeTime = lifeTime;
+        this.ownerId = owner ? owner.id : null;
+        this.ownerTeam = owner ? owner.team : null;
+        this.ownerCharType = owner ? owner.charType : null;
         this.active = true;
         this.hasHit = new Set();
         this.customLogic = customLogic;
     }
     update(dt) {
+        if (!this.owner) {
+            this.active = false;
+            return;
+        }
         // Homing wisp: steer velocity toward the nearest enemy
         if (this.homing) {
             let tgt = null, best = Infinity;
@@ -299,7 +306,7 @@ class Projectile {
             ctx.globalAlpha = 0.8; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
             ctx.rotate(now * 3); ctx.scale(1, 0.4);
             ctx.beginPath(); ctx.arc(0, 0, r * 1.35, 0, Math.PI * 2); ctx.stroke();
-        } else if (this.owner.charType === 'MAGE') {
+        } else if ((this.owner ? this.owner.charType : this.ownerCharType) === 'MAGE') {
             // Basic arcane sigil: glowing ringed orb with a spinning rune
             ctx.translate(cx, cy);
             ctx.fillStyle = 'rgba(201,139,255,0.65)'; ctx.strokeStyle = '#dcb6ff';
@@ -653,6 +660,9 @@ class Fighter {
         proj.vx = -proj.vx * 1.5; // hurl it back, faster
         proj.vy = -proj.vy * 0.4;
         proj.owner = this;        // now it's hers — it strikes the original caster
+        proj.ownerId = this.id;
+        proj.ownerTeam = this.team;
+        proj.ownerCharType = this.charType;
         proj.hasHit = new Set();
         proj.damage = Math.round(proj.damage * 1.6) + 2;
         proj.reflected = true;
@@ -1484,6 +1494,9 @@ class Fighter {
         }
 
         let proj = new Projectile(px, py, vx, vy, w, h, dmg * dmgMod, {x: atk.kb.x * this.dir, y: atk.kb.y}, atk.stun, this, life, logic);
+        proj.ownerId = this.id;
+        proj.ownerTeam = this.team;
+        proj.ownerCharType = this.charType;
         proj.subtype = subtype; proj.slow = slow; proj.explode = explode; proj.homing = homing; proj.pierce = pierce;
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
         projectiles.push(proj);

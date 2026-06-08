@@ -77,7 +77,10 @@ function splitLogic(self, dt) {
 function checkCollisions() {
     // Hitboxes vs Players
     for (let h of hitboxes) {
-        if (!h.active) continue;
+        if (!h.active || !h.owner) {
+            if (!h.owner) h.active = false;
+            continue;
+        }
         for (let p of players) {
             if (p !== h.owner && p.team !== h.owner.team && p.state !== 'DEAD' && !h.hasHit.has(p.id)) {
                 // AABB Collision
@@ -102,7 +105,10 @@ function checkCollisions() {
 
     // Projectiles vs Players
     for (let proj of projectiles) {
-        if (!proj.active) continue;
+        if (!proj.active || !proj.owner) {
+            if (!proj.owner) proj.active = false;
+            continue;
+        }
         for (let p of players) {
             if (p !== proj.owner && p.team !== proj.owner.team && p.state !== 'DEAD' && !proj.hasHit.has(p.id)) {
                 let px = p.x - p.width/2;
@@ -128,8 +134,9 @@ function checkCollisions() {
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby
                         let bx = proj.x + proj.w/2, by = proj.y + proj.h/2;
+                        let ownerDir = proj.owner ? proj.owner.dir : Math.sign(proj.vx || 1);
                         hitboxes.push(new Hitbox(bx - 45, by - 45, 90, 90, proj.damage * 0.6,
-                            {x: 220 * Math.sign(proj.vx || proj.owner.dir), y: -260}, 0.35, proj.owner, 0.1));
+                            {x: 220 * Math.sign(proj.vx || ownerDir || 1), y: -260}, 0.35, proj.owner, 0.1));
                         spawnParticles(bx, by, 18, '#ff5a2a');
                     }
 

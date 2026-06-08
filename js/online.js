@@ -555,6 +555,23 @@ function onlineFighterIndex(fighter) {
     return players.indexOf(fighter);
 }
 
+function onlineResolveFighter(index, id, team, charType) {
+    if (index >= 0 && players[index]) return players[index];
+    if (id != null) {
+        let byId = players.find(p => p && p.id === id);
+        if (byId) return byId;
+    }
+    if (team != null && charType) {
+        let byType = players.find(p => p && p.team === team && p.charType === charType);
+        if (byType) return byType;
+    }
+    if (team != null) {
+        let byTeam = players.find(p => p && p.team === team);
+        if (byTeam) return byTeam;
+    }
+    return null;
+}
+
 function onlineCloneWithoutRefs(value, blockedKeys) {
     let out = {};
     Object.keys(value || {}).forEach(k => {
@@ -592,7 +609,12 @@ function onlineRestoreFighter(data) {
 function onlineCaptureHitbox(h) {
     let out = {};
     Object.keys(h).forEach(k => {
-        if (k === 'owner') out.ownerIndex = onlineFighterIndex(h.owner);
+        if (k === 'owner') {
+            out.ownerIndex = onlineFighterIndex(h.owner);
+            out.ownerId = h.owner ? h.owner.id : h.ownerId;
+            out.ownerTeam = h.owner ? h.owner.team : h.ownerTeam;
+            out.ownerCharType = h.owner ? h.owner.charType : h.ownerCharType;
+        }
         else if (k === 'grabThrow') out.grabThrowIndex = onlineFighterIndex(h.grabThrow);
         else if (k === 'ultActivator') out.ultActivatorIndex = onlineFighterIndex(h.ultActivator);
         else if (k === 'hasHit') out.hasHit = Array.from(h.hasHit || []);
@@ -604,17 +626,23 @@ function onlineCaptureHitbox(h) {
 function onlineRestoreHitbox(data) {
     let h = Object.create(Hitbox.prototype);
     Object.assign(h, onlineClonePlain(data));
-    h.owner = players[data.ownerIndex] || null;
+    h.owner = onlineResolveFighter(data.ownerIndex, data.ownerId, data.ownerTeam, data.ownerCharType);
     h.grabThrow = players[data.grabThrowIndex] || null;
     h.ultActivator = players[data.ultActivatorIndex] || null;
     h.hasHit = new Set(data.hasHit || []);
+    if (!h.owner) h.active = false;
     return h;
 }
 
 function onlineCaptureProjectile(p) {
     let out = {};
     Object.keys(p).forEach(k => {
-        if (k === 'owner') out.ownerIndex = onlineFighterIndex(p.owner);
+        if (k === 'owner') {
+            out.ownerIndex = onlineFighterIndex(p.owner);
+            out.ownerId = p.owner ? p.owner.id : p.ownerId;
+            out.ownerTeam = p.owner ? p.owner.team : p.ownerTeam;
+            out.ownerCharType = p.owner ? p.owner.charType : p.ownerCharType;
+        }
         else if (k === 'ultActivator') out.ultActivatorIndex = onlineFighterIndex(p.ultActivator);
         else if (k === 'hasHit') out.hasHit = Array.from(p.hasHit || []);
         else if (k === 'customLogic') out.customLogicName = p.customLogic === splitLogic ? 'splitLogic' : null;
@@ -626,10 +654,14 @@ function onlineCaptureProjectile(p) {
 function onlineRestoreProjectile(data) {
     let p = Object.create(Projectile.prototype);
     Object.assign(p, onlineClonePlain(data));
-    p.owner = players[data.ownerIndex] || null;
+    p.owner = onlineResolveFighter(data.ownerIndex, data.ownerId, data.ownerTeam, data.ownerCharType);
+    p.ownerId = p.owner ? p.owner.id : data.ownerId;
+    p.ownerTeam = p.owner ? p.owner.team : data.ownerTeam;
+    p.ownerCharType = p.owner ? p.owner.charType : data.ownerCharType;
     p.ultActivator = players[data.ultActivatorIndex] || null;
     p.hasHit = new Set(data.hasHit || []);
     p.customLogic = data.customLogicName === 'splitLogic' ? splitLogic : null;
+    if (!p.owner) p.active = false;
     return p;
 }
 
