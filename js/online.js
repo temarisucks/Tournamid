@@ -517,7 +517,9 @@ function onlineDeterministicRandom(label, fighter = null) {
 }
 
 function onlineMaybeRollback(frame, actualInput) {
-    if (onlineState.slot !== 0) return;
+    // Both peers now roll back (previously only the host did, which left the
+    // joiner mispredicting the host every frame and only coarse-correcting via the
+    // 0.25s blend-sync — the root cause of constant desync / rubber-banding).
     if (onlineInUltimateCinematic()) return;
     if (frame >= onlineState.frame) return;
     if (onlineState.frame - frame > ONLINE_MAX_ROLLBACK_FRAMES) return;
@@ -696,10 +698,11 @@ function onlineCaptureState() {
         previousKeys: onlineClonePlain(previousKeys),
         players: players.map(onlineCaptureFighter),
         hitboxes: hitboxes.map(onlineCaptureHitbox),
-        projectiles: projectiles.map(onlineCaptureProjectile),
-        particles: particles.map(p => onlineClonePlain(p)),
-        bloodStains: bloodStains.map(onlineClonePlain),
-        bodyParts: bodyParts.map(p => onlineClonePlain(p))
+        projectiles: projectiles.map(onlineCaptureProjectile)
+        // NOTE: particles / bloodStains / bodyParts are purely cosmetic and are
+        // deliberately NOT captured or synced — cloning them every frame (and
+        // shipping them 4x/sec) was the main source of CPU + network lag. They're
+        // already suppressed during rollback replays, so they never desync gameplay.
     };
 }
 
@@ -828,9 +831,8 @@ function onlineRestoreState(state) {
     players = state.players.map(onlineRestoreFighter);
     projectiles = state.projectiles.map(onlineRestoreProjectile);
     hitboxes = state.hitboxes.map(onlineRestoreHitbox);
-    particles = state.particles.map(p => Object.assign(Object.create(Particle.prototype), onlineClonePlain(p)));
-    bloodStains = state.bloodStains.map(onlineClonePlain);
-    bodyParts = state.bodyParts.map(p => Object.assign(Object.create(BodyPart.prototype), onlineClonePlain(p)));
+    // Cosmetics (particles/bloodStains/bodyParts) are intentionally left untouched —
+    // they aren't part of the synced snapshot and keep animating locally.
     players.forEach(p => {
         if (p.throwHold && p.throwHold.targetIndex >= 0) p.throwHold.target = players[p.throwHold.targetIndex];
         if (p.ult) {

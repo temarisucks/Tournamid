@@ -750,6 +750,15 @@ class Fighter {
     updateUlt(dt) {
         let u = this.ult;
         if (!u) { this.changeState('IDLE'); return; }
+        // Crash guard: after an online ult-sync the players array is rebuilt and
+        // u.target is re-linked by index. If that link fails (trimmed projectile,
+        // length mismatch) the payoff phases would deref a null target and crash.
+        // Any connected payoff phase without a live target simply ends the ult.
+        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice'];
+        if (PAYOFF_PHASES.includes(u.phase) && (!u.target || u.target.state === 'DEAD')) {
+            this.endUlt();
+            return;
+        }
         u.t += dt;
         this.vx = 0;
         // keep grounded unless a phase repositions us
