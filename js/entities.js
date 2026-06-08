@@ -1383,7 +1383,7 @@ class Fighter {
             } else if (atk.isProj) {
                 this.spawnProjectile(atk, dmgMod);
                 // Mage passive Wild Magic: chance for a bonus projectile
-                if (this.charType === 'MAGE' && onlineDeterministicRandom('mageWildBonus', this) < 0.2) {
+                if (this.charType === 'MAGE' && onlineEventRandom('mageWildBonus', this) < 0.2) {
                     if (currentMode === 'ONLINE') this.spawnProjectile(atk, dmgMod, true);
                     else setTimeout(() => { if (this.state !== 'DEAD') this.spawnProjectile(atk, dmgMod, true); }, 90);
                 }
@@ -1411,7 +1411,7 @@ class Fighter {
         spawnParticles(oldX, oldY - 40, 12, '#fff');
         spawnParticles(this.x, this.y - 40, 12, '#fff');
         playAudio(attackSfx.magic);
-        let r = onlineDeterministicRandom('mageBlinkKicker', this);
+        let r = onlineEventRandom('mageBlinkKicker', this);
         if (r < 0.4) {
             this.spawnRune(oldX, GROUND_Y - 20, 10, 'explosive'); // leave a parting gift
         } else if (r < 0.75) {
@@ -1426,7 +1426,7 @@ class Fighter {
     // Mage Side: a random horizontal spell each cast
     castArcaneRoulette(dmgMod) {
         let baseY = this.y - 55;
-        let pick = Math.floor(onlineDeterministicRandom('mageRoulette', this) * 4);
+        let pick = Math.floor(onlineEventRandom('mageRoulette', this) * 4);
         if (pick === 0) { // Arcane frost wave
             playAudio(attackSfx.ice);
             let p = new Projectile(this.x + this.dir*20, baseY - 8, 330*this.dir, 0, 46, 46, 10*dmgMod, {x:200*this.dir, y:-60}, 0.35, this, 1.4, null);
@@ -1453,7 +1453,7 @@ class Fighter {
     // Mage Down: plant a ground rune (random type, or a forced type from Blink)
     spawnRune(x, y, dmg, forced) {
         let types = ['explosive', 'slow', 'launch', 'manaFont'];
-        let rt = forced || types[Math.floor(onlineDeterministicRandom('mageRuneType', this) * types.length)];
+        let rt = forced || types[Math.floor(onlineEventRandom('mageRuneType', this) * types.length)];
         let p = new Projectile(x, GROUND_Y - 20, 0, 0, 40, 20, dmg, {x: 100 * this.dir, y: -300}, 0.5, this, 6.0, null);
         p.subtype = 'rune'; p.runeType = rt;
         if (rt === 'slow') p.slow = 2.0;
@@ -1466,7 +1466,7 @@ class Fighter {
 
     spawnProjectile(atk, dmgMod = 1.0, isBonus = false) {
         let px = this.x + (this.dir === 1 ? 20 : -20 - atk.w);
-        let py = this.y + atk.oy + (isBonus ? (onlineDeterministicRandom('mageBonusProjectileY', this)*40-20) : 0);
+        let py = this.y + atk.oy + (isBonus ? (onlineEventRandom('mageBonusProjectileY', this)*40-20) : 0);
         let vx = (atk.pSpeed || 0) * this.dir;
         let vy = 0;
         let w = atk.w, h = atk.h, dmg = atk.dmg, life = atk.pLife, logic = null;
@@ -1474,7 +1474,7 @@ class Fighter {
 
         if (atk.type === 'chaosBolt') {
             // Wild RNG: each cast rolls a different element / behaviour
-            let roll = Math.floor(onlineDeterministicRandom('mageChaosBolt', this) * 5);
+            let roll = Math.floor(onlineEventRandom('mageChaosBolt', this) * 5);
             if (roll === 0)      { subtype = 'fire';  explode = true; vy = -260; vx *= 0.8; w = 22; h = 22; dmg = 11; } // arcing bomb
             else if (roll === 1) { subtype = 'spark'; vx *= 1.9; w = 16; h = 16; dmg = 6; }                              // fast bolt
             else if (roll === 2) { subtype = 'frost'; slow = 2.0; vx *= 0.9; dmg = 7; }                                  // chilling

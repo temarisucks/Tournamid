@@ -512,16 +512,28 @@ function onlineHash32(text) {
     return h >>> 0;
 }
 
-function onlineDeterministicRandom(label, fighter = null) {
+function onlineDeterministicRandom(label, fighter = null, tick = null) {
     if (currentMode !== 'ONLINE') return Math.random();
     let slot = fighter ? players.indexOf(fighter) : -1;
-    let frame = onlineState.frame || 0;
+    let t = tick != null ? tick : (onlineState.frame || 0);
     let seed = onlineState.rngBaseSeed >>> 0;
-    let h = onlineHash32(`${seed}|${frame}|${slot}|${label}`);
+    let h = onlineHash32(`${seed}|${t}|${slot}|${label}`);
     h ^= h << 13; h >>>= 0;
     h ^= h >>> 17; h >>>= 0;
     h ^= h << 5; h >>>= 0;
     return (h >>> 0) / 4294967296;
+}
+
+// Deterministic roll for a DISCRETE, input-driven event (e.g. a spell outcome).
+// Keyed on a per-fighter monotonic counter instead of the free-running frame, so
+// the host and guest agree even when the same cast is simulated on different
+// absolute frames (high ping / a rollback that exceeded ONLINE_MAX_ROLLBACK_FRAMES
+// and got skipped). `_rngSeq` is an ordinary fighter field, so it is captured and
+// restored with the snapshot and replays deterministically during rollback.
+function onlineEventRandom(label, fighter) {
+    if (currentMode !== 'ONLINE') return Math.random();
+    let seq = fighter ? (fighter._rngSeq = ((fighter._rngSeq | 0) + 1)) : 0;
+    return onlineDeterministicRandom(label, fighter, seq);
 }
 
 function onlineMaybeRollback(frame, actualInput) {
@@ -826,6 +838,13 @@ function onlineApplyUltSync(msg) {
     onlineRestoreState({ ...msg.state, keys: localKeys, previousKeys: localPreviousKeys });
     onlineState.frame = localFrame;
     onlineState.accumulator = localAccumulator;
+    // The guest never runs startUltimate locally (tryUltimate is host-authoritative),
+    // so the cinematic voice/whoosh would otherwise be silent on this side. Fire it
+    // here on the 'start' event (deduped host-side, so it arrives exactly once).
+    if (msg.event === 'start') {
+        let f = players[msg.fighterIndex];
+        if (f) { playUltVoice(f.charType); try { sfx.playDeath(); } catch (e) {} }
+    }
     onlineState.syncCorrections++;
     updateHUD();
 }
