@@ -551,14 +551,25 @@ function onlineInUltimateCinematic() {
     return !!(ultActive || players.some(p => p && (p.state === 'ULT' || p.ult)) || timeScale < 0.95);
 }
 
-function onlineClonePlain(value) {
+function onlineClonePlain(value, seen) {
     if (value == null || typeof value !== 'object') return value;
-    if (Array.isArray(value)) return value.map(onlineClonePlain);
     if (value instanceof Set) return Array.from(value);
-    let out = {};
-    Object.keys(value).forEach(k => {
-        if (typeof value[k] !== 'function') out[k] = onlineClonePlain(value[k]);
-    });
+    // Path-based cycle guard: if `value` is an ancestor of itself we'd recurse
+    // forever (e.g. a stray Fighter ref whose graph mutually links back). Return
+    // null on a back-edge instead of overflowing the stack and freezing the loop.
+    if (!seen) seen = new Set();
+    if (seen.has(value)) return null;
+    seen.add(value);
+    let out;
+    if (Array.isArray(value)) {
+        out = value.map(v => onlineClonePlain(v, seen));
+    } else {
+        out = {};
+        Object.keys(value).forEach(k => {
+            if (typeof value[k] !== 'function') out[k] = onlineClonePlain(value[k], seen);
+        });
+    }
+    seen.delete(value);
     return out;
 }
 
@@ -689,7 +700,9 @@ function onlineCaptureState() {
         infiniteMeter,
         timeScale,
         ultActiveIndex: onlineFighterIndex(ultActive),
-        ultBanner: onlineClonePlain(ultBanner),
+        // ultBanner holds a live Fighter in `owner` — strip it to an index so the
+        // generic clone never walks the (mutually-referential) fighter graph.
+        ultBanner: ultBanner ? { ...onlineCloneWithoutRefs(ultBanner, ['owner']), ownerIndex: onlineFighterIndex(ultBanner.owner) } : null,
         ultCamera: onlineClonePlain(ultCamera),
         overkillFx: onlineClonePlain(overkillFx),
         rngSeed: onlineState.rngSeed,
@@ -840,6 +853,8 @@ function onlineRestoreState(state) {
             if (p.ult.projIndex >= 0) p.ult.proj = projectiles[p.ult.projIndex];
         }
     });
+    // Relink the banner's owner Fighter from its captured index (stripped on capture).
+    if (ultBanner && state.ultBanner) ultBanner.owner = players[state.ultBanner.ownerIndex] || null;
     ultActive = players[state.ultActiveIndex] || null;
     if (document.getElementById('timer')) document.getElementById('timer').innerText = matchTimer;
     renderRoundPips();
