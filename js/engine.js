@@ -125,7 +125,7 @@ function checkCollisions() {
                     }
                     proj.hasHit.add(p.id);
                     let landed = p.takeDamage(proj.damage, proj.knockback, proj.stun, proj.owner,
-                        { unblockable: proj.unblockable, isUlt: !!proj.ultActivator });
+                        { unblockable: proj.unblockable, isUlt: !!proj.ultActivator || !!proj.isUltDamage });
 
                     // Ultimate activation projectile (Mage orb / Ranger bomb) connected
                     if (proj.ultActivator) {

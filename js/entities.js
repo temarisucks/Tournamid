@@ -826,6 +826,7 @@ class Fighter {
                 let p = new Projectile(this.x + this.dir * 30, GROUND_Y - 210, 950 * this.dir, 0,
                     72, 210, 40, { x: 620 * this.dir, y: -280 }, 0.7, this, 1.8, null);
                 p.subtype = 'giantslash'; p.pierce = true; p.unblockable = true;
+                p.isUltDamage = true; // its kills count as ultimate kills (overkill), without the connect/despawn of ultActivator
                 projectiles.push(p);
                 sfx.playDeath(); playAudio(attackSfx.sword);
                 spawnParticles(this.x + this.dir * 40, GROUND_Y - 90, 24, '#111');
