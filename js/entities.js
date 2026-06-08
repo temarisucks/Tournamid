@@ -18,7 +18,7 @@ class Particle {
             this.y = GROUND_Y;
             this.life = 0; // kill particle
             // Create a permanent stain
-            if (bloodStains.length < 500) {
+            if (settings.blood && bloodStains.length < 500) {
                 bloodStains.push({ x: this.x, y: this.y + (Math.random()*4-2), size: this.size * (Math.random()+1) });
             }
         }
@@ -375,6 +375,9 @@ class Fighter {
 
         // Status effects / special-move state
         this.slowTimer = 0;     // movement slowed (Frost / tar runes)
+        this.slowFactor = 1;
+        this.burnTimer = 0;
+        this.burnTickTimer = 0;
         this.invulnTimer = 0;   // dodge i-frames (Combat Roll / Blink)
         this.manaFontTimer = 0; // Mage: next spell empowered
         this.specialDone = false; // one-shot trigger guard for blink/roll/etc
@@ -382,6 +385,9 @@ class Fighter {
         this.beastSwapFlash = 0;
         this.beastMarkedTimer = 0;
         this.beastAnimTimer = 0;
+        this.beastRavenGlideTimer = 0;
+        this.beastRavenDiveTimer = 0;
+        this.beastSnakeSwingTimer = 0;
 
         // Ledge grab (ring-out stages)
         this.ledge = null;       // {x, top, side} of the lip being gripped
@@ -417,10 +423,31 @@ class Fighter {
         if (this.comboTimer <= 0) this.comboCount = 0;
         if (this.parryBuffTimer > 0) this.parryBuffTimer -= dt;
         if (this.slowTimer > 0) this.slowTimer -= dt;
+        else this.slowFactor = 1;
+        if (this.burnTimer > 0) {
+            this.burnTimer -= dt;
+            this.burnTickTimer -= dt;
+            if (this.burnTickTimer <= 0) {
+                this.burnTickTimer = 0.55;
+                this.hp = Math.max(0, this.hp - 1);
+                spawnParticles(this.x, this.y - 48, 4, '#ff5a2a');
+                updateHUD();
+                if (this.hp <= 0 && !this.isDummy) {
+                    this.changeState('DEAD');
+                    sfx.playDeath();
+                    checkWinCondition();
+                    return;
+                }
+                if (this.isDummy) this.hp = this.maxHp;
+            }
+        }
         if (this.invulnTimer > 0) this.invulnTimer -= dt;
         if (this.manaFontTimer > 0) this.manaFontTimer -= dt;
         if (this.beastSwapFlash > 0) this.beastSwapFlash -= dt;
         if (this.beastMarkedTimer > 0) this.beastMarkedTimer -= dt;
+        if (this.beastRavenGlideTimer > 0) this.beastRavenGlideTimer -= dt;
+        if (this.beastRavenDiveTimer > 0) this.beastRavenDiveTimer -= dt;
+        if (this.beastSnakeSwingTimer > 0) this.beastSnakeSwingTimer -= dt;
         if (this.regrabTimer > 0) this.regrabTimer -= dt;
 
         // Guard slowly regenerates while not actively blocking
@@ -454,6 +481,14 @@ class Fighter {
             else fastFall = this.aiFastFall; // AI may choose to dive
             if (fastFall) this.vy = Math.max(this.vy, 520);  // dive
             else this.vy = Math.min(this.vy, 75);            // gentle glide to the ground
+        }
+        if (this.charType === 'BEAST_TAMER' && this.beastRavenGlideTimer > 0 && this.y < GROUND_Y && this.vy > 0 &&
+            this.state !== 'HITSTUN' && this.state !== 'DEAD' && this.state !== 'BLOCKBREAK') {
+            let fastFall = false;
+            if (!this.isAI) { let c = this.playerControls(); fastFall = keys[c.d]; }
+            else fastFall = this.aiFastFall;
+            if (fastFall) this.vy = Math.max(this.vy, 540);
+            else this.vy = Math.min(this.vy, 82);
         }
 
         let prevFoot = this.y;
@@ -813,7 +848,7 @@ class Fighter {
                 if (u.t > 0.55) this.endUlt();
             } else if (u.phase === 'alphaBind') {
                 let tg = u.target;
-                timeScale = 0.32;
+                timeScale = 0.42;
                 tg.state = 'HITSTUN'; tg.stateTimer = 2.6; tg.vx = 0; tg.vy = 0;
                 this.dir = tg.x >= this.x ? 1 : -1;
                 tg.x = this.x + this.dir * 82 + Math.sin(u.t * 30) * 3;
@@ -825,59 +860,59 @@ class Fighter {
                     spawnParticles(tg.x, tg.y - 55, 18, '#fff');
                     playAudio(attackSfx.snake);
                 }
-                if (u.t > 0.62) {
+                if (u.t > 0.36) {
                     u.phase = 'alphaBrute'; u.t = 0;
                     u.bruteStartX = tg.x; u.bruteEndX = Math.max(70, Math.min(WIDTH - 70, tg.x + this.dir * 430));
                     u.bruteY = tg.y;
                 }
             } else if (u.phase === 'alphaBrute') {
                 let tg = u.target;
-                timeScale = 0.38;
+                timeScale = 0.46;
                 tg.state = 'HITSTUN'; tg.stateTimer = 2.2; tg.vx = 0; tg.vy = 0;
-                let p = Math.min(1, u.t / 0.62);
+                let p = Math.min(1, u.t / 0.34);
                 let ease = 1 - Math.pow(1 - p, 3);
                 tg.x = u.bruteStartX + (u.bruteEndX - u.bruteStartX) * ease;
                 tg.y = u.bruteY - Math.sin(p * Math.PI) * 34;
                 ultCamera = { fx: tg.x, fy: GROUND_Y - 95, zoom: 1.4 };
-                if (!u.bruteHit && u.t > 0.12) {
+                if (!u.bruteHit && u.t > 0.08) {
                     u.bruteHit = true;
                     tg.takeDamage(18, { x: 0, y: 0 }, 0.45, this, { isUlt: true, unblockable: true });
                     spawnParticles(tg.x, tg.y - 40, 28, '#ff0033');
                     playAudio(attackSfx.brute);
                     sfx.playDeath();
                 }
-                if (u.t > 0.68) { u.phase = 'alphaRaven'; u.t = 0; u.ravenHits = 0; }
+                if (u.t > 0.38) { u.phase = 'alphaRaven'; u.t = 0; u.ravenHits = 0; }
             } else if (u.phase === 'alphaRaven') {
                 let tg = u.target;
-                timeScale = 0.42;
+                timeScale = 0.5;
                 tg.state = 'HITSTUN'; tg.stateTimer = 1.8; tg.vx = 0; tg.vy = 0;
                 tg.y = GROUND_Y - 58 + Math.sin(u.t * 18) * 5;
                 ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 105, zoom: 1.48 };
-                if (u.ravenHits < 2 && u.t > 0.16 + u.ravenHits * 0.2) {
+                if (u.ravenHits < 2 && u.t > 0.08 + u.ravenHits * 0.12) {
                     u.ravenHits++;
                     tg.takeDamage(7, { x: 0, y: -70 }, 0.25, this, { isUlt: true, unblockable: true });
                     spawnParticles(tg.x + (u.ravenHits === 1 ? -24 : 24), tg.y - 44, 20, '#fff');
                     playAudio(attackSfx.raven);
                 }
-                if (u.t > 0.62) {
+                if (u.t > 0.36) {
                     u.phase = 'alphaWhip'; u.t = 0; u.whipDone = false;
                     this.x = Math.max(55, Math.min(WIDTH - 55, tg.x - this.dir * 78));
                     this.y = GROUND_Y;
                 }
             } else if (u.phase === 'alphaWhip') {
                 let tg = u.target;
-                timeScale = 0.5;
+                timeScale = 0.54;
                 this.dir = tg.x >= this.x ? 1 : -1;
                 tg.state = 'HITSTUN'; tg.stateTimer = 1.2; tg.vx = 0; tg.vy = 0;
                 ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 85, zoom: 1.55 };
-                if (!u.whipDone && u.t > 0.26) {
+                if (!u.whipDone && u.t > 0.14) {
                     u.whipDone = true;
                     tg.takeDamage(24, { x: 980 * this.dir, y: -340 }, 0.75, this, { isUlt: true, unblockable: true });
                     spawnParticles(tg.x, tg.y - 48, 34, '#ff0033');
                     playAudio(attackSfx.knife);
                     sfx.playDeath();
                 }
-                if (u.t > 0.78) this.endUlt();
+                if (u.t > 0.48) this.endUlt();
             }
             return;
         }
@@ -1127,7 +1162,7 @@ class Fighter {
         let crouching = keys[controls.d] && this.y === GROUND_Y;
 
         // Movement (Frost / tar runes slow the fighter)
-        let spd = this.slowTimer > 0 ? this.speed * 0.45 : this.speed;
+        let spd = this.slowTimer > 0 ? this.speed * (this.slowFactor || 0.45) : this.speed;
         let moving = false;
         if (!crouching) {
             if (keys[controls.l]) { this.vx = -spd; moving = true; }
@@ -1203,7 +1238,7 @@ class Fighter {
         const dist = Math.abs(dx);
         const toward = dx >= 0 ? 1 : -1;
         const onGround = this.y >= GROUND_Y;
-        const spd = this.slowTimer > 0 ? this.speed * 0.45 : this.speed;
+        const spd = this.slowTimer > 0 ? this.speed * (this.slowFactor || 0.45) : this.speed;
 
         // AI pacing timers + difficulty scalar (0..1). These throttle reactive defense
         // so the CPU can't turtle/parry-spam every frame.
@@ -1433,9 +1468,9 @@ class Fighter {
         if (t === 'parry') this.vx = 0;
         if (t === 'combatRoll') { this.vx = 680 * this.dir; this.invulnTimer = 0.32; this.tacticalReload = true; }
         if (t === 'beastBruteRush') this.vx = 780 * this.dir;
-        if (t === 'beastSerpentLift') { this.vy = -620; this.vx = 80 * this.dir; }
+        if (t === 'beastSerpentSwing') { this.vy = -660; this.vx = 560 * this.dir; this.beastSnakeSwingTimer = 0.9; }
         if (t === 'beastBruteUpper') { this.vy = -520; this.vx = 70 * this.dir; }
-        if (t === 'beastRavenLift') { this.vy = -720; this.vx = 130 * this.dir; this.invulnTimer = 0.16; }
+        if (t === 'beastRavenLift') { this.vy = -720; this.vx = 130 * this.dir; this.invulnTimer = 0.16; this.beastRavenGlideTimer = 2.4; }
         if (t === 'airHeavy') this.vy = Math.max(this.vy, 120);
         if (t === 'lowHeavy') this.vx = 80 * this.dir;
         if (atk.combo === 'LLH') this.vx = 120 * this.dir;
@@ -1448,7 +1483,7 @@ class Fighter {
             return;
         }
         if (this.charType === 'BEAST_TAMER') {
-            if (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentLift' || atk.type === 'beastSerpentVenom') playAudio(attackSfx.snake);
+            if (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentSwing' || atk.type === 'beastSerpentVenom') playAudio(attackSfx.snake);
             else if (atk.type === 'beastRavenDive' || atk.type === 'beastRavenLift' || atk.type === 'beastRavenMark') playAudio(attackSfx.raven);
             else if (atk.type === 'beastBruteRush' || atk.type === 'beastBruteUpper' || atk.type === 'beastBruteStomp') playAudio(attackSfx.brute);
             else playAudio(attackSfx.punch);
@@ -1522,6 +1557,9 @@ class Fighter {
             // Damage modifiers (passives)
             let dmgMod = 1.0;
             if (this.charType === 'BRAWLER') dmgMod += this.comboCount * 0.1; // Momentum
+            if (this.burnTimer > 0 && (atk.name === 'light' || atk.name === 'heavy' || atk.name === 'airLight' || atk.name === 'airHeavy' || atk.name === 'lowLight' || atk.name === 'lowHeavy')) {
+                dmgMod *= 0.72;
+            }
             if (this.charType === 'RANGER' && this.tacticalReload &&
                 (atk.type === 'quickDraw' || atk.type === 'updraftShot' || atk.name === 'heavy')) {
                 dmgMod += 0.5; this.tacticalReload = false; // Tactical Reload
@@ -1538,6 +1576,10 @@ class Fighter {
                 for (let i = 0; i < 8; i++) particles.push(new Particle(this.x, this.y - 6, (Math.random()-0.5)*240, 160+Math.random()*220, 0.4, '#fff', 2));
             } else if (atk.type === 'combatRoll' || atk.type === 'blink' || atk.type === 'beastSwitch') {
                 // movement-only specials, no hitbox spawned here
+            } else if (atk.type === 'beastSerpentSwing') {
+                this.spawnBeastSerpentSwing(dmgMod, atk);
+            } else if (atk.type === 'beastRavenDive') {
+                this.spawnBeastRavenDive(dmgMod, atk);
             } else if (atk.type === 'beastSerpentVenom') {
                 this.spawnBeastVenom(dmgMod);
             } else if (atk.type === 'beastRavenMark') {
@@ -1576,10 +1618,10 @@ class Fighter {
         if (atkName === 'specSide') {
             if (beast === 0) return { ...baseAtk, startup: 0.12, active: 0.1, recovery: 0.28, dmg: 8, isProj: true, pSpeed: 850, pLife: 0.72, w: 26, h: 18, oy: -58, kb: { x: 230, y: -90 }, stun: 0.34, type: 'beastSerpentBite' };
             if (beast === 1) return { ...baseAtk, startup: 0.16, active: 0.24, recovery: 0.34, dmg: 13, w: 74, h: 56, ox: 24, oy: -58, kb: { x: 340, y: -150 }, stun: 0.48, type: 'beastBruteRush', armor: true };
-            return { ...baseAtk, startup: 0.14, active: 0.1, recovery: 0.3, dmg: 9, isProj: true, pSpeed: 700, pLife: 0.85, w: 30, h: 26, oy: -96, kb: { x: 190, y: 160 }, stun: 0.34, type: 'beastRavenDive' };
+            return { ...baseAtk, startup: 0.12, active: 0.16, recovery: 0.26, dmg: 9, w: 66, h: 54, ox: 150, oy: -92, kb: { x: 230, y: 160 }, stun: 0.34, type: 'beastRavenDive' };
         }
         if (atkName === 'specUp') {
-            if (beast === 0) return { ...baseAtk, startup: 0.1, active: 0.22, recovery: 0.28, dmg: 8, w: 60, h: 88, ox: 6, oy: -102, kb: { x: 100, y: -560 }, stun: 0.4, type: 'beastSerpentLift' };
+            if (beast === 0) return { ...baseAtk, startup: 0.08, active: 0.26, recovery: 0.32, dmg: 9, w: 190, h: 92, ox: 42, oy: -112, kb: { x: 360, y: -340 }, stun: 0.42, type: 'beastSerpentSwing' };
             if (beast === 1) return { ...baseAtk, startup: 0.16, active: 0.22, recovery: 0.32, dmg: 14, w: 70, h: 92, ox: 14, oy: -104, kb: { x: 130, y: -650 }, stun: 0.5, type: 'beastBruteUpper', armor: true };
             return { ...baseAtk, startup: 0.08, active: 0.18, recovery: 0.34, dmg: 7, w: 72, h: 70, ox: 0, oy: -94, kb: { x: 120, y: -420 }, stun: 0.34, type: 'beastRavenLift' };
         }
@@ -1603,6 +1645,33 @@ class Fighter {
         p.subtype = 'venom'; p.slow = 2.4; p.pierce = true;
         projectiles.push(p);
         playAudio(attackSfx.snake);
+    }
+
+    spawnBeastSerpentSwing(dmgMod, atk) {
+        let hx = this.x + this.dir * 18 - (this.dir < 0 ? atk.w : 0);
+        let hy = this.y + atk.oy;
+        let hb = new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, { x: atk.kb.x * this.dir, y: atk.kb.y }, atk.stun, this, atk.active);
+        hb.atk = atk;
+        hitboxes.push(hb);
+        spawnParticles(this.x + this.dir * 90, this.y - 72, 16, '#fff');
+        playAudio(attackSfx.snake);
+    }
+
+    spawnBeastRavenDive(dmgMod, atk) {
+        let target = this.getClosestEnemy();
+        let tx = target ? target.x : this.x + this.dir * 210;
+        let ty = target ? target.y - 76 : this.y - 82;
+        let hx = tx - atk.w / 2;
+        let hy = ty - atk.h / 2;
+        let hb = new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, { x: atk.kb.x * this.dir, y: atk.kb.y }, atk.stun, this, atk.active);
+        hb.atk = atk;
+        hitboxes.push(hb);
+        this.beastRavenDiveTimer = 0.46;
+        // store the target offset in the Tamer's facing space (companion is drawn dir-flipped)
+        this._beastRavenDiveX = (tx - this.x) * this.dir;
+        this._beastRavenDiveY = ty - this.y;
+        spawnParticles(tx, ty, 12, '#fff');
+        playAudio(attackSfx.raven);
     }
 
     spawnBeastRavenMark(dmgMod) {
@@ -1640,7 +1709,7 @@ class Fighter {
         if (pick === 0) { // Arcane frost wave
             playAudio(attackSfx.ice);
             let p = new Projectile(this.x + this.dir*20, baseY - 8, 330*this.dir, 0, 46, 46, 10*dmgMod, {x:200*this.dir, y:-60}, 0.35, this, 1.4, null);
-            p.subtype = 'frost'; p.slow = 2.0; projectiles.push(p);
+            p.subtype = 'frost'; p.slow = 1.25; p.slowFactor = 0.18; projectiles.push(p);
         } else if (pick === 1) { // Phase-step strike (teleport + hit)
             playAudio(attackSfx.magic);
             this.x = Math.max(this.width/2, Math.min(WIDTH - this.width/2, this.x + this.dir*150));
@@ -1650,13 +1719,13 @@ class Fighter {
             playAudio(attackSfx.lightning);
             for (let i = 0; i < 5; i++) {
                 let a = (i - 2) * 0.22, sp = 520;
-                let p = new Projectile(this.x + this.dir*20, baseY, Math.cos(a)*sp*this.dir, Math.sin(a)*sp, 12, 12, 5*dmgMod, {x:120*this.dir, y:-60}, 0.2, this, 1.0, null);
-                p.subtype = 'spark'; projectiles.push(p);
+                let p = new Projectile(this.x + this.dir*20, baseY, Math.cos(a)*sp*this.dir, Math.sin(a)*sp, 12, 12, 5*dmgMod, {x:120*this.dir, y:-60}, 0.55, this, 1.0, null);
+                p.subtype = 'spark'; p.lightningStun = 0.55; projectiles.push(p);
             }
         } else { // Piercing beam
             playAudio(attackSfx.lightning);
-            let p = new Projectile(this.x + this.dir*20, baseY, 1100*this.dir, 0, 52, 8, 9*dmgMod, {x:140*this.dir, y:-40}, 0.3, this, 0.6, null);
-            p.subtype = 'beam'; p.pierce = true; projectiles.push(p);
+            let p = new Projectile(this.x + this.dir*20, baseY, 1100*this.dir, 0, 52, 8, 9*dmgMod, {x:140*this.dir, y:-40}, 0.65, this, 0.6, null);
+            p.subtype = 'beam'; p.pierce = true; p.lightningStun = 0.65; projectiles.push(p);
         }
     }
 
@@ -1687,8 +1756,8 @@ class Fighter {
             let roll = Math.floor(onlineEventRandom('mageChaosBolt', this) * 5);
             if (roll === 0)      { subtype = 'fire';  explode = true; vy = -260; vx *= 0.8; w = 22; h = 22; dmg = 11; } // arcing bomb
             else if (roll === 1) { subtype = 'spark'; vx *= 1.9; w = 16; h = 16; dmg = 6; }                              // fast bolt
-            else if (roll === 2) { subtype = 'frost'; slow = 2.0; vx *= 0.9; dmg = 7; }                                  // chilling
-            else if (roll === 3) { subtype = 'homing'; homing = true; vx *= 0.7; w = 18; h = 18; dmg = 8; }              // seeking wisp
+            else if (roll === 2) { subtype = 'frost'; slow = 1.25; vx *= 0.9; dmg = 7; }                                 // chilling
+            else if (roll === 3) { subtype = 'homing'; homing = true; vx *= 0.7; w = 18; h = 18; dmg = 9; }              // gravity wisp
             else                 { subtype = 'split'; w = 20; h = 20; dmg = 7; logic = splitLogic; }                     // shatters midair
         } else if (atk.type === 'runeTrap') {
             this.spawnRune(this.x + atk.ox * this.dir, GROUND_Y - 20, dmg * dmgMod);
@@ -1725,6 +1794,13 @@ class Fighter {
         proj.ownerTeam = this.team;
         proj.ownerCharType = this.charType;
         proj.subtype = subtype; proj.slow = slow; proj.explode = explode; proj.homing = homing; proj.pierce = pierce;
+        if (subtype === 'fire') proj.burn = 3.2;
+        if (subtype === 'frost') proj.slowFactor = 0.18;
+        if (subtype === 'spark' || subtype === 'beam') proj.lightningStun = subtype === 'beam' ? 0.65 : 0.55;
+        if (subtype === 'homing') {
+            proj.gravityKnockback = true;
+            proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
+        }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
         projectiles.push(proj);
     }
@@ -1830,8 +1906,8 @@ class Fighter {
         if (attacker && attacker.charType === 'DARK_RULER' && !blocked && attacker.hp > 0) {
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 0.2);
         }
-        if (attacker && attacker.charType === 'BEAST_TAMER' && this.beastMarkedTimer > 0 && !blocked) {
-            amount += 3;
+        if (this.beastMarkedTimer > 0 && !blocked) {
+            if (attacker && attacker.charType === 'BEAST_TAMER') amount += 3;
             this.beastMarkedTimer = 0;
             spawnParticles(this.x, this.y - 62, 14, '#ff0033');
         }
@@ -1898,30 +1974,56 @@ class Fighter {
                 i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
             }
             ctx.stroke();
-            // Brute smash body.
-            let bx = brute ? 42 + Math.sin(Math.min(1, alpha.t / 0.62) * Math.PI) * 62 : -62;
-            let by = brute ? -48 - Math.sin(Math.min(1, alpha.t / 0.62) * Math.PI) * 14 : -44;
-            ctx.fillStyle = '#050505'; ctx.strokeStyle = '#ddd'; ctx.lineWidth = 4; ctx.shadowBlur = brute ? 18 : 6; ctx.shadowColor = '#ff0033';
-            ctx.beginPath(); ctx.ellipse(bx, by + 8, 26, 36, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            ctx.beginPath(); ctx.arc(bx + 5, by - 28, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 8;
-            ctx.beginPath(); ctx.moveTo(bx + 12, by - 5); ctx.lineTo(bx + 50 + (brute ? 24 : 0), by - 16); ctx.stroke();
-            // Raven slash passes.
-            let rp = raven ? Math.min(1, alpha.t / 0.62) : 0;
-            let rx = raven ? -90 + rp * 210 : -24 + Math.sin(t * 2.4) * 8;
-            let ry = raven ? -118 + Math.sin(rp * Math.PI * 2) * 22 : -102;
-            ctx.strokeStyle = '#bbb'; ctx.lineWidth = raven ? 5 : 3; ctx.shadowBlur = raven ? 16 : 6; ctx.shadowColor = '#ff0033';
+            // Brute: the horned, tailed bruiser — parks aside, then smashes across on its phase.
+            let bp = brute ? Math.min(1, alpha.t / 0.34) : 0;
+            let smash = Math.sin(bp * Math.PI);
+            let bx = brute ? -40 + smash * 150 : -64;
+            let by = -44 - smash * 14;
+            let bsh = by - 40, bhY = by - 58;
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = brute ? 7 : 5; ctx.shadowBlur = brute ? 18 : 6; ctx.shadowColor = '#ff0033';
+            ctx.fillStyle = 'rgba(8,8,8,0.7)';
+            ctx.beginPath(); ctx.ellipse(bx, by - 18, 18, 23, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // belly
+            ctx.fillStyle = '#070707';
+            ctx.beginPath(); ctx.arc(bx, bhY, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();                // head
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 4;                                                  // horns
             ctx.beginPath();
-            ctx.moveTo(rx, ry); ctx.lineTo(rx - 30, ry - 10); ctx.moveTo(rx, ry); ctx.lineTo(rx + 30, ry - 10);
-            ctx.moveTo(rx, ry); ctx.lineTo(rx + 10, ry + 16); ctx.stroke();
+            ctx.moveTo(bx - 9, bhY - 10); ctx.quadraticCurveTo(bx - 22, bhY - 21, bx - 13, bhY - 29);
+            ctx.moveTo(bx + 9, bhY - 10); ctx.quadraticCurveTo(bx + 22, bhY - 21, bx + 13, bhY - 29);
+            ctx.moveTo(bx - 14, by + 2); ctx.quadraticCurveTo(bx - 44, by + 6, bx - 40, by + 32);           // tail
+            ctx.stroke();
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = brute ? 8 : 6;
+            ctx.beginPath();
+            ctx.moveTo(bx + 6, bsh); ctx.lineTo(bx + 22 + bp * 28, bsh + 14); ctx.lineTo(bx + 30 + bp * 52, bsh + 20); // smash arm
+            ctx.moveTo(bx - 6, bsh); ctx.lineTo(bx - 20, bsh + 16); ctx.lineTo(bx - 26, bsh + 30);
+            ctx.moveTo(bx + 7, by + 2); ctx.lineTo(bx + 16 + bp * 20, by + 26); ctx.lineTo(bx + 22 + bp * 30, by + 48); // legs
+            ctx.moveTo(bx - 7, by + 2); ctx.lineTo(bx - 18, by + 26); ctx.lineTo(bx - 24, by + 48);
+            ctx.stroke();
+            // Raven: the bird itself, swooping in on its phase.
+            let rp = raven ? Math.min(1, alpha.t / 0.38) : 0;
+            let rx = raven ? -80 + rp * 200 : -28 + Math.sin(t * 2.4) * 8;
+            let ry = raven ? -120 + Math.sin(rp * Math.PI * 2) * 26 : -104;
+            let rflap = Math.sin(t * 16) * 10;
+            ctx.strokeStyle = '#cfcfcf'; ctx.lineWidth = raven ? 4 : 3; ctx.shadowBlur = raven ? 16 : 6; ctx.shadowColor = '#ff0033';
+            ctx.fillStyle = '#0a0a0a';
+            ctx.beginPath(); ctx.ellipse(rx, ry, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();         // body
+            ctx.beginPath(); ctx.arc(rx + 9, ry - 3, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();            // head
+            ctx.beginPath(); ctx.moveTo(rx + 13, ry - 3); ctx.lineTo(rx + 20, ry - 1); ctx.lineTo(rx + 13, ry + 1); ctx.stroke(); // beak
+            ctx.beginPath();                                                                                  // wings
+            ctx.moveTo(rx - 2, ry - 2); ctx.quadraticCurveTo(rx - 22, ry - 14 - rflap, rx - 34, ry - 4 - rflap);
+            ctx.moveTo(rx - 2, ry - 2); ctx.quadraticCurveTo(rx + 14, ry - 14 + rflap * 0.4, rx + 22, ry - 6 + rflap * 0.4);
+            ctx.moveTo(rx - 8, ry + 2); ctx.lineTo(rx - 22, ry + 8);                                          // tail
+            ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(rx + 9, ry - 3, 2, 0, Math.PI * 2); ctx.fill(); // eye
             if (whip) {
                 ctx.strokeStyle = 'rgba(255,0,51,0.8)'; ctx.lineWidth = 5; ctx.shadowBlur = 20; ctx.shadowColor = '#ff0033';
                 ctx.beginPath(); ctx.arc(48, -52, 86, -0.25, 0.45 + Math.min(1, alpha.t / 0.32) * 0.8); ctx.stroke();
             }
         } else if (beast === 0) {
             // Serpent: animated spine segments ripple around the Tamer.
-            let attacking = atk && (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentLift' || atk.type === 'beastSerpentVenom');
-            let segs = 13;
+            let attacking = atk && (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentSwing' || atk.type === 'beastSerpentVenom');
+            let swinging = (atk && atk.type === 'beastSerpentSwing') || this.beastSnakeSwingTimer > 0;
+            let swingP = swinging ? Math.max(0, Math.min(1, 1 - (this.beastSnakeSwingTimer || 0) / 0.9)) : 0;
+            let segs = swinging ? 22 : 13;
             let pts = [];
             for (let i = 0; i < segs; i++) {
                 let u = i / (segs - 1);
@@ -1930,12 +2032,25 @@ class Fighter {
                 let radius = attacking ? 22 + u * 42 : 38 + Math.sin(t * 2 + u * 5) * 5;
                 let x = Math.cos(angle) * radius + sweep * u;
                 let y = -54 + Math.sin(angle) * 18 + Math.sin(t * 8 + u * 10) * 5;
+                if (swinging) {
+                    // a long swing-rope arcing high ahead; it lengthens as the Tamer rides it
+                    let reach = 160 + swingP * 250;
+                    let archH = 120 + swingP * 70;
+                    x = 4 + u * reach;
+                    y = -66 - Math.sin(u * Math.PI) * archH + Math.sin(t * 12 + u * 9) * (3 + u * 4);
+                }
                 pts.push({ x, y });
             }
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = swinging ? 5 : 3;
             ctx.beginPath();
             pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
             ctx.stroke();
+            if (swinging) {
+                // red kick-sweep at the lashing tip of the long snake
+                let tip = pts[pts.length - 1];
+                ctx.strokeStyle = 'rgba(255,0,51,0.6)'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(tip.x, tip.y, 16 + swingP * 34, -2.2, 0.5); ctx.stroke();
+            }
             ctx.fillStyle = '#fff';
             pts.forEach((p, i) => {
                 let size = 3.8 - i * 0.15;
@@ -1945,45 +2060,128 @@ class Fighter {
             ctx.fillStyle = '#ff0033';
             ctx.beginPath(); ctx.arc(head.x + 3, head.y - 1, 2.2 + flash, 0, Math.PI * 2); ctx.fill();
         } else if (beast === 1) {
-            // Brute: hulking black mass guarding the flank, then lunging for brute commands.
-            let rush = atk && atk.type === 'beastBruteRush' ? Math.sin(atkProgress * Math.PI) * 74 : 0;
-            let upper = atk && atk.type === 'beastBruteUpper' ? Math.sin(atkProgress * Math.PI) * -32 : 0;
-            let stomp = atk && atk.type === 'beastBruteStomp' ? Math.sin(atkProgress * Math.PI) * 18 : 0;
-            let bx = -54 + Math.sin(t * 1.5) * 3 + rush;
-            let by = -46 + Math.cos(t * 2) * 2 + upper + stomp;
-            ctx.fillStyle = '#050505'; ctx.strokeStyle = '#ddd'; ctx.lineWidth = 4;
-            ctx.beginPath(); ctx.ellipse(bx, by + 8, 24 + flash * 4, 34, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            ctx.beginPath(); ctx.arc(bx + 4, by - 26, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.moveTo(bx - 14, by - 38); ctx.lineTo(bx - 24, by - 54); ctx.moveTo(bx + 14, by - 38); ctx.lineTo(bx + 24, by - 54); ctx.stroke();
-            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 7;
-            let armLift = atk && atk.type === 'beastBruteUpper' ? -42 * Math.sin(atkProgress * Math.PI) : 0;
-            let armReach = atk && atk.type === 'beastBruteRush' ? 42 * Math.sin(atkProgress * Math.PI) : 0;
+            // Brute: a big, heavy, horned & tailed stickman standing just IN FRONT of the
+            // Tamer (so its specials read as the Brute itself attacking). Fully articulated.
+            let rushP  = atk && atk.type === 'beastBruteRush'  ? Math.sin(atkProgress * Math.PI) : 0;
+            let upperP = atk && atk.type === 'beastBruteUpper' ? Math.sin(atkProgress * Math.PI) : 0;
+            let stompP = atk && atk.type === 'beastBruteStomp' ? Math.sin(atkProgress * Math.PI) : 0;
+            let sway = Math.sin(t * 1.8), breathe = Math.sin(t * 2.2) * 2;
+            let bx = 36 + sway * 3 + rushP * 78;                 // a little ahead; lunges on rush
+            let by = -46 - upperP * 22 + stompP * 14 + breathe * 0.4; // pelvis
+            let shY = by - 46, hY = by - 66;                      // shoulders / head
+            let lean = rushP * 0.5 + stompP * 0.3;               // pitches into hits
+            let leanX = Math.sin(lean) * 12;
+
+            // local two-bone limb (matches the main fighter rig: 0 = down, +ang toward facing)
+            const limb = (x0, y0, ang, bend, l1, l2) => {
+                let ua = ang + bend, la = ang - bend;
+                let jx = x0 + Math.sin(ua) * l1, jy = y0 + Math.cos(ua) * l1;
+                let ex2 = jx + Math.sin(la) * l2, ey2 = jy + Math.cos(la) * l2;
+                ctx.moveTo(x0, y0); ctx.lineTo(jx, jy); ctx.lineTo(ex2, ey2);
+                return { ex: ex2, ey: ey2 };
+            };
+
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.shadowColor = '#ff0033'; ctx.shadowBlur = 9 + flash * 8;
+
+            // tail (curls out behind, swaying) with a spade tip
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 5;
             ctx.beginPath();
-            ctx.moveTo(bx + 12, by - 4);
-            ctx.lineTo(bx + 35 + armReach, by - 10 + armLift);
-            ctx.moveTo(bx - 12, by - 2);
-            ctx.lineTo(bx - 34, by + 18 + stomp);
+            ctx.moveTo(bx - 14, by + 4);
+            ctx.quadraticCurveTo(bx - 56, by + 6 + Math.sin(t * 4) * 8, bx - 50, by + 38 + Math.sin(t * 4 + 1) * 5);
             ctx.stroke();
-            if (atk && atk.type === 'beastBruteStomp' && atkProgress > 0) {
-                ctx.strokeStyle = 'rgba(255,0,51,0.7)'; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.arc(bx - 18, 0, 18 + atkProgress * 42, 0.15, Math.PI - 0.15); ctx.stroke();
+            ctx.fillStyle = '#ff0033';
+            ctx.beginPath(); ctx.moveTo(bx - 50, by + 31); ctx.lineTo(bx - 58, by + 44); ctx.lineTo(bx - 43, by + 44); ctx.closePath(); ctx.fill();
+
+            // legs (thick two-bone, planted wide; lead leg drives on rush, brace on stomp)
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 9;
+            ctx.beginPath();
+            limb(bx + 8, by + 4, 0.34 + lean + rushP * 0.45, 0.45, 24, 28);
+            limb(bx - 8, by + 4, -0.34 + rushP * 0.18, 0.45, 24, 28);
+            ctx.stroke();
+
+            // torso spine + rotund belly
+            ctx.lineWidth = 9;
+            ctx.beginPath(); ctx.moveTo(bx + leanX * 0.4, by); ctx.lineTo(bx + leanX, shY); ctx.stroke();
+            ctx.lineWidth = 5; ctx.fillStyle = 'rgba(10,10,10,0.55)';
+            ctx.beginPath(); ctx.ellipse(bx + 6 + leanX * 0.6, by - 22, 18 + breathe * 0.4, 23, lean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+            // arms (thick two-bone): rush punches forward, upper swings overhead, stomp slams down
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 9;
+            ctx.beginPath();
+            let fAng = 1.5 + rushP * 0.45 + upperP * 1.35 - stompP * 1.15;
+            let fBend = -0.55 + rushP * 0.4 + stompP * 0.15;
+            let fArm = limb(bx + leanX, shY, fAng, fBend, 20, 22);
+            let rAng = -0.5 + rushP * 0.2 + stompP * 0.5 - upperP * 0.3;
+            let rArm = limb(bx + leanX, shY, rAng, 0.55, 20, 22);
+            ctx.stroke();
+            ctx.fillStyle = '#dcdcdc';
+            ctx.beginPath(); ctx.arc(fArm.ex, fArm.ey, 6.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(rArm.ex, rArm.ey, 6.5, 0, Math.PI * 2); ctx.fill();
+
+            // head + curved horns + glowing eye
+            let hx = bx + leanX * 1.1;
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 6; ctx.fillStyle = '#070707';
+            ctx.beginPath(); ctx.arc(hx, hY, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(hx - 10, hY - 11); ctx.quadraticCurveTo(hx - 27, hY - 24, hx - 15, hY - 34);
+            ctx.moveTo(hx + 10, hY - 11); ctx.quadraticCurveTo(hx + 27, hY - 24, hx + 15, hY - 34);
+            ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(hx + 6, hY - 1, 2.6 + flash, 0, Math.PI * 2); ctx.fill();
+
+            if (stompP > 0) {
+                ctx.strokeStyle = 'rgba(255,0,51,0.75)'; ctx.lineWidth = 5;
+                ctx.beginPath(); ctx.arc(bx, by + 52, 18 + stompP * 64, 0.12, Math.PI - 0.12); ctx.stroke();
             }
         } else {
-            // Raven: angular scout above the shoulder.
-            let rx = -30 + Math.sin(t * 2.6) * 12;
-            let ry = -98 + Math.cos(t * 3.1) * 7;
-            let flap = Math.sin(t * 12) * 8;
-            ctx.strokeStyle = '#bbb'; ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(rx, ry);
-            ctx.lineTo(rx - 26, ry - 8 + flap);
-            ctx.moveTo(rx, ry);
-            ctx.lineTo(rx + 26, ry - 8 - flap);
-            ctx.moveTo(rx, ry);
-            ctx.lineTo(rx + 8, ry + 13);
+            // Raven: scout that carries the Tamer aloft (Up) or dives at the foe and snaps back (Side).
+            let lift = atk && atk.type === 'beastRavenLift';
+            let carrying = lift || this.beastRavenGlideTimer > 0;
+            let dive = Math.max(0, this.beastRavenDiveTimer || 0);
+            let flap = Math.sin(t * 16) * 10;
+
+            let rx, ry;
+            if (dive > 0) {
+                // launch out to the foe and snap straight back (0 -> 1 -> 0)
+                let prog = 1 - dive / 0.46;
+                let out = prog < 0.5 ? prog * 2 : (1 - prog) * 2;
+                let tx = (this._beastRavenDiveX != null) ? this._beastRavenDiveX : 150;
+                let ty = (this._beastRavenDiveY != null) ? this._beastRavenDiveY : -92;
+                rx = 6 + (tx - 6) * out;
+                ry = -104 + (ty + 104) * out;
+                ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3; // dive streak
+                ctx.beginPath(); ctx.moveTo(6, -104); ctx.lineTo(rx, ry); ctx.stroke();
+            } else if (carrying) {
+                rx = 4 + Math.sin(t * 3) * 3;          // hovering right above the Tamer's hand
+                ry = -142 + Math.cos(t * 8) * 4;
+            } else {
+                rx = -28 + Math.sin(t * 2.6) * 12;     // perched scout near the shoulder
+                ry = -100 + Math.cos(t * 3.1) * 7;
+            }
+
+            // talons gripping down to the Tamer's raised hand while carrying
+            if (carrying) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(rx - 5, ry + 8); ctx.lineTo(6, -96); ctx.moveTo(rx + 5, ry + 8); ctx.lineTo(10, -94); ctx.stroke();
+            }
+
+            // ---- the bird (faces the Tamer's facing direction = +x) ----
+            ctx.strokeStyle = '#cfcfcf'; ctx.lineWidth = carrying ? 4 : 3;
+            ctx.shadowColor = '#ff0033'; ctx.shadowBlur = carrying ? 12 : 6;
+            ctx.fillStyle = '#0a0a0a';
+            ctx.beginPath(); ctx.ellipse(rx, ry, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();          // body
+            ctx.beginPath(); ctx.arc(rx + 9, ry - 3, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();             // head
+            ctx.beginPath(); ctx.moveTo(rx + 13, ry - 3); ctx.lineTo(rx + 20, ry - 1); ctx.lineTo(rx + 13, ry + 1); ctx.stroke(); // beak
+            ctx.beginPath();                                                                                    // flapping wings
+            ctx.moveTo(rx - 2, ry - 2); ctx.quadraticCurveTo(rx - 22, ry - 14 - flap, rx - 34, ry - 4 - flap);
+            ctx.moveTo(rx - 2, ry - 2); ctx.quadraticCurveTo(rx + 14, ry - 14 + flap * 0.4, rx + 22, ry - 6 + flap * 0.4);
             ctx.stroke();
-            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(rx + 3, ry - 2, 2.5 + flash, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(rx - 8, ry + 2); ctx.lineTo(rx - 22, ry + 8); ctx.stroke();             // tail
+            ctx.beginPath();                                                                                    // talons
+            ctx.moveTo(rx - 3, ry + 6); ctx.lineTo(rx - 5, ry + (carrying ? 14 : 11));
+            ctx.moveTo(rx + 3, ry + 6); ctx.lineTo(rx + 5, ry + (carrying ? 14 : 11)); ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(rx + 9, ry - 3, 2 + flash, 0, Math.PI * 2); ctx.fill(); // eye
         }
         ctx.shadowBlur = 0;
         ctx.restore();
@@ -2015,6 +2213,45 @@ class Fighter {
         ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : 4; // bigger = thicker
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+
+        if (this.beastMarkedTimer > 0) {
+            let pulse = 1 + Math.sin(this.animTimer * 10) * 0.12;
+            ctx.save();
+            ctx.shadowBlur = 16;
+            ctx.shadowColor = '#ff0033';
+            ctx.strokeStyle = '#ff0033';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, -58, 16 * pulse, -0.4, Math.PI * 2 - 0.4);
+            ctx.moveTo(-12, -72); ctx.lineTo(12, -46);
+            ctx.moveTo(12, -72); ctx.lineTo(-12, -46);
+            ctx.stroke();
+            ctx.restore();
+        }
+        if (this.burnTimer > 0) {
+            ctx.save();
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = '#ff5a2a';
+            ctx.fillStyle = 'rgba(255,90,42,0.85)';
+            for (let i = 0; i < 5; i++) {
+                let a = this.animTimer * 5 + i * 1.4;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * 18, -44 + Math.sin(a * 1.3) * 24, 2.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        if (this.slowTimer > 0 && (this.slowFactor || 1) < 0.3) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(127,216,255,0.85)';
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#7fd8ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, -42, 23, 42, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
 
         // Procedural Animation Variables
         let t = this.animTimer;
@@ -2141,23 +2378,6 @@ class Fighter {
                 leftLegAngle = 0.28; rightLegAngle = -0.2;
                 leftLegBend = -0.3; rightLegBend = 0.34;
                 torsoLean = -0.06; headY += Math.sin(t * 3) * 1.5;
-            } else if (this.charType === 'BEAST_TAMER') {
-                if (atk.type === 'beastSwitch') {
-                    leftArmAngle = mix(0.8, 2.25, ex); leftArmBend = -0.65;
-                    rightArmAngle = mix(-0.25, 1.4, ex); rightArmBend = 0.35;
-                    leftLegAngle = -0.34; rightLegAngle = 0.38; torsoLean = -0.05;
-                } else if (atk.type === 'beastBruteRush' || atk.type === 'beastBruteUpper' || atk.type === 'beastBruteStomp') {
-                    leftArmAngle = mix(1.25, 1.75, ex); leftArmBend = -0.8; // command staff thrust
-                    rightArmAngle = mix(0.15, 1.25, ex); rightArmBend = 0.15;
-                    leftLegAngle = -0.42; rightLegAngle = mix(0.34, 0.58, ex);
-                    leftLegBend = 0.44; rightLegBend = 0.52; torsoLean = mix(-0.04, 0.18, ex);
-                } else {
-                    // Whip crack / serpent / raven commands: rear-load, then snap the whip forward.
-                    rightArmAngle = mix(2.65, 1.1, ex); rightArmBend = mix(-0.75, -0.08, ex);
-                    leftArmAngle = mix(1.35, 1.65, ex); leftArmBend = -0.65;
-                    leftLegAngle = -0.38; rightLegAngle = mix(0.28, 0.54, ex);
-                    leftLegBend = 0.36; rightLegBend = 0.48; torsoLean = mix(-0.16, 0.2, ex);
-                }
             } else if (this.charType === 'DARK_RULER') {
                 // hoist the greatsword overhead, dark power trembling off the blade
                 let tremor = Math.sin(t * 18) * 0.03;
@@ -2297,9 +2517,16 @@ class Fighter {
             // fold deeply (set in the leg-stance block) so the feet stay planted.
             crouchDrop = 14;
             headY += crouchDrop;
-            leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
-            leftArmBend = -0.85; rightArmBend = -0.85;
-            torsoLean = 0.06;
+            if (this.charType === 'BEAST_TAMER') {
+                // Feral low crouch — lead hand planted forward like a beast, whip arm coiled
+                leftArmAngle = 1.75; leftArmBend = -0.45;  // planted low & forward
+                rightArmAngle = 2.45; rightArmBend = -0.7; // whip coiled by the shoulder
+                torsoLean = 0.16;
+            } else {
+                leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
+                leftArmBend = -0.85; rightArmBend = -0.85;
+                torsoLean = 0.06;
+            }
         } else if (this.state === 'JUMP' || this.state === 'FALL') {
             // Each fighter leaps in their own style. `rise` > 0 going up.
             let rise = this.vy < 0;
@@ -2339,6 +2566,28 @@ class Fighter {
                 leftLegAngle = -0.06 + f; rightLegAngle = 0.1 + f; leftLegBend = 0.12; rightLegBend = 0.14;
                 leftArmAngle = -1.0 + f; rightArmAngle = 1.0 - f; leftArmBend = -0.45; rightArmBend = 0.45; // arms out, palms down
                 headY += rise ? -2 : 0; torsoLean = rise ? 0.04 : -0.02;
+            } else if (this.charType === 'BEAST_TAMER' && this.beastSnakeSwingTimer > 0) {
+                // Mid-swing across the arena: both hands grip the snake overhead, lead leg kicking out.
+                let sw = Math.sin(t * 6) * 0.05;
+                leftArmAngle = 2.7 + sw; leftArmBend = -0.3;
+                rightArmAngle = 2.5 - sw; rightArmBend = -0.35;
+                leftLegAngle = 0.18 + sw; rightLegAngle = 0.62 + sw;
+                leftLegBend = 0.3; rightLegBend = 0.16;
+                headY -= 2; torsoLean = 0.2;
+            } else if (this.charType === 'BEAST_TAMER' && this.beastRavenGlideTimer > 0) {
+                // Raven carry: one arm hooked upward, body hanging beneath the bird.
+                let hang = Math.sin(t * 5) * 0.05;
+                leftArmAngle = 2.95 + hang; leftArmBend = -0.18;
+                rightArmAngle = 1.0 - hang; rightArmBend = 0.32;
+                leftLegAngle = -0.08 + hang; rightLegAngle = 0.16 + hang;
+                leftLegBend = 0.2; rightLegBend = 0.28;
+                headY -= 3; torsoLean = -0.04;
+            } else if (this.charType === 'BEAST_TAMER') {
+                // Agile commander's leap — lead knee driven up, whip arm cocked, free hand flung out
+                leftLegAngle = 0.44; rightLegAngle = -0.3; leftLegBend = 1.05; rightLegBend = 0.42;
+                rightArmAngle = 2.3 + Math.sin(t * 5) * 0.05; rightArmBend = -0.6; // whip hand up & back
+                leftArmAngle = -1.5; leftArmBend = 0.4;                            // off-hand flung out for balance
+                headY += rise ? -2 : 1; torsoLean = rise ? 0.12 : -0.05;
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -2346,10 +2595,18 @@ class Fighter {
         } else if (this.state === 'BLOCK') {
             let brace = Math.sin(t * 18) * 0.04;
             headY += 8;
-            // Both forearms raised high in front of the face (tight guard)
-            leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
-            leftArmBend = -0.95; rightArmBend = -0.95;
-            torsoLean = -0.12;
+            if (this.charType === 'BEAST_TAMER') {
+                // Brace behind a raised forearm, whip arm coiled low to retaliate
+                leftArmAngle = 2.5 + brace; leftArmBend = -1.0;    // lead forearm shielding the face
+                rightArmAngle = 1.5 - brace; rightArmBend = -0.5;  // whip hand low and ready
+                leftLegAngle = -0.3; rightLegAngle = 0.4; leftLegBend = 0.5; rightLegBend = 0.5;
+                torsoLean = -0.16;
+            } else {
+                // Both forearms raised high in front of the face (tight guard)
+                leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
+                leftArmBend = -0.95; rightArmBend = -0.95;
+                torsoLean = -0.12;
+            }
         } else if (this.state === 'HITSTUN') {
             headY += 5;
             leftArmAngle = -2; rightArmAngle = -2.5;

@@ -18,14 +18,18 @@
     <div id="settings-screen" class="screen hidden">
         <h2 class="menu-sub-title">Settings</h2>
         <div class="settings-cols">
-            <div class="settings-block">
+            <div class="settings-block settings-audio">
                 <h3>Audio</h3>
                 <div id="volume-sliders"></div>
             </div>
-            <div class="settings-block">
+            <div class="settings-block settings-controls">
                 <h3>Controls <small>(click a key to rebind)</small></h3>
                 <div id="bindings-list"></div>
                 <button class="btn menu-btn ghost" onclick="resetBindings()">Reset Controls</button>
+            </div>
+            <div class="settings-block settings-gameplay">
+                <h3>Gameplay</h3>
+                <div id="gameplay-settings"></div>
             </div>
         </div>
         <button class="btn menu-btn" onclick="closeSettings()">Back</button>
@@ -193,6 +197,22 @@
             <span id="online-net-ping">PING --</span>
             <span id="online-net-age">INPUT --</span>
             <span id="online-net-rollback">RB 0</span>
+        </div>
+    </div>
+
+    <div id="touch-controls" class="hidden" aria-label="Touch controls">
+        <div class="touch-cluster touch-dpad">
+            <button class="touch-btn touch-up" data-touch-action="u">UP</button>
+            <button class="touch-btn touch-left" data-touch-action="l">LEFT</button>
+            <button class="touch-btn touch-down" data-touch-action="d">DOWN</button>
+            <button class="touch-btn touch-right" data-touch-action="r">RIGHT</button>
+        </div>
+        <div class="touch-cluster touch-actions">
+            <button class="touch-btn" data-touch-action="block">BLOCK</button>
+            <button class="touch-btn" data-touch-action="atkL">LIGHT</button>
+            <button class="touch-btn" data-touch-action="atkH">HEAVY</button>
+            <button class="touch-btn" data-touch-action="special">SPECIAL</button>
+            <button class="touch-btn touch-ult" data-touch-action="ult">ULT</button>
         </div>
     </div>
 

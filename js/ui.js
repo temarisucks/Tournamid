@@ -178,7 +178,25 @@ function renderSettings() {
         `<div class="vol-row"><label>${label}</label>` +
         `<input type="range" min="0" max="100" value="${Math.round(settings[k] * 100)}" oninput="setVolume('${k}', this.value)">` +
         `<span class="vval" id="vol-${k}-val">${Math.round(settings[k] * 100)}%</span></div>`).join('');
+    renderGameplaySettings();
     renderBindings();
+}
+function renderGameplaySettings() {
+    let el = document.getElementById('gameplay-settings');
+    if (!el) return;
+    el.innerHTML =
+        `<div class="settings-toggle"><span>Touch Screen Controls</span><button class="toggle-btn${settings.touchControls ? ' on' : ''}" onclick="toggleSetting('touchControls')">${settings.touchControls ? 'ON' : 'OFF'}</button></div>` +
+        `<div class="settings-toggle"><span>Blood</span><button class="toggle-btn${settings.blood ? ' on' : ''}" onclick="toggleSetting('blood')">${settings.blood ? 'ON' : 'OFF'}</button></div>`;
+}
+function toggleSetting(key) {
+    settings[key] = !settings[key];
+    if (key === 'blood' && !settings.blood) {
+        bloodStains = [];
+        bodyParts = [];
+    }
+    saveSettings();
+    renderGameplaySettings();
+    updateTouchControlsVisibility();
 }
 function renderBindings() {
     let html = '';
@@ -211,6 +229,56 @@ window.addEventListener('keydown', e => {
     rebind = null;
     renderBindings();
 }, true);
+
+const touchHeld = new Map();
+function touchCodeForAction(action) {
+    return (keyBindings.P1 || DEFAULT_BINDINGS.P1)[action];
+}
+function setTouchAction(action, pressed, pointerId = null, btn = null) {
+    let code = touchCodeForAction(action);
+    if (!code) return;
+    keys[code] = !!pressed;
+    if (pressed && pointerId != null) touchHeld.set(pointerId, { action, code, btn });
+    if (!pressed && pointerId != null) touchHeld.delete(pointerId);
+    if (btn) btn.classList.toggle('held', !!pressed);
+}
+function releaseTouchPointer(pointerId) {
+    let held = touchHeld.get(pointerId);
+    if (!held) return;
+    keys[held.code] = false;
+    if (held.btn) held.btn.classList.remove('held');
+    touchHeld.delete(pointerId);
+}
+function releaseAllTouchControls() {
+    touchHeld.forEach(held => {
+        keys[held.code] = false;
+        if (held.btn) held.btn.classList.remove('held');
+    });
+    touchHeld.clear();
+}
+function initTouchControls() {
+    let panel = document.getElementById('touch-controls');
+    if (!panel || panel.dataset.ready) return;
+    panel.dataset.ready = '1';
+    panel.addEventListener('contextmenu', e => e.preventDefault());
+    panel.querySelectorAll('[data-touch-action]').forEach(btn => {
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            btn.setPointerCapture(e.pointerId);
+            setTouchAction(btn.dataset.touchAction, true, e.pointerId, btn);
+        });
+        btn.addEventListener('pointerup', e => { e.preventDefault(); releaseTouchPointer(e.pointerId); });
+        btn.addEventListener('pointercancel', e => { e.preventDefault(); releaseTouchPointer(e.pointerId); });
+        btn.addEventListener('lostpointercapture', e => releaseTouchPointer(e.pointerId));
+    });
+}
+function updateTouchControlsVisibility() {
+    let panel = document.getElementById('touch-controls');
+    if (!panel) return;
+    let show = !!settings.touchControls && gameState === 'PLAYING';
+    panel.classList.toggle('hidden', !show);
+    if (!show) releaseAllTouchControls();
+}
 
 function handleEscape() {
     if (gameState === 'PLAYING' || gameState === 'PAUSED') {
@@ -536,6 +604,7 @@ function startGame() {
 
     updateHUD();
     gameState = 'PLAYING';
+    music.resetFightPick();
     music.play('fight');
     document.getElementById('settings-btn').classList.add('hidden'); // gear hidden in-match (use pause menu)
 }
@@ -643,6 +712,7 @@ function startLadderBattle(index) {
     beginIntroSequence('round1');
     updateHUD();
     gameState = 'PLAYING';
+    music.resetFightPick();
     music.play('fight');
     document.getElementById('settings-btn').classList.add('hidden');
 }

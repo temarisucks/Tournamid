@@ -31,32 +31,34 @@ function triggerOverkill(attacker, victim) {
     timeScale = Math.min(timeScale, 0.45);
     playOverkillVoice();
 
-    ['head', 'torso', 'arm', 'arm', 'leg', 'leg'].forEach((kind, i) => {
-        let spread = (i - 2.5) * 95 + (Math.random() - 0.5) * 120;
-        bodyParts.push(new BodyPart(
-            victim.x,
-            victim.y - 48,
-            spread,
-            -420 - Math.random() * 520,
-            kind === 'head' ? 9 : kind === 'torso' ? 12 : 10,
-            kind,
-            (Math.random() - 0.5) * 12
-        ));
-    });
-
-    for (let i = 0; i < 150; i++) {
-        let vx = (Math.random() - 0.5) * 1300;
-        let vy = -150 - Math.random() * 950;
-        let life = 0.55 + Math.random() * 1.35;
-        let size = 3 + Math.random() * 7;
-        particles.push(new Particle(victim.x, victim.y - 45, vx, vy, life, '#ff0033', size));
-    }
-    for (let i = 0; i < 70; i++) {
-        bloodStains.push({
-            x: Math.max(0, Math.min(WIDTH, victim.x + (Math.random() - 0.5) * 520)),
-            y: GROUND_Y + (Math.random() * 8 - 4),
-            size: 4 + Math.random() * 16
+    if (settings.blood) {
+        ['head', 'torso', 'arm', 'arm', 'leg', 'leg'].forEach((kind, i) => {
+            let spread = (i - 2.5) * 95 + (Math.random() - 0.5) * 120;
+            bodyParts.push(new BodyPart(
+                victim.x,
+                victim.y - 48,
+                spread,
+                -420 - Math.random() * 520,
+                kind === 'head' ? 9 : kind === 'torso' ? 12 : 10,
+                kind,
+                (Math.random() - 0.5) * 12
+            ));
         });
+
+        for (let i = 0; i < 150; i++) {
+            let vx = (Math.random() - 0.5) * 1300;
+            let vy = -150 - Math.random() * 950;
+            let life = 0.55 + Math.random() * 1.35;
+            let size = 3 + Math.random() * 7;
+            particles.push(new Particle(victim.x, victim.y - 45, vx, vy, life, '#ff0033', size));
+        }
+        for (let i = 0; i < 70; i++) {
+            bloodStains.push({
+                x: Math.max(0, Math.min(WIDTH, victim.x + (Math.random() - 0.5) * 520)),
+                y: GROUND_Y + (Math.random() * 8 - 4),
+                size: 4 + Math.random() * 16
+            });
+        }
     }
     spawnParticles(victim.x, victim.y - 48, 35, '#fff');
     stageActorsFlee(); // background spectators/dancers scatter
@@ -71,6 +73,7 @@ function splitLogic(self, dt) {
             let p = new Projectile(self.x, self.y, self.vx * 0.6, i * 280, 12, 12,
                 self.damage * 0.7, self.knockback, self.stun, self.owner, 0.8, null);
             p.subtype = 'spark';
+            p.lightningStun = 0.45;
             projectiles.push(p);
         }
         self.active = false;
@@ -124,7 +127,11 @@ function checkCollisions() {
                         continue;
                     }
                     proj.hasHit.add(p.id);
-                    let landed = p.takeDamage(proj.damage, proj.knockback, proj.stun, proj.owner,
+                    let hitDamage = proj.damage;
+                    if (proj.gravityKnockback) {
+                        hitDamage += Math.min(8, (Math.abs(proj.knockback.x || 0) + Math.abs(proj.knockback.y || 0)) / 170);
+                    }
+                    let landed = p.takeDamage(hitDamage, proj.knockback, proj.lightningStun || proj.stun, proj.owner,
                         { unblockable: proj.unblockable, isUlt: !!proj.ultActivator || !!proj.isUltDamage });
 
                     // Ultimate activation projectile (Mage orb / Ranger bomb) connected
@@ -134,9 +141,20 @@ function checkCollisions() {
                     }
 
                     // On-hit elemental effects
-                    if (proj.slow) p.slowTimer = Math.max(p.slowTimer, proj.slow);
+                    if (landed && proj.burn) {
+                        p.burnTimer = Math.max(p.burnTimer || 0, proj.burn);
+                        p.burnTickTimer = Math.min(p.burnTickTimer || 0.55, 0.35);
+                    }
+                    if (landed && proj.slow) {
+                        p.slowTimer = Math.max(p.slowTimer, proj.slow);
+                        p.slowFactor = Math.min(p.slowFactor || 1, proj.slowFactor || 0.45);
+                    }
+                    if (landed && proj.lightningStun && p.state === 'HITSTUN') {
+                        p.stateTimer = Math.max(p.stateTimer, proj.lightningStun);
+                        spawnParticles(p.x, p.y - 56, 12, '#fff');
+                    }
                     if (proj.markTarget) {
-                        p.beastMarkedTimer = Math.max(p.beastMarkedTimer || 0, 4.0);
+                        p.beastMarkedTimer = 9999;
                         spawnParticles(p.x, p.y - 70, 12, '#ff0033');
                     }
                     if (proj.explode) {
@@ -249,7 +267,7 @@ function nextRound() {
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
-        p.comboCount = 0; p.slowTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
+        p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
         p.overkillRed = false;
         p.pose = null;
     });
@@ -331,6 +349,7 @@ function loop(timestamp) {
     if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
     else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
     draw();
+    if (typeof updateTouchControlsVisibility === 'function') updateTouchControlsVisibility();
     drawCharacterSelectPreview(realDt);
 
     requestID = requestAnimationFrame(loop);
@@ -1016,9 +1035,11 @@ function draw() {
     drawOverkillBackground(ctx);
 
     // Blood Stains (Draw first so they are on the floor)
-    ctx.fillStyle = '#aa0022'; // Darker red for stains
-    for (let stain of bloodStains) {
-        ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size, 0, Math.PI); ctx.fill();
+    if (settings.blood) {
+        ctx.fillStyle = '#aa0022'; // Darker red for stains
+        for (let stain of bloodStains) {
+            ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size, 0, Math.PI); ctx.fill();
+        }
     }
 
     // Entities
@@ -1026,7 +1047,7 @@ function draw() {
     projectiles.forEach(p => p.draw(ctx));
     hitboxes.forEach(h => h.draw(ctx));
     particles.forEach(p => p.draw(ctx));
-    bodyParts.forEach(p => p.draw(ctx));
+    if (settings.blood) bodyParts.forEach(p => p.draw(ctx));
     drawUltWorldFx(ctx);
 
     ctx.restore();

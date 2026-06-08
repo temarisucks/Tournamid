@@ -91,10 +91,15 @@
         #settings-btn.hidden { opacity: 0; pointer-events: none; }
         /* Settings screen */
         #settings-screen { justify-content: flex-start; padding: 26px 30px; overflow-y: auto; background: radial-gradient(circle at 50% 12%, rgba(80,0,12,0.4), rgba(0,0,0,0.96) 55%); z-index: 35; }
-        .settings-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; width: 100%; max-width: 820px; margin-bottom: 18px; }
+        .settings-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; width: 100%; max-width: 820px; margin-bottom: 18px; align-items: start; }
         .settings-block { border: 1px solid #444; background: #0d0d10; padding: 16px 18px; text-align: left; }
+        .settings-controls { grid-column: 2; grid-row: 1 / span 2; }
+        .settings-gameplay { grid-column: 1; grid-row: 2; }
         .settings-block h3 { color: #ff3333; letter-spacing: 2px; margin-bottom: 14px; }
         .settings-block h3 small { color: #888; letter-spacing: 0; font-size: 0.65rem; text-transform: none; }
+        .settings-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: #ccc; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 1px; }
+        .toggle-btn { min-width: 84px; padding: 6px 10px; background: #161620; border: 1px solid #555; color: #999; font-family: inherit; cursor: pointer; }
+        .toggle-btn.on { color: #fff; border-color: #ff0033; box-shadow: 0 0 10px rgba(255,0,51,0.35); }
         .vol-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 0.82rem; }
         .vol-row label { width: 84px; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
         .vol-row input[type=range] { flex: 1; accent-color: #ff0033; }
@@ -172,6 +177,17 @@
         #online-net-panel.good { border-color: rgba(120,255,190,0.45); color: #bfffe2; }
         #online-net-panel.warn { border-color: rgba(255,210,90,0.55); color: #ffd96d; }
         #online-net-panel.bad { border-color: rgba(255,0,51,0.65); color: #ff6680; }
+        #touch-controls { position: absolute; inset: 0; z-index: 8; pointer-events: none; touch-action: none; }
+        .touch-cluster { position: absolute; pointer-events: auto; }
+        .touch-dpad { left: 22px; bottom: 22px; width: 174px; height: 174px; display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px); }
+        .touch-actions { right: 20px; bottom: 22px; width: 292px; display: grid; grid-template-columns: repeat(3, 92px); gap: 8px; align-items: center; }
+        .touch-btn { border: 2px solid rgba(255,255,255,0.68); background: rgba(0,0,0,0.48); color: #fff; font-family: inherit; font-size: 0.68rem; letter-spacing: 1px; min-height: 54px; border-radius: 8px; touch-action: none; -webkit-tap-highlight-color: transparent; box-shadow: 0 0 14px rgba(0,0,0,0.5); }
+        .touch-btn:active, .touch-btn.held { background: rgba(255,0,51,0.72); border-color: #fff; transform: scale(0.96); }
+        .touch-up { grid-column: 2; grid-row: 1; }
+        .touch-left { grid-column: 1; grid-row: 2; }
+        .touch-down { grid-column: 2; grid-row: 3; }
+        .touch-right { grid-column: 3; grid-row: 2; }
+        .touch-ult { grid-column: span 2; border-color: #ff0033; color: #ffccd6; }
         
         #match-info { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; }
         #timer { font-size: 2.5rem; font-weight: bold; }

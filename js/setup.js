@@ -75,24 +75,46 @@ function playUltVoice(type) {
 }
 
 // --- BACKGROUND MUSIC ---
+function makeMusic(path, volume = 0.45) {
+    let a = new Audio(path);
+    a.loop = true;
+    a.preload = 'auto';
+    a.volume = volume;
+    return a;
+}
 const music = {
-    menu: new Audio('audio/music/Tournamid.wav'),
-    fight: new Audio('audio/music/Tournamid - Moon Bridge.wav'),
+    menu: makeMusic('audio/music/Tournamid.wav'),
+    stages: {
+        dojo: makeMusic('audio/music/Tournamid - Basic Arena.wav'),
+        moonBridge: makeMusic('audio/music/Tournamid - Moon Bridge.wav'),
+        bloodBall: makeMusic('audio/music/Tournamid - Blood Ball.wav')
+    },
+    fallbackStages: ['dojo', 'moonBridge', 'bloodBall'],
+    fallbackPick: null,
     current: null,
     ready: false,
     init() {
-        this.menu.loop = true; this.menu.volume = 0.45;
-        this.fight.loop = true; this.fight.volume = 0.45;
         this.ready = true;
+    },
+    stageTrack() {
+        if (this.stages[selectedStage]) {
+            this.fallbackPick = null;
+            return this.stages[selectedStage];
+        }
+        if (!this.fallbackPick) {
+            this.fallbackPick = this.fallbackStages[Math.floor(Math.random() * this.fallbackStages.length)];
+        }
+        return this.stages[this.fallbackPick] || this.stages.dojo;
     },
     play(which) {
         if (!this.ready) this.init();
-        let next = which === 'fight' ? this.fight : this.menu;
+        let next = which === 'fight' ? this.stageTrack() : this.menu;
         if (this.current === next) return;
         if (this.current) { try { this.current.pause(); this.current.currentTime = 0; } catch (e) {} }
         this.current = next;
         try { next.currentTime = 0; next.play(); } catch (e) {}
     },
+    resetFightPick() { this.fallbackPick = null; },
     stop() { if (this.current) { try { this.current.pause(); } catch (e) {} this.current = null; } }
 };
 // Browsers block autoplay until a user gesture — start the right track on first input
@@ -178,7 +200,7 @@ const roundVoices = {
 };
 
 // --- SETTINGS: per-category volume + custom key bindings (persisted) ---
-let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9 };
+let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, blood: true };
 try { let s = JSON.parse(localStorage.getItem('massacreSettings')); if (s) Object.assign(settings, s); } catch (e) {}
 function saveSettings() { try { localStorage.setItem('massacreSettings', JSON.stringify(settings)); } catch (e) {} }
 
@@ -205,7 +227,8 @@ function applyVolumes() {
 Object.values(attackSfx).forEach(a => registerAudio(a, 'sfx'));
 [selectVoices, winVoices, roundVoices, ultVoices].forEach(coll => Object.values(coll).forEach(a => registerAudio(a, 'voice')));
 registerAudio(overkillVoice, 'voice');
-registerAudio(music.menu, 'music'); registerAudio(music.fight, 'music');
+registerAudio(music.menu, 'music');
+Object.values(music.stages).forEach(a => registerAudio(a, 'music'));
 setTimeout(applyVolumes, 0); // defer so the Tone `sfx` object exists when first applied
 
 const DEFAULT_BINDINGS = {
