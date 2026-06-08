@@ -474,6 +474,13 @@ function onlineApplyInputToSlot(slot, input) {
 }
 
 function onlineSimulateFrame(frame, replaying) {
+    // Pin onlineState.frame to the frame actually being simulated. onlineDeterministicRandom
+    // keys off onlineState.frame, but during a rollback replay the loop leaves it at
+    // targetFrame — so re-simulating frame f produced a DIFFERENT roll than the live run
+    // (and a different one than the peer computed at frame f). That re-rolled any RNG move
+    // (e.g. the Mage's chaos bolt / roulette) into a new outcome and permanently desynced.
+    let oldFrame = onlineState.frame;
+    onlineState.frame = frame;
     onlineState.stateBuffer.set(frame, onlineCaptureState());
     onlineTrimRollbackBuffers(frame);
     onlineApplyFrameInputs(frame);
@@ -486,6 +493,7 @@ function onlineSimulateFrame(frame, replaying) {
         updateGameplay(ONLINE_FIXED_DT);
     } finally {
         Math.random = oldRandom;
+        onlineState.frame = oldFrame;
     }
     suppressRollbackEffects = oldSuppress;
 }

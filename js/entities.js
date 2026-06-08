@@ -1037,7 +1037,7 @@ class Fighter {
         } else if (moving && this.y === GROUND_Y && this.state !== 'BLOCK') {
             this.changeState('WALK');
             // Ranger passive
-            if (this.charType === 'RANGER' && Math.random() < 0.02) this.tacticalReload = true; 
+            if (this.charType === 'RANGER' && onlineDeterministicRandom('rangerTacticalReload', this) < 0.02) this.tacticalReload = true;
         } else if (!moving && this.y === GROUND_Y && this.state === 'WALK') {
             this.changeState('IDLE');
         }
