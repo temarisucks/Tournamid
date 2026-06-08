@@ -444,7 +444,10 @@ function selectStage(stageId, cardEl) {
     if (cardEl) cardEl.classList.add('selected');
     setTimeout(() => {
         if (gameState === 'STAGE_SELECT' && selectedStage === stageId) {
-            if (currentMode === 'ONLINE') onlineStartGame();
+            if (currentMode === 'ONLINE') {
+                onlineStartGame();
+                return;
+            }
             startGame();
         }
     }, 250);

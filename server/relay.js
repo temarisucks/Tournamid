@@ -70,7 +70,15 @@ wss.on('connection', ws => {
     const code = ws.roomCode;
     if (!code || !rooms.has(code)) return;
     const room = rooms.get(code);
-    const relayTypes = new Set(['select', 'stage', 'start', 'input', 'round-result', 'next-round', 'game-over', 'ping-game']);
+    if (msg.type === 'start') {
+      if (ws.slot !== 0) return;
+      const seed = Number.isFinite(msg.seed) ? msg.seed : Math.floor(Math.random() * 0xFFFFFFFF);
+      const payload = { ...msg, seed, slot: ws.slot };
+      setTimeout(() => broadcast(room, 'start', payload), 900);
+      return;
+    }
+
+    const relayTypes = new Set(['select', 'stage', 'input', 'sync', 'round-result', 'next-round', 'game-over', 'ping-game']);
     if (relayTypes.has(msg.type)) {
       broadcast(room, msg.type, { ...msg, slot: ws.slot }, ws);
     }

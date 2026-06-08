@@ -14,6 +14,7 @@ const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 
 const ONLINE_FIXED_DT = 1 / 60;
 const ONLINE_MAX_ROLLBACK_FRAMES = 10;
 const ONLINE_ROLLBACK_COOLDOWN_FRAMES = 3;
+const ONLINE_SYNC_RATE = 0.25;
 const ONLINE_STATE_BUFFER_FRAMES = 90;
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 240;
@@ -39,6 +40,8 @@ let onlineState = {
     rollbackFrames: 0,
     lastRollbackFrame: -999,
     lastRollbackSize: 0,
+    syncTimer: 0,
+    syncCorrections: 0,
     rngSeed: 0xC0FFEE,
     lastInputSent: 0,
     snapshotTimer: 0,
@@ -79,7 +82,7 @@ function onlineSetStatus(text) {
     if (el) el.innerText = text;
 }
 
-function onlineResetRuntimeStats() {
+function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.frame = 0;
     onlineState.accumulator = 0;
     onlineState.localInputs = new Map();
@@ -92,7 +95,9 @@ function onlineResetRuntimeStats() {
     onlineState.rollbackFrames = 0;
     onlineState.lastRollbackFrame = -999;
     onlineState.lastRollbackSize = 0;
-    onlineState.rngSeed = 0xC0FFEE;
+    onlineState.syncTimer = 0;
+    onlineState.syncCorrections = 0;
+    onlineState.rngSeed = seed >>> 0;
     onlineState.lastInputSent = 0;
     onlineState.snapshotTimer = 0;
     onlineState.lastSnapshotAt = 0;
@@ -236,8 +241,13 @@ function onlineHandleMessage(event) {
         selectedStage = msg.stageId || selectedStage;
         p1Selection = msg.p1Selection || p1Selection;
         p2Selection = msg.p2Selection || p2Selection;
-        onlineResetRuntimeStats();
+        onlineResetRuntimeStats(msg.seed);
         startGame();
+        return;
+    }
+
+    if (msg.type === 'sync') {
+        onlineApplyHostSync(msg);
         return;
     }
 
@@ -344,8 +354,8 @@ function onlineSelectStage(stageId) {
 
 function onlineStartGame() {
     if (onlineState.slot !== 0) return false;
-    onlineResetRuntimeStats();
-    onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection });
+    onlineSetStatus('Starting online match...');
+    onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, seed: Math.floor(Math.random() * 0xFFFFFFFF) });
     return true;
 }
 
@@ -375,7 +385,19 @@ function onlineTick(dt) {
     }
 
     onlineGuardRemoteInput();
+    onlineSendHostSync(dt);
     onlineUpdateNetHud();
+}
+
+function onlineSendHostSync(dt) {
+    if (onlineState.slot !== 0 || introSequence && !introSequence.done) return;
+    onlineState.syncTimer += dt;
+    if (onlineState.syncTimer < ONLINE_SYNC_RATE) return;
+    onlineState.syncTimer = 0;
+    onlineSend('sync', {
+        frame: onlineState.frame,
+        state: onlineCaptureSyncState()
+    });
 }
 
 function onlineFixedUpdate(realDt) {
@@ -600,6 +622,42 @@ function onlineCaptureState() {
     };
 }
 
+function onlineCaptureSyncState() {
+    let state = onlineCaptureState();
+    delete state.keys;
+    delete state.previousKeys;
+    return state;
+}
+
+function onlineApplyHostSync(msg) {
+    if (onlineState.slot !== 1 || !msg || !msg.state || gameState !== 'PLAYING') return;
+    let hostFrame = Number(msg.frame);
+    let frameDrift = Number.isFinite(hostFrame) ? Math.abs(hostFrame - onlineState.frame) : 0;
+    let state = msg.state;
+    let maxPosDrift = 0;
+    let hardMismatch = false;
+
+    if (Array.isArray(state.players)) {
+        for (let i = 0; i < Math.min(players.length, state.players.length); i++) {
+            let local = players[i], remote = state.players[i];
+            if (!local || !remote) continue;
+            maxPosDrift = Math.max(maxPosDrift, Math.hypot((remote.x || 0) - local.x, (remote.y || 0) - local.y));
+            if (Math.abs((remote.hp || 0) - local.hp) > 0.5 || remote.state !== local.state) hardMismatch = true;
+        }
+    }
+
+    if (frameDrift <= 8 && maxPosDrift < 55 && !hardMismatch) return;
+
+    let localKeys = onlineClonePlain(keys);
+    let localPreviousKeys = onlineClonePlain(previousKeys);
+    onlineRestoreState({ ...state, keys: localKeys, previousKeys: localPreviousKeys });
+    if (Number.isFinite(hostFrame)) onlineState.frame = hostFrame;
+    onlineState.accumulator = 0;
+    onlineState.syncCorrections++;
+    onlineState.lastRollbackSize = frameDrift || Math.round(maxPosDrift);
+    updateHUD();
+}
+
 function onlineRestoreState(state) {
     gameState = state.gameState;
     selectedStage = state.selectedStage;
@@ -615,9 +673,9 @@ function onlineRestoreState(state) {
     overkillFx = onlineClonePlain(state.overkillFx);
     onlineState.rngSeed = state.rngSeed;
     Object.keys(keys).forEach(k => delete keys[k]);
-    Object.assign(keys, onlineClonePlain(state.keys));
+    Object.assign(keys, onlineClonePlain(state.keys || {}));
     Object.keys(previousKeys).forEach(k => delete previousKeys[k]);
-    Object.assign(previousKeys, onlineClonePlain(state.previousKeys));
+    Object.assign(previousKeys, onlineClonePlain(state.previousKeys || {}));
     players = state.players.map(onlineRestoreFighter);
     projectiles = state.projectiles.map(onlineRestoreProjectile);
     hitboxes = state.hitboxes.map(onlineRestoreHitbox);
@@ -682,7 +740,7 @@ function onlineUpdateNetHud() {
     let rbEl = document.getElementById('online-net-rollback');
     if (pingEl) pingEl.innerText = ping == null ? 'PING --' : `PING ${ping}`;
     if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : `INPUT ${age}`;
-    if (rbEl) rbEl.innerText = `RB ${onlineState.lastRollbackSize}`;
+    if (rbEl) rbEl.innerText = onlineState.syncCorrections ? `SYNC ${onlineState.syncCorrections}` : `RB ${onlineState.lastRollbackSize}`;
     let level = 'good';
     if ((ping != null && ping > 130) || (age != null && age > 120)) level = 'warn';
     if ((ping != null && ping > 220) || (age != null && age > ONLINE_REMOTE_STALE_MS)) level = 'bad';
@@ -715,6 +773,8 @@ function onlineDisconnect() {
         rollbackFrames: 0,
         lastRollbackFrame: -999,
         lastRollbackSize: 0,
+        syncTimer: 0,
+        syncCorrections: 0,
         rngSeed: 0xC0FFEE,
         lastInputSent: 0,
         snapshotTimer: 0,
