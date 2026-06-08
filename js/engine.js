@@ -1,6 +1,7 @@
 // --- ENGINE FUNCTIONS ---
 
 function spawnParticles(x, y, amount, color) {
+    if (suppressRollbackEffects) return;
     for (let i = 0; i < amount; i++) {
         let vx = (Math.random() - 0.5) * 600;
         let vy = -200 - Math.random() * 500;
@@ -202,7 +203,7 @@ function checkWinCondition() {
 // One round decided (CPU/PVP). winnerIdx: 0=P1, 1=P2, -1=draw.
 function endRound(winnerIdx, subtitle) {
     if (gameState !== 'PLAYING') return;
-    if (currentMode === 'ONLINE' && onlineState.slot === 0) onlineSend('round-result', { winnerIdx, subtitle });
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('round-result', { winnerIdx, subtitle });
     gameState = 'ROUND_END';
     if (winnerIdx >= 0) roundWins[winnerIdx]++;
     renderRoundPips();
@@ -220,7 +221,7 @@ function endRound(winnerIdx, subtitle) {
 
 function nextRound() {
     if (gameState !== 'ROUND_END') return;
-    if (currentMode === 'ONLINE' && onlineState.slot === 0) onlineSend('next-round');
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('next-round');
     currentRound++;
     hitboxes = []; projectiles = []; particles = []; bodyParts = [];
     let geo = getStageGeo();
@@ -247,7 +248,7 @@ function nextRound() {
 }
 
 function endGame(title, subtitle) {
-    if (currentMode === 'ONLINE' && onlineState.slot === 0) onlineSend('game-over', { title, subtitle });
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('game-over', { title, subtitle });
     gameState = 'END';
     document.getElementById('end-title').innerText = title;
     document.getElementById('end-subtitle').innerText = subtitle;
@@ -274,7 +275,8 @@ function loop(timestamp) {
 
     frameRealDt = realDt;
     updateCinematics(realDt);
-    update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
+    if (currentMode === 'ONLINE') onlineFixedUpdate(realDt * timeScale);
+    else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
     draw();
     drawCharacterSelectPreview(realDt);
 
@@ -365,6 +367,14 @@ function drawIntroText(ctx) {
 }
 
 function update(dt) {
+    if (currentMode === 'ONLINE') {
+        onlineFixedUpdate(dt);
+        return;
+    }
+    updateGameplay(dt);
+}
+
+function updateGameplay(dt) {
     if (gameState === 'END') {
         projectiles.forEach(p => p.update(dt));
         projectiles = projectiles.filter(p => p.active);
@@ -382,7 +392,6 @@ function update(dt) {
         Object.assign(previousKeys, keys);
         return;
     }
-    onlineTick(dt);
 
     // Timer
     if (gameState === 'PLAYING' && currentMode !== 'PVE' && currentMode !== 'TRAINING' &&

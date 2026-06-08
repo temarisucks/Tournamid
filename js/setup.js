@@ -45,6 +45,7 @@ let ultActive = null;      // the Fighter currently performing an ultimate
 let camNow = { x: WIDTH / 2, y: HEIGHT / 2, zoom: 1 }; // eased cinematic camera
 let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
+let suppressRollbackEffects = false;
 
 const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, ZOMBIE: 40 };
 const ULT_LINES = {
@@ -122,6 +123,7 @@ function makeAudioSet(paths, volume = 0.9) {
     return { pool, cursor: 0 };
 }
 function playAudio(a) {
+    if (suppressRollbackEffects) return;
     if (!a) return;
     if (a.pool) {
         let voice = a.pool[a.cursor];
@@ -293,11 +295,11 @@ const sfx = {
         this.nextEventTime[name] = scheduled;
         return scheduled;
     },
-    playHit: function() { if(this.initialized) this.hitSynth.triggerAttackRelease("16n", this.getEventTime('hit', 0.025)); },
-    playSwing: function() { if(this.initialized) this.swingSynth.triggerAttackRelease("16n", this.getEventTime('swing', 0.08)); },
-    playGun: function() { if(this.initialized) this.gunSynth.triggerAttackRelease("C2", "16n", this.getEventTime('gun', 0.025)); },
-    playMagic: function() { if(this.initialized) this.magicSynth.triggerAttackRelease("C5", "8n", this.getEventTime('magic', 0.025)); },
-    playDeath: function() { if(this.initialized) this.deathSynth.triggerAttackRelease("C1", "4n", this.getEventTime('death', 0.025)); },
+    playHit: function() { if(!suppressRollbackEffects && this.initialized) this.hitSynth.triggerAttackRelease("16n", this.getEventTime('hit', 0.025)); },
+    playSwing: function() { if(!suppressRollbackEffects && this.initialized) this.swingSynth.triggerAttackRelease("16n", this.getEventTime('swing', 0.08)); },
+    playGun: function() { if(!suppressRollbackEffects && this.initialized) this.gunSynth.triggerAttackRelease("C2", "16n", this.getEventTime('gun', 0.025)); },
+    playMagic: function() { if(!suppressRollbackEffects && this.initialized) this.magicSynth.triggerAttackRelease("C5", "8n", this.getEventTime('magic', 0.025)); },
+    playDeath: function() { if(!suppressRollbackEffects && this.initialized) this.deathSynth.triggerAttackRelease("C1", "4n", this.getEventTime('death', 0.025)); },
 };
 
 // Input Management

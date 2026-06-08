@@ -11,8 +11,10 @@ const ONLINE_REMOTE_BINDINGS = {
 };
 
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
-const ONLINE_INPUT_RATE = 1 / 60;
-const ONLINE_SNAPSHOT_RATE = 1 / 20;
+const ONLINE_FIXED_DT = 1 / 60;
+const ONLINE_INPUT_DELAY_FRAMES = 3;
+const ONLINE_MAX_ROLLBACK_FRAMES = 18;
+const ONLINE_STATE_BUFFER_FRAMES = 90;
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 240;
 let onlineState = {
@@ -25,6 +27,17 @@ let onlineState = {
     localSelection: null,
     remoteSelection: null,
     waitingStart: false,
+    frame: 0,
+    accumulator: 0,
+    localInputs: new Map(),
+    remoteInputs: new Map(),
+    predictedRemoteInputs: new Map(),
+    stateBuffer: new Map(),
+    lastLocalInput: null,
+    lastRemoteInput: null,
+    rollbackCount: 0,
+    rollbackFrames: 0,
+    rngSeed: 0xC0FFEE,
     lastInputSent: 0,
     snapshotTimer: 0,
     lastSnapshotAt: 0,
@@ -37,6 +50,20 @@ let onlineState = {
     remoteInputStale: false,
     status: ''
 };
+
+function onlineBlankInput() {
+    return { l: false, r: false, u: false, d: false, block: false, atkL: false, atkH: false, special: false, ult: false };
+}
+
+function onlineCloneInput(input) {
+    let out = {};
+    ONLINE_ACTIONS.forEach(action => { out[action] = !!(input && input[action]); });
+    return out;
+}
+
+function onlineSameInput(a, b) {
+    return ONLINE_ACTIONS.every(action => !!(a && a[action]) === !!(b && b[action]));
+}
 
 function onlineDefaultUrl() {
     if (window.TOURNAMID_WS_URL) return window.TOURNAMID_WS_URL;
@@ -51,6 +78,17 @@ function onlineSetStatus(text) {
 }
 
 function onlineResetRuntimeStats() {
+    onlineState.frame = 0;
+    onlineState.accumulator = 0;
+    onlineState.localInputs = new Map();
+    onlineState.remoteInputs = new Map();
+    onlineState.predictedRemoteInputs = new Map();
+    onlineState.stateBuffer = new Map();
+    onlineState.lastLocalInput = onlineBlankInput();
+    onlineState.lastRemoteInput = onlineBlankInput();
+    onlineState.rollbackCount = 0;
+    onlineState.rollbackFrames = 0;
+    onlineState.rngSeed = 0xC0FFEE;
     onlineState.lastInputSent = 0;
     onlineState.snapshotTimer = 0;
     onlineState.lastSnapshotAt = 0;
@@ -60,6 +98,10 @@ function onlineResetRuntimeStats() {
     onlineState.lastRemoteInputAt = 0;
     onlineState.lastRemoteInputMs = null;
     onlineState.remoteInputStale = false;
+    for (let i = 0; i < ONLINE_INPUT_DELAY_FRAMES; i++) {
+        onlineState.localInputs.set(i, onlineBlankInput());
+        onlineState.remoteInputs.set(i, onlineBlankInput());
+    }
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
 
@@ -201,7 +243,15 @@ function onlineHandleMessage(event) {
         onlineState.lastRemoteInputAt = performance.now();
         onlineState.lastRemoteInputMs = 0;
         onlineState.remoteInputStale = false;
-        onlineApplyRemoteInput(msg.input || {});
+        let frame = Number(msg.frame);
+        if (Number.isFinite(frame)) {
+            let input = onlineCloneInput(msg.input);
+            onlineState.remoteInputs.set(frame, input);
+            onlineState.lastRemoteInput = input;
+            onlineMaybeRollback(frame, input);
+        } else {
+            onlineApplyRemoteInput(msg.input || {});
+        }
         return;
     }
 
@@ -321,20 +371,6 @@ function onlineApplyRemoteInput(input) {
 
 function onlineTick(dt) {
     if (currentMode !== 'ONLINE' || gameState !== 'PLAYING') return;
-    onlineState.lastInputSent += dt;
-    if (onlineState.lastInputSent >= ONLINE_INPUT_RATE) {
-        onlineState.lastInputSent = 0;
-        onlineSend('input', { input: onlineReadLocalInput() });
-    }
-
-    if (onlineState.slot === 0) {
-        onlineState.snapshotTimer += dt;
-        if (onlineState.snapshotTimer >= ONLINE_SNAPSHOT_RATE) {
-            onlineState.snapshotTimer = 0;
-            onlineSend('snapshot', { snapshot: onlineSnapshot() });
-        }
-    }
-
     onlineState.pingTimer += dt;
     if (onlineState.pingTimer >= ONLINE_PING_RATE) {
         onlineState.pingTimer = 0;
@@ -343,6 +379,268 @@ function onlineTick(dt) {
 
     onlineGuardRemoteInput();
     onlineUpdateNetHud();
+}
+
+function onlineFixedUpdate(realDt) {
+    if (currentMode !== 'ONLINE') return updateGameplay(realDt);
+    onlineTick(realDt);
+    if (gameState !== 'PLAYING') {
+        updateGameplay(realDt);
+        return;
+    }
+    if (introSequence && !introSequence.done) {
+        updateGameplay(realDt);
+        return;
+    }
+
+    onlineState.accumulator += Math.min(0.1, realDt);
+    let steps = 0;
+    while (onlineState.accumulator >= ONLINE_FIXED_DT && steps < 8) {
+        onlinePrepareLocalInput();
+        onlineSimulateFrame(onlineState.frame, false);
+        onlineState.frame++;
+        onlineState.accumulator -= ONLINE_FIXED_DT;
+        steps++;
+    }
+    if (steps >= 8) onlineState.accumulator = 0;
+}
+
+function onlinePrepareLocalInput() {
+    let frame = onlineState.frame + ONLINE_INPUT_DELAY_FRAMES;
+    let input = onlineReadLocalInput();
+    onlineState.localInputs.set(frame, input);
+    onlineState.lastLocalInput = input;
+    onlineSend('input', { frame, input });
+}
+
+function onlineInputForFrame(map, frame, lastInput, isRemote) {
+    if (map.has(frame)) return map.get(frame);
+    let predicted = onlineCloneInput(lastInput || onlineBlankInput());
+    if (isRemote) onlineState.predictedRemoteInputs.set(frame, predicted);
+    return predicted;
+}
+
+function onlineApplyFrameInputs(frame) {
+    let localSlot = onlineState.slot || 0;
+    let remoteSlot = localSlot === 0 ? 1 : 0;
+    let localInput = onlineInputForFrame(onlineState.localInputs, frame, onlineState.lastLocalInput, false);
+    let remoteInput = onlineInputForFrame(onlineState.remoteInputs, frame, onlineState.lastRemoteInput, true);
+    onlineApplyInputToSlot(localSlot, localInput);
+    onlineApplyInputToSlot(remoteSlot, remoteInput);
+}
+
+function onlineApplyInputToSlot(slot, input) {
+    let bindings = slot === onlineState.slot ? onlineLocalControls() : ONLINE_REMOTE_BINDINGS;
+    ONLINE_ACTIONS.forEach(action => { keys[bindings[action]] = !!input[action]; });
+}
+
+function onlineSimulateFrame(frame, replaying) {
+    onlineState.stateBuffer.set(frame, onlineCaptureState());
+    onlineTrimRollbackBuffers(frame);
+    onlineApplyFrameInputs(frame);
+    let oldSuppress = suppressRollbackEffects;
+    let oldRandom = Math.random;
+    suppressRollbackEffects = oldSuppress || replaying;
+    Math.random = onlineRandom;
+    frameRealDt = ONLINE_FIXED_DT;
+    try {
+        updateGameplay(ONLINE_FIXED_DT);
+    } finally {
+        Math.random = oldRandom;
+    }
+    suppressRollbackEffects = oldSuppress;
+}
+
+function onlineRandom() {
+    onlineState.rngSeed = (1664525 * onlineState.rngSeed + 1013904223) >>> 0;
+    return onlineState.rngSeed / 4294967296;
+}
+
+function onlineMaybeRollback(frame, actualInput) {
+    if (frame >= onlineState.frame) return;
+    if (onlineState.frame - frame > ONLINE_MAX_ROLLBACK_FRAMES) return;
+    let predicted = onlineState.predictedRemoteInputs.get(frame);
+    if (!predicted || onlineSameInput(predicted, actualInput)) return;
+    let state = onlineState.stateBuffer.get(frame);
+    if (!state) return;
+
+    let targetFrame = onlineState.frame;
+    onlineRestoreState(state);
+    onlineState.rollbackCount++;
+    onlineState.rollbackFrames += targetFrame - frame;
+    let oldSuppress = suppressRollbackEffects;
+    suppressRollbackEffects = true;
+    for (let f = frame; f < targetFrame && gameState === 'PLAYING'; f++) {
+        onlineSimulateFrame(f, true);
+    }
+    suppressRollbackEffects = oldSuppress;
+    onlineState.frame = targetFrame;
+    updateHUD();
+}
+
+function onlineClonePlain(value) {
+    if (value == null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(onlineClonePlain);
+    if (value instanceof Set) return Array.from(value);
+    let out = {};
+    Object.keys(value).forEach(k => {
+        if (typeof value[k] !== 'function') out[k] = onlineClonePlain(value[k]);
+    });
+    return out;
+}
+
+function onlineFighterIndex(fighter) {
+    return players.indexOf(fighter);
+}
+
+function onlineCloneWithoutRefs(value, blockedKeys) {
+    let out = {};
+    Object.keys(value || {}).forEach(k => {
+        if (!blockedKeys.includes(k)) out[k] = onlineClonePlain(value[k]);
+    });
+    return out;
+}
+
+function onlineCaptureFighter(p) {
+    let out = {};
+    Object.keys(p).forEach(k => {
+        if (k === 'attacks') return;
+        if (k === 'throwHold') {
+            out.throwHold = p.throwHold ? { ...onlineCloneWithoutRefs(p.throwHold, ['target']), targetIndex: onlineFighterIndex(p.throwHold.target) } : null;
+            return;
+        }
+        if (k === 'ult') {
+            out.ult = p.ult ? { ...onlineCloneWithoutRefs(p.ult, ['target', 'proj']), targetIndex: onlineFighterIndex(p.ult.target), projIndex: projectiles.indexOf(p.ult.proj) } : null;
+            return;
+        }
+        out[k] = onlineClonePlain(p[k]);
+    });
+    return out;
+}
+
+function onlineRestoreFighter(data) {
+    let p = Object.create(Fighter.prototype);
+    Object.assign(p, onlineClonePlain(data));
+    p.attacks = CHARACTERS[p.charType].attacks;
+    p.comboInputBuffer = Array.isArray(p.comboInputBuffer) ? p.comboInputBuffer : [];
+    p.currentAttack = p.currentAttack ? onlineClonePlain(p.currentAttack) : null;
+    return p;
+}
+
+function onlineCaptureHitbox(h) {
+    let out = {};
+    Object.keys(h).forEach(k => {
+        if (k === 'owner') out.ownerIndex = onlineFighterIndex(h.owner);
+        else if (k === 'grabThrow') out.grabThrowIndex = onlineFighterIndex(h.grabThrow);
+        else if (k === 'ultActivator') out.ultActivatorIndex = onlineFighterIndex(h.ultActivator);
+        else if (k === 'hasHit') out.hasHit = Array.from(h.hasHit || []);
+        else out[k] = onlineClonePlain(h[k]);
+    });
+    return out;
+}
+
+function onlineRestoreHitbox(data) {
+    let h = Object.create(Hitbox.prototype);
+    Object.assign(h, onlineClonePlain(data));
+    h.owner = players[data.ownerIndex] || null;
+    h.grabThrow = players[data.grabThrowIndex] || null;
+    h.ultActivator = players[data.ultActivatorIndex] || null;
+    h.hasHit = new Set(data.hasHit || []);
+    return h;
+}
+
+function onlineCaptureProjectile(p) {
+    let out = {};
+    Object.keys(p).forEach(k => {
+        if (k === 'owner') out.ownerIndex = onlineFighterIndex(p.owner);
+        else if (k === 'ultActivator') out.ultActivatorIndex = onlineFighterIndex(p.ultActivator);
+        else if (k === 'hasHit') out.hasHit = Array.from(p.hasHit || []);
+        else if (k === 'customLogic') out.customLogicName = p.customLogic === splitLogic ? 'splitLogic' : null;
+        else out[k] = onlineClonePlain(p[k]);
+    });
+    return out;
+}
+
+function onlineRestoreProjectile(data) {
+    let p = Object.create(Projectile.prototype);
+    Object.assign(p, onlineClonePlain(data));
+    p.owner = players[data.ownerIndex] || null;
+    p.ultActivator = players[data.ultActivatorIndex] || null;
+    p.hasHit = new Set(data.hasHit || []);
+    p.customLogic = data.customLogicName === 'splitLogic' ? splitLogic : null;
+    return p;
+}
+
+function onlineCaptureState() {
+    return {
+        frame: onlineState.frame,
+        gameState,
+        selectedStage,
+        matchTimer,
+        matchTimerAccumulator,
+        roundWins: [...roundWins],
+        currentRound,
+        trainingMode,
+        infiniteMeter,
+        timeScale,
+        ultActiveIndex: onlineFighterIndex(ultActive),
+        ultBanner: onlineClonePlain(ultBanner),
+        ultCamera: onlineClonePlain(ultCamera),
+        overkillFx: onlineClonePlain(overkillFx),
+        rngSeed: onlineState.rngSeed,
+        keys: onlineClonePlain(keys),
+        previousKeys: onlineClonePlain(previousKeys),
+        players: players.map(onlineCaptureFighter),
+        hitboxes: hitboxes.map(onlineCaptureHitbox),
+        projectiles: projectiles.map(onlineCaptureProjectile),
+        particles: particles.map(p => onlineClonePlain(p)),
+        bloodStains: bloodStains.map(onlineClonePlain),
+        bodyParts: bodyParts.map(p => onlineClonePlain(p))
+    };
+}
+
+function onlineRestoreState(state) {
+    gameState = state.gameState;
+    selectedStage = state.selectedStage;
+    matchTimer = state.matchTimer;
+    matchTimerAccumulator = state.matchTimerAccumulator;
+    roundWins = [...state.roundWins];
+    currentRound = state.currentRound;
+    trainingMode = state.trainingMode;
+    infiniteMeter = state.infiniteMeter;
+    timeScale = state.timeScale;
+    ultBanner = onlineClonePlain(state.ultBanner);
+    ultCamera = onlineClonePlain(state.ultCamera);
+    overkillFx = onlineClonePlain(state.overkillFx);
+    onlineState.rngSeed = state.rngSeed;
+    Object.keys(keys).forEach(k => delete keys[k]);
+    Object.assign(keys, onlineClonePlain(state.keys));
+    Object.keys(previousKeys).forEach(k => delete previousKeys[k]);
+    Object.assign(previousKeys, onlineClonePlain(state.previousKeys));
+    players = state.players.map(onlineRestoreFighter);
+    projectiles = state.projectiles.map(onlineRestoreProjectile);
+    hitboxes = state.hitboxes.map(onlineRestoreHitbox);
+    particles = state.particles.map(p => Object.assign(Object.create(Particle.prototype), onlineClonePlain(p)));
+    bloodStains = state.bloodStains.map(onlineClonePlain);
+    bodyParts = state.bodyParts.map(p => Object.assign(Object.create(BodyPart.prototype), onlineClonePlain(p)));
+    players.forEach(p => {
+        if (p.throwHold && p.throwHold.targetIndex >= 0) p.throwHold.target = players[p.throwHold.targetIndex];
+        if (p.ult) {
+            if (p.ult.targetIndex >= 0) p.ult.target = players[p.ult.targetIndex];
+            if (p.ult.projIndex >= 0) p.ult.proj = projectiles[p.ult.projIndex];
+        }
+    });
+    ultActive = players[state.ultActiveIndex] || null;
+    if (document.getElementById('timer')) document.getElementById('timer').innerText = matchTimer;
+    renderRoundPips();
+}
+
+function onlineTrimRollbackBuffers(frame) {
+    let min = frame - ONLINE_STATE_BUFFER_FRAMES;
+    for (let key of onlineState.stateBuffer.keys()) if (key < min) onlineState.stateBuffer.delete(key);
+    for (let key of onlineState.localInputs.keys()) if (key < min) onlineState.localInputs.delete(key);
+    for (let key of onlineState.remoteInputs.keys()) if (key < min) onlineState.remoteInputs.delete(key);
+    for (let key of onlineState.predictedRemoteInputs.keys()) if (key < min) onlineState.predictedRemoteInputs.delete(key);
 }
 
 function onlineSendPing() {
@@ -380,8 +678,10 @@ function onlineUpdateNetHud() {
     let age = onlineState.lastRemoteInputMs == null ? null : Math.round(onlineState.lastRemoteInputMs);
     let pingEl = document.getElementById('online-net-ping');
     let ageEl = document.getElementById('online-net-age');
+    let rbEl = document.getElementById('online-net-rollback');
     if (pingEl) pingEl.innerText = ping == null ? 'PING --' : `PING ${ping}`;
     if (ageEl) ageEl.innerText = age == null ? 'INPUT --' : `INPUT ${age}`;
+    if (rbEl) rbEl.innerText = `RB ${onlineState.rollbackCount}`;
     let level = 'good';
     if ((ping != null && ping > 130) || (age != null && age > 120)) level = 'warn';
     if ((ping != null && ping > 220) || (age != null && age > ONLINE_REMOTE_STALE_MS)) level = 'bad';
@@ -448,6 +748,17 @@ function onlineDisconnect() {
         localSelection: null,
         remoteSelection: null,
         waitingStart: false,
+        frame: 0,
+        accumulator: 0,
+        localInputs: new Map(),
+        remoteInputs: new Map(),
+        predictedRemoteInputs: new Map(),
+        stateBuffer: new Map(),
+        lastLocalInput: null,
+        lastRemoteInput: null,
+        rollbackCount: 0,
+        rollbackFrames: 0,
+        rngSeed: 0xC0FFEE,
         lastInputSent: 0,
         snapshotTimer: 0,
         lastSnapshotAt: 0,

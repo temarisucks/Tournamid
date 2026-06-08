@@ -1358,7 +1358,8 @@ class Fighter {
                 this.spawnProjectile(atk, dmgMod);
                 // Mage passive Wild Magic: chance for a bonus projectile
                 if (this.charType === 'MAGE' && Math.random() < 0.2) {
-                    setTimeout(() => { if (this.state !== 'DEAD') this.spawnProjectile(atk, dmgMod, true); }, 90);
+                    if (currentMode === 'ONLINE') this.spawnProjectile(atk, dmgMod, true);
+                    else setTimeout(() => { if (this.state !== 'DEAD') this.spawnProjectile(atk, dmgMod, true); }, 90);
                 }
             } else if (atk.w > 0) {
                 let hx = this.x + (atk.ox * this.dir) - (this.dir < 0 ? atk.w : 0);
