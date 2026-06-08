@@ -218,6 +218,22 @@
         <p id="net-message-sub"></p>
     </div>
 
+    <!-- Ladder: defeat (retry) -->
+    <div id="ladder-defeat-screen" class="screen hidden">
+        <h1>DEFEATED</h1>
+        <p class="subtitle" id="ladder-defeat-sub">The climb ends here... unless you try again.</p>
+        <button class="btn" onclick="ladderRetry()">Retry</button>
+        <button class="btn" onclick="returnToMenu()">Main Menu</button>
+    </div>
+
+    <!-- Ladder: cleared (congratulations) -->
+    <div id="ladder-complete-screen" class="screen hidden">
+        <h1>LADDER CLEARED</h1>
+        <p class="subtitle">You conquered every challenger. Champion of the Ladder.</p>
+        <button class="btn" onclick="goToCharSelect('LADDER')">Climb Again</button>
+        <button class="btn" onclick="returnToMenu()">Main Menu</button>
+    </div>
+
     <canvas id="gameCanvas" width="1024" height="576"></canvas>
 </div>
 

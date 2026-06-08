@@ -233,6 +233,7 @@ const STAGES = {
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)
 let ladder = { queue: [], index: 0, active: false };
+let ladderView = null; // canvas ladder-climb screen animation state
 let stageActors = null;
 
 // --- STAGE GEOMETRY ---

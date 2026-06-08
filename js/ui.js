@@ -381,7 +381,11 @@ function selectCharacter(charType, cardEl) {
         charSelectPreview.p1Burst = 1;
         markRosterSelection(resolvedType, 'p1');
         updateSelectionLabels();
-        if (currentMode === 'PVE' || currentMode === 'TRAINING' || currentMode === 'LADDER') {
+        if (currentMode === 'LADDER') {
+            setTimeout(() => {
+                if (gameState === 'CHAR_SELECT' && p1Selection === resolvedType) enterLadder();
+            }, 650);
+        } else if (currentMode === 'PVE' || currentMode === 'TRAINING') {
             setTimeout(() => {
                 if (gameState === 'CHAR_SELECT' && p1Selection === resolvedType) goToStageSelect();
             }, 650);
@@ -501,20 +505,6 @@ function startGame() {
         document.getElementById('timer').classList.add('hidden');
         document.getElementById('wave-counter').classList.remove('hidden');
         startPvEWave();
-    } else if (currentMode === 'LADDER') {
-        // The gauntlet: every fighter, shuffled, each rung harder than the last.
-        ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH']);
-        ladder.index = 0; ladder.active = true;
-        let oppType = ladder.queue[0];
-        let opp = new Fighter('P2', WIDTH * 0.75, oppType, true, 1);
-        opp.aiLevel = ladderLevelFor(0, ladder.queue.length);
-        players.push(opp);
-        document.getElementById('p2-name').innerText = "RUNG 1 - " + CHARACTERS[oppType].name;
-        document.getElementById('timer').classList.remove('hidden');
-        document.getElementById('wave-counter').classList.remove('hidden');
-        document.getElementById('wave-counter').innerText = "RUNG 1/" + ladder.queue.length;
-        matchTimer = 99;
-        document.getElementById('timer').innerText = matchTimer;
     } else {
         players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU', 1));
         document.getElementById('p2-name').innerText = currentMode === 'CPU' ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
@@ -577,41 +567,105 @@ function ladderLevelFor(index, total) {
     return Math.min(1, 0.3 + (index / (total - 1)) * 0.7); // first rung 0.3 → last 1.0
 }
 
-function ladderNextRung() {
-    if (gameState !== 'ROUND_END') return;
-    hitboxes = []; projectiles = []; particles = []; bodyParts = [];
+// Enter Ladder mode after the player picks their fighter: build the gauntlet and
+// show the climb screen (no stage select — each rung is fought on a random arena).
+function enterLadder() {
+    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH']);
+    ladder.index = 0; ladder.active = true;
+    showLadderScreen(false); // light up rung 1, then drop into the fight
+}
+
+// Show the canvas ladder. climb=true animates the player's icon up one rung first.
+function showLadderScreen(climb) {
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('settings-btn').classList.remove('hidden');
+    showScreen(); // hide all DOM overlays so the canvas ladder is visible
+    gameState = 'LADDER_SCREEN';
+    if (climb && ladder.index > 0) {
+        ladderView = { phase: 'climb', t: 0, fromRung: ladder.index - 1, toRung: ladder.index, playerY: ladderRungY(ladder.index - 1) };
+    } else {
+        ladderView = { phase: 'lightup', t: 0, toRung: ladder.index, playerY: ladderRungY(ladder.index) };
+    }
+}
+
+// Start a best-of-3 against the challenger on the given rung (random arena, scaled CPU).
+function startLadderBattle(index) {
+    ladderView = null;
+    showScreen();
+    document.getElementById('pause-screen').classList.add('hidden');
+    document.getElementById('hud').classList.remove('hidden');
+    players = []; hitboxes = []; projectiles = []; particles = []; bloodStains = []; bodyParts = [];
+    overkillFx = null;
+    selectedStage = ['dojo', 'moonBridge', 'platform', 'pStreet', 'bloodBall'][Math.floor(Math.random() * 5)];
     initStageActors();
+    trainingMode = false; infiniteMeter = false;
+    document.getElementById('training-panel').classList.add('hidden');
+
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
 
-    // Reset the player to a fresh, full-health state for the new challenger.
-    let p1 = players[0];
-    p1.x = lx; p1.y = GROUND_Y; p1.vx = 0; p1.vy = 0;
-    p1.hp = p1.maxHp; p1.meter = 0; p1.state = 'IDLE'; p1.stateTimer = 0; p1.dir = 1;
-    p1.blockHealth = p1.blockMax; p1.ledge = null; p1.comboCount = 0; p1.slowTimer = 0;
-    p1.invulnTimer = 0; p1.ult = null; p1._ringedOut = false; p1._overkilled = false;
-    p1.overkillRed = false; p1.pose = null;
-
-    // Spawn the next, tougher challenger.
-    let oppType = ladder.queue[ladder.index];
+    players.push(new Fighter('P1', lx, p1Selection, false, 0));
+    document.getElementById('p1-name').innerText = CHARACTERS[p1Selection].name;
+    let oppType = ladder.queue[index];
     let opp = new Fighter('P2', rx, oppType, true, 1);
     opp.dir = -1;
-    opp.aiLevel = ladderLevelFor(ladder.index, ladder.queue.length);
-    opp.maxHp = Math.floor(opp.maxHp * (1 + ladder.index * 0.06)); // mild stat ramp
-    opp.hp = opp.maxHp;
-    players[1] = opp;
+    opp.aiLevel = ladderLevelFor(index, ladder.queue.length);
+    opp.maxHp = Math.floor(opp.maxHp * (1 + index * 0.05)); opp.hp = opp.maxHp; // mild stat ramp
+    players.push(opp);
+    document.getElementById('p2-name').innerText = "CPU - " + CHARACTERS[oppType].name;
 
-    document.getElementById('p2-name').innerText = "RUNG " + (ladder.index + 1) + " - " + CHARACTERS[oppType].name;
-    document.getElementById('wave-counter').innerText = "RUNG " + (ladder.index + 1) + "/" + ladder.queue.length;
-    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
-    matchTimer = 99;
-    document.getElementById('timer').innerText = matchTimer;
-    matchTimerAccumulator = 0;
-    roundAnnounce = { text: CHARACTERS[oppType].name + "!", t: 0, dur: 1.6 };
+    document.getElementById('timer').classList.remove('hidden');
+    document.getElementById('wave-counter').classList.remove('hidden');
+    document.getElementById('wave-counter').innerText = "RUNG " + (index + 1) + "/" + ladder.queue.length;
+    matchTimer = 99; document.getElementById('timer').innerText = matchTimer; matchTimerAccumulator = 0;
+
+    roundWins = [0, 0]; currentRound = 1; roundAnnounce = null;
+    document.querySelectorAll('.round-pips').forEach(el => el.classList.remove('hidden'));
+    renderRoundPips();
+    roundAnnounce = { text: "ROUND 1", t: 0, dur: 1.4 };
     beginIntroSequence('round1');
     updateHUD();
     gameState = 'PLAYING';
+    music.play('fight');
+    document.getElementById('settings-btn').classList.add('hidden');
+}
+
+// Called once a rung's best-of-3 is decided (after the win animation).
+function ladderResolveMatch() {
+    let playerWon = roundWins[0] > roundWins[1];
+    if (playerWon) {
+        ladder.index++;
+        if (ladder.index >= ladder.queue.length) showLadderComplete();
+        else showLadderScreen(true); // climb up, then the next challenger
+    } else {
+        showLadderDefeat();
+    }
+}
+
+function showLadderComplete() {
+    ladder.active = false;
+    ladderView = null;
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('settings-btn').classList.remove('hidden');
+    showScreen('ladder-complete-screen');
+    gameState = 'MENU';
+    music.play('menu');
+}
+
+function showLadderDefeat() {
+    ladderView = null;
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('settings-btn').classList.remove('hidden');
+    let opp = CHARACTERS[ladder.queue[ladder.index]];
+    document.getElementById('ladder-defeat-sub').innerText =
+        'Fell at rung ' + (ladder.index + 1) + ' of ' + ladder.queue.length + (opp ? ' — ' + opp.name + ' bested you.' : '.');
+    showScreen('ladder-defeat-screen');
+    gameState = 'MENU';
+}
+
+function ladderRetry() {
+    startLadderBattle(ladder.index); // same rung, fresh best-of-3
 }
 
 function selectRandomStage(cardEl) {

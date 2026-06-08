@@ -15,8 +15,9 @@ function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
     if (winnerIdx !== 0 && winnerIdx !== 1) return false;
-    // Ladder: the player finishing the very last challenger earns the overkill.
-    if (currentMode === 'LADDER') return winnerIdx === 0 && ladder.active && ladder.index >= ladder.queue.length - 1;
+    // Ladder: the player's match-winning blow on the very last challenger earns the overkill.
+    if (currentMode === 'LADDER') return winnerIdx === 0 && ladder.active &&
+        ladder.index >= ladder.queue.length - 1 && roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
     return roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
 }
 
@@ -213,7 +214,6 @@ function checkWinCondition() {
 // One round decided (CPU/PVP). winnerIdx: 0=P1, 1=P2, -1=draw.
 function endRound(winnerIdx, subtitle) {
     if (gameState !== 'PLAYING') return;
-    if (currentMode === 'LADDER') { ladderEndRound(winnerIdx); return; }
     if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('round-result', { winnerIdx, subtitle });
     gameState = 'ROUND_END';
     if (winnerIdx >= 0) roundWins[winnerIdx]++;
@@ -221,29 +221,15 @@ function endRound(winnerIdx, subtitle) {
 
     if (roundWins[0] >= ROUNDS_TO_WIN || roundWins[1] >= ROUNDS_TO_WIN) {
         let p1Won = roundWins[0] > roundWins[1];
-        endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", `Match ${roundWins[0]} – ${roundWins[1]}`);
+        // Ladder rungs are best-of-3; endGame routes to the ladder flow when in LADDER mode.
+        if (currentMode === 'LADDER') endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", "");
+        else endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", `Match ${roundWins[0]} – ${roundWins[1]}`);
         return;
     }
 
     let txt = winnerIdx === -1 ? "DRAW ROUND" : (winnerIdx === 0 ? "PLAYER 1" : "PLAYER 2") + " TAKES IT";
     roundAnnounce = { text: txt, t: 0, dur: 2.0 };
     setTimeout(nextRound, 2000);
-}
-
-// ---- LADDER mode: each rung is a single decisive round vs the next fighter ----
-function ladderEndRound(winnerIdx) {
-    gameState = 'ROUND_END';
-    if (winnerIdx === 0) { // player cleared this challenger
-        ladder.index++;
-        if (ladder.index >= ladder.queue.length) {
-            endGame("LADDER CLEARED", "You conquered every challenger.");
-        } else {
-            roundAnnounce = { text: "RUNG " + ladder.index + " CLEARED", t: 0, dur: 1.8 };
-            setTimeout(ladderNextRung, 2000);
-        }
-    } else {
-        endGame("DEFEATED", `Fell at rung ${ladder.index + 1} of ${ladder.queue.length}`);
-    }
 }
 
 function nextRound() {
@@ -296,6 +282,7 @@ function endGame(title, subtitle) {
     let animMs = overkillFx ? 3200 : 2800;
     roundAnnounce = { text: title, t: 0, dur: animMs / 1000 };
     setTimeout(() => {
+        if (currentMode === 'LADDER') { ladderResolveMatch(); return; } // win -> climb, loss -> retry
         document.getElementById('end-screen').classList.remove('hidden');
         if (currentMode === 'ONLINE') onlineBeginPostMatch();
     }, animMs);
@@ -343,6 +330,7 @@ function updateCinematics(realDt) {
     if (ultBanner) { ultBanner.t += realDt; if (ultBanner.t > ultBanner.dur) ultBanner = null; }
     if (roundAnnounce) { roundAnnounce.t += realDt; if (roundAnnounce.t > roundAnnounce.dur) roundAnnounce = null; }
     if (overkillFx) { overkillFx.t += realDt; if (overkillFx.t > overkillFx.dur) overkillFx = null; }
+    if (gameState === 'LADDER_SCREEN') updateLadderScreen(realDt);
     updateStageActors(realDt);
     updateIntroSequence(realDt);
 }
@@ -877,11 +865,126 @@ function drawTrafficLight(c, x, baseY, H, phase) {
     }
 }
 
+// ---------------- LADDER CLIMB SCREEN ----------------
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', ZOMBIE: 'zombie' };
+let _charIconCache = {};
+function getCharIcon(type) {
+    if (type in _charIconCache) return _charIconCache[type];
+    let f = LADDER_ICON_FILE[type];
+    if (!f) { _charIconCache[type] = null; return null; }
+    let img = new Image();
+    img.src = 'textures/icons/' + f + '.png';
+    _charIconCache[type] = img;
+    return img;
+}
+function drawCharIcon(c, type, x, y, size) {
+    let img = getCharIcon(type);
+    if (img && img.complete && img.naturalWidth > 0) {
+        c.drawImage(img, x - size / 2, y - size / 2, size, size);
+    } else { // icon still loading or missing — draw a lettered placeholder
+        c.save();
+        c.fillStyle = '#2a2a2a'; c.fillRect(x - size / 2, y - size / 2, size, size);
+        c.fillStyle = '#ddd'; c.font = `bold ${Math.floor(size * 0.5)}px monospace`;
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        let nm = (CHARACTERS[type] ? CHARACTERS[type].name : type).replace('THE ', '');
+        c.fillText(nm.charAt(0) || '?', x, y + 1);
+        c.restore();
+    }
+}
+
+const LADDER_TOP_Y = 150, LADDER_BOTTOM_Y = HEIGHT - 96;
+function ladderRungY(i) {
+    let n = Math.max(1, ladder.queue.length);
+    if (n === 1) return LADDER_BOTTOM_Y;
+    return LADDER_BOTTOM_Y - i * (LADDER_BOTTOM_Y - LADDER_TOP_Y) / (n - 1);
+}
+
+function updateLadderScreen(dt) {
+    if (!ladderView || gameState !== 'LADDER_SCREEN') return;
+    ladderView.t += dt;
+    if (ladderView.phase === 'climb') {
+        let p = Math.min(1, ladderView.t / 1.1);
+        let e = p * p * (3 - 2 * p); // smoothstep
+        let a = ladderRungY(ladderView.fromRung), b = ladderRungY(ladderView.toRung);
+        ladderView.playerY = a + (b - a) * e;
+        if (p >= 1) { ladderView.phase = 'lightup'; ladderView.t = 0; }
+    } else if (ladderView.phase === 'lightup') {
+        if (ladderView.t > 1.4) startLadderBattle(ladder.index); // into the fight
+    }
+}
+
+function drawLadderScreen(c) {
+    let g = c.createLinearGradient(0, 0, 0, HEIGHT);
+    g.addColorStop(0, '#0a0a0a'); g.addColorStop(1, '#040404');
+    c.fillStyle = g; c.fillRect(0, 0, WIDTH, HEIGHT);
+
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#fff'; c.font = 'bold 34px monospace';
+    c.fillText('THE LADDER', WIDTH / 2, 64);
+    c.fillStyle = '#888'; c.font = '14px monospace';
+    c.fillText('Defeat every challenger to reach the top', WIDTH / 2, 92);
+
+    let n = ladder.queue.length;
+    let railL = WIDTH * 0.44, railR = WIDTH * 0.56, cx = (railL + railR) / 2, box = 56;
+
+    c.strokeStyle = '#555'; c.lineWidth = 6; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(railL, ladderRungY(0) + 30); c.lineTo(railL, ladderRungY(n - 1) - 30); c.stroke();
+    c.beginPath(); c.moveTo(railR, ladderRungY(0) + 30); c.lineTo(railR, ladderRungY(n - 1) - 30); c.stroke();
+
+    for (let i = 0; i < n; i++) {
+        let y = ladderRungY(i);
+        let cleared = i < ladder.index;
+        let isTarget = ladderView && ladderView.phase === 'lightup' && i === ladderView.toRung;
+        c.strokeStyle = '#4a4a4a'; c.lineWidth = 5;
+        c.beginPath(); c.moveTo(railL, y); c.lineTo(railR, y); c.stroke();
+        if (isTarget) {
+            let pulse = 0.5 + 0.5 * Math.sin(ladderView.t * 9);
+            c.save(); c.shadowBlur = 18 + pulse * 22; c.shadowColor = '#ff0033';
+            c.strokeStyle = '#ff0033'; c.lineWidth = 3;
+            c.strokeRect(cx - box / 2 - 4, y - box / 2 - 4, box + 8, box + 8);
+            c.restore();
+        }
+        c.fillStyle = '#151515'; c.fillRect(cx - box / 2, y - box / 2, box, box);
+        c.globalAlpha = cleared ? 0.35 : 1;
+        drawCharIcon(c, ladder.queue[i], cx, y, box);
+        c.globalAlpha = 1;
+        c.strokeStyle = cleared ? '#333' : (isTarget ? '#ff0033' : '#666'); c.lineWidth = 2;
+        c.strokeRect(cx - box / 2, y - box / 2, box, box);
+        if (cleared) { // victory tick
+            c.strokeStyle = '#fff'; c.lineWidth = 3; c.lineCap = 'round';
+            c.beginPath(); c.moveTo(cx - 11, y); c.lineTo(cx - 2, y + 10); c.lineTo(cx + 13, y - 11); c.stroke();
+        }
+        c.fillStyle = '#888'; c.font = '13px monospace'; c.textAlign = 'left';
+        c.fillText('#' + (i + 1), railR + 16, y);
+        c.textAlign = 'center';
+    }
+
+    // the player's icon climbing the left rail
+    let py = ladderView ? ladderView.playerY : ladderRungY(ladder.index);
+    let pbox = 50, px = railL - 70;
+    c.save(); c.shadowBlur = 16; c.shadowColor = '#fff';
+    c.fillStyle = '#101010'; c.fillRect(px - pbox / 2, py - pbox / 2, pbox, pbox); c.restore();
+    drawCharIcon(c, p1Selection, px, py, pbox);
+    c.strokeStyle = '#fff'; c.lineWidth = 2; c.strokeRect(px - pbox / 2, py - pbox / 2, pbox, pbox);
+    c.fillStyle = '#fff'; c.font = 'bold 11px monospace';
+    c.fillText('YOU', px, py + pbox / 2 + 12);
+    c.strokeStyle = 'rgba(255,255,255,0.25)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(px + pbox / 2, py); c.lineTo(railL, py); c.stroke();
+
+    let nextName = CHARACTERS[ladder.queue[ladder.index]] ? CHARACTERS[ladder.queue[ladder.index]].name : '';
+    let cap = ladderView && ladderView.phase === 'climb' ? 'Climbing the ladder...' : ('NEXT  —  ' + nextName);
+    c.fillStyle = '#ddd'; c.font = '18px monospace';
+    c.fillText(cap, WIDTH / 2, HEIGHT - 40);
+}
+
 function draw() {
     // Clear in screen space so cinematic zoom never smears the edges
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    // The ladder-climb screen replaces the arena entirely.
+    if (gameState === 'LADDER_SCREEN') { drawLadderScreen(ctx); return; }
 
     // Ease the cinematic camera toward its target (centre + zoom 1 when idle)
     let tx = ultCamera ? ultCamera.fx : WIDTH / 2;
