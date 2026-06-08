@@ -197,7 +197,7 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'created' || msg.type === 'joined') {
         onlineState.roomCode = msg.code;
-        onlineState.slot = msg.slot;
+        onlineState.slot = Number(msg.slot);
         onlineState.active = true;
         onlineState.peerConnected = msg.type === 'joined';
         onlineState.localSelection = null;
@@ -232,11 +232,13 @@ function onlineHandleMessage(event) {
     }
 
     if (msg.type === 'select') {
+        onlineState.peerConnected = true;
         onlineApplyRemoteSelection(msg.charType);
         return;
     }
 
     if (msg.type === 'stage') {
+        onlineState.peerConnected = true;
         selectedStage = msg.stageId || 'dojo';
         document.querySelectorAll('.stage-card').forEach(c => c.classList.toggle('selected', c.dataset.stage === selectedStage));
         return;
@@ -298,6 +300,7 @@ function onlineHandleMessage(event) {
 }
 
 function onlineApplyRemoteSelection(charType) {
+    if (!CHARACTERS[charType]) return;
     onlineState.remoteSelection = charType;
     if (onlineState.slot === 0) {
         p2Selection = charType;
@@ -312,9 +315,7 @@ function onlineApplyRemoteSelection(charType) {
     }
     updateSelectionLabels();
     updateOnlineSelectTitle();
-    if (onlineBothSelected() && onlineState.slot === 0) {
-        setTimeout(() => { if (gameState === 'CHAR_SELECT') goToStageSelect(); }, 450);
-    }
+    onlineMaybeAdvanceFromCharacterSelect();
 }
 
 function onlineBothSelected() {
@@ -328,10 +329,20 @@ function updateOnlineSelectTitle() {
     if (!onlineState.peerConnected) title.innerText = `ROOM ${onlineState.roomCode} - WAITING FOR PLAYER 2`;
     else if (!onlineState.localSelection) title.innerText = `ROOM ${onlineState.roomCode} - SELECT YOUR FIGHTER`;
     else if (!onlineBothSelected()) title.innerText = `ROOM ${onlineState.roomCode} - WAITING FOR OPPONENT`;
-    else title.innerText = onlineState.slot === 0 ? 'SELECT STAGE' : 'WAITING FOR HOST';
+    else title.innerText = Number(onlineState.slot) === 0 ? 'SELECT STAGE' : 'WAITING FOR HOST';
+}
+
+function onlineMaybeAdvanceFromCharacterSelect(delay = 450) {
+    if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothSelected()) return;
+    setTimeout(() => {
+        if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothSelected()) return;
+        if (gameState === 'PLAYING' || gameState === 'STAGE_SELECT') return;
+        goToStageSelect();
+    }, delay);
 }
 
 function onlineSelectCharacter(resolvedType) {
+    if (!CHARACTERS[resolvedType]) return;
     onlineState.localSelection = resolvedType;
     if (onlineState.slot === 0) {
         p1Selection = resolvedType;
@@ -348,13 +359,11 @@ function onlineSelectCharacter(resolvedType) {
     onlineSend('select', { charType: resolvedType });
     updateSelectionLabels();
     updateOnlineSelectTitle();
-    if (onlineBothSelected() && onlineState.slot === 0) {
-        setTimeout(() => { if (gameState === 'CHAR_SELECT') goToStageSelect(); }, 450);
-    }
+    onlineMaybeAdvanceFromCharacterSelect();
 }
 
 function onlineSelectStage(stageId) {
-    if (onlineState.slot !== 0) {
+    if (Number(onlineState.slot) !== 0) {
         onlineSetStatus('Only the host selects the stage.');
         return false;
     }
@@ -363,7 +372,7 @@ function onlineSelectStage(stageId) {
 }
 
 function onlineStartGame() {
-    if (onlineState.slot !== 0) return false;
+    if (Number(onlineState.slot) !== 0) return false;
     onlineSetStatus('Starting online match...');
     onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, seed: Math.floor(Math.random() * 0xFFFFFFFF) });
     return true;

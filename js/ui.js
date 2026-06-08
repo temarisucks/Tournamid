@@ -401,7 +401,7 @@ function selectCharacter(charType, cardEl) {
 }
 
 function goToStageSelect() {
-    if (currentMode === 'ONLINE' && onlineState.slot !== 0) {
+    if (currentMode === 'ONLINE' && Number(onlineState.slot) !== 0) {
         updateOnlineSelectTitle();
         return;
     }
