@@ -1671,6 +1671,17 @@ class Fighter {
         return !blocked;
     }
 
+    // Victory celebration pose, struck when the match is won (see endGame).
+    startWinPose() {
+        if (this.state === 'DEAD') return;
+        this.state = 'WIN';
+        this.stateTimer = 0;
+        this.vx = 0; this.vy = 0;
+        this.ult = null; this.currentAttack = null;
+        this.dir = this.x < WIDTH / 2 ? 1 : -1; // turn to face the arena
+        this._winFxTimer = 0;
+    }
+
     draw(ctx) {
         if (this.state === 'DEAD' && this._overkilled) return;
         
@@ -1774,6 +1785,70 @@ class Fighter {
                 torsoLean = 0.34 + sway * 0.05; // Heavy forward lean
             } else {
                 headY += Math.sin(t * 5) * 2;
+            }
+        } else if (this.state === 'WIN') {
+            // ---- VICTORY ANIMATIONS (unique per character) ----
+            let wt = this.stateTimer;       // seconds into the celebration (one-shots)
+            let pump = Math.sin(t * 8);     // looping flourish
+            if (this.charType === 'BRAWLER') {
+                // double-biceps flex, bouncing on the balls of the feet
+                headY += -6 + Math.abs(pump) * 4;
+                leftArmAngle = -1.5; rightArmAngle = 1.5;
+                leftArmBend = 1.7 + pump * 0.12; rightArmBend = -1.7 - pump * 0.12; // flex pulse
+                leftLegAngle = 0.5; rightLegAngle = -0.5;
+                leftLegBend = -0.32; rightLegBend = 0.32;
+                torsoLean = -0.04;
+            } else if (this.charType === 'SWORDSMAN') {
+                // a swift blade flourish that settles into a sword raised to the sky
+                let flo = wt < 0.7 ? Math.sin(wt * 13) : 0;
+                let raise = Math.min(1, Math.max(0, (wt - 0.6) / 0.5));
+                rightArmAngle = -1.3 + flo * 1.3 - raise * 1.05; rightArmBend = 0.6 + flo * 0.4;
+                leftArmAngle = 0.95; leftArmBend = 1.15; // free hand on hip
+                leftLegAngle = 0.5; rightLegAngle = -0.46;
+                leftLegBend = -0.55; rightLegBend = 0.55;
+                torsoLean = -0.05 + flo * 0.05;
+                headY += -2;
+            } else if (this.charType === 'MAGE') {
+                // ascend, robes adrift, arms thrown wide casting victory sparks
+                let hover = Math.sin(t * 3);
+                headY += -18 + hover * 4;
+                leftArmAngle = 1.5 + Math.sin(t * 2) * 0.2; rightArmAngle = -1.5 - Math.sin(t * 2) * 0.2;
+                leftArmBend = -0.3; rightArmBend = 0.3;
+                leftLegAngle = 0.1 + hover * 0.06; rightLegAngle = -0.14 - hover * 0.05;
+                leftLegBend = 0.4; rightLegBend = -0.3;
+                torsoLean = Math.sin(t * 1.6) * 0.04;
+            } else if (this.charType === 'RANGER') {
+                // twirl the sidearm, then rest it cockily by the head
+                if (wt < 0.8) { rightArmAngle = (t * 16) % (Math.PI * 2) - Math.PI; rightArmBend = -0.4; }
+                else { rightArmAngle = 1.7 + Math.sin(t * 3) * 0.05; rightArmBend = -1.4; }
+                leftArmAngle = 0.5; leftArmBend = 1.2;  // hand on hip
+                leftLegAngle = 0.28; rightLegAngle = -0.2;
+                leftLegBend = -0.3; rightLegBend = 0.34;
+                torsoLean = -0.06; headY += Math.sin(t * 3) * 1.5;
+            } else if (this.charType === 'DARK_RULER') {
+                // hoist the greatsword overhead, dark power trembling off the blade
+                let tremor = Math.sin(t * 18) * 0.03;
+                headY += -3;
+                rightArmAngle = -2.5 + tremor; rightArmBend = -0.5; // sword high
+                leftArmAngle = 1.35; leftArmBend = 0.4;             // claw outstretched
+                leftLegAngle = 0.52; rightLegAngle = -0.5;
+                leftLegBend = -0.35; rightLegBend = 0.4;
+                torsoLean = -0.12;
+            } else if (this.charType === 'TELEPATH') {
+                // serene ascension, arms spread, the mind unfurling
+                let hover = Math.sin(t * 2.2);
+                headY += -16 + hover * 4;
+                leftArmAngle = 1.7 + Math.sin(t * 1.8) * 0.25; rightArmAngle = -1.7 - Math.sin(t * 1.8 + 1) * 0.25;
+                leftArmBend = 0.2; rightArmBend = -0.2;
+                leftLegAngle = -0.1 + hover * 0.05; rightLegAngle = 0.12 + hover * 0.05;
+                leftLegBend = 0.12; rightLegBend = 0.14;
+                torsoLean = Math.sin(t * 1.5) * 0.03;
+            } else {
+                // generic triumphant cheer (Zombie etc.)
+                headY += -4 + Math.abs(pump) * 3;
+                leftArmAngle = -1.7; rightArmAngle = 1.7;
+                leftArmBend = 0.6; rightArmBend = -0.6;
+                leftLegAngle = 0.4; rightLegAngle = -0.4;
             }
         } else if (this.state === 'WALK') {
             if (this.charType === 'BRAWLER') {

@@ -78,6 +78,11 @@
         .online-panel input:focus { outline: none; border-color: #ff0033; box-shadow: 0 0 12px rgba(255,0,51,0.28); }
         .online-actions { grid-column: 1 / -1; display: flex; justify-content: center; gap: 10px; }
         .online-actions .menu-btn { min-width: 220px; }
+        /* Game-mode list is getting long — make those buttons a tighter, smaller list. */
+        #mode-screen .menu-buttons { gap: 2px; }
+        #mode-screen .menu-btn { padding: 7px 28px; min-width: 430px; margin: 3px; font-size: 1rem; }
+        #mode-screen .menu-btn small { font-size: 0.6rem; margin-top: 1px; letter-spacing: 0.5px; }
+        #mode-screen .menu-btn.ghost { min-width: 200px; }
         #online-status { grid-column: 1 / -1; color: #aaa; font-size: 0.84rem; min-height: 1.2em; text-align: center; }
 
         /* Settings gear button */

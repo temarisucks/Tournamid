@@ -281,16 +281,41 @@ function endGame(title, subtitle) {
     document.getElementById('end-title').innerText = title;
     document.getElementById('end-subtitle').innerText = subtitle;
     let gear = document.getElementById('settings-btn'); if (gear) gear.classList.remove('hidden');
-    if (!overkillFx) {
-        let winner = null;
-        if (roundWins[0] > roundWins[1]) winner = players[0];
-        else if (roundWins[1] > roundWins[0]) winner = players[1];
-        if (winner) playAudio(winVoices[winner.charType]);
+
+    // Work out the winner and let them play a victory animation before the menu shows.
+    let winnerIdx = roundWins[0] > roundWins[1] ? 0
+                  : roundWins[1] > roundWins[0] ? 1
+                  : (players[0] && players[1] && players[0].hp >= players[1].hp ? 0 : 1);
+    let winner = players[winnerIdx];
+    if (winner && winner.state !== 'DEAD') {
+        winner.startWinPose();
+        if (!overkillFx) playAudio(winVoices[winner.charType]);
     }
+
+    // Hold on the celebration + "X WINS" banner before revealing the post-battle menu.
+    let animMs = overkillFx ? 3200 : 2800;
+    roundAnnounce = { text: title, t: 0, dur: animMs / 1000 };
     setTimeout(() => {
         document.getElementById('end-screen').classList.remove('hidden');
         if (currentMode === 'ONLINE') onlineBeginPostMatch();
-    }, overkillFx ? 3200 : 1500); // Dramatic delay
+    }, animMs);
+}
+
+// Advance victory poses while on the END screen (fighters are otherwise frozen there).
+function updateWinAnimations(dt) {
+    for (let p of players) {
+        if (!p || p.state !== 'WIN') continue;
+        p.animTimer += dt;
+        p.stateTimer += dt;
+        p.vx = 0;
+        if (p.y < GROUND_Y) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); if (p.y >= GROUND_Y) p.vy = 0; }
+        else p.vy = 0;
+        let col = p.charType === 'MAGE' ? '#c98bff' : p.charType === 'TELEPATH' ? '#9be3ff' : p.charType === 'DARK_RULER' ? '#ff0033' : null;
+        if (col) {
+            p._winFxTimer = (p._winFxTimer || 0) - dt;
+            if (p._winFxTimer <= 0) { p._winFxTimer = 0.07; spawnParticles(p.x + (Math.random() * 70 - 35), p.y - 55 - Math.random() * 45, 2, col); }
+        }
+    }
 }
 
 // --- GAME LOOP & STATE MANAGEMENT ---
@@ -406,6 +431,7 @@ function update(dt) {
 
 function updateGameplay(dt) {
     if (gameState === 'END') {
+        updateWinAnimations(dt);
         projectiles.forEach(p => p.update(dt));
         projectiles = projectiles.filter(p => p.active);
         particles.forEach(p => p.update(dt));
@@ -557,52 +583,65 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         slab(lay.main.left, lay.main.right, lay.main.top, Math.max(34, height * 0.13), '#e8e8e8');
         lay.platforms.forEach(p => slab(p.left, p.right, p.top, Math.max(14, height * 0.05), '#9ad8ff'));
     } else if (stageId === 'pStreet') {
-        // ---- P STREET: greyscale downtown at night ----
-        let sky = targetCtx.createLinearGradient(0, 0, 0, height);
-        sky.addColorStop(0, '#0b0b0b'); sky.addColorStop(0.6, '#060606'); sky.addColorStop(1, '#0e0e0e');
+        // ---- P STREET: greyscale downtown at night. The sidewalk recedes into a back
+        // road with traffic, so the spectators stand on real ground, not mid-air. ----
+        let t = performance.now() / 1000;
+        let sky = targetCtx.createLinearGradient(0, 0, 0, groundY);
+        sky.addColorStop(0, '#0c0c0c'); sky.addColorStop(1, '#060606');
         targetCtx.fillStyle = sky;
         targetCtx.fillRect(0, 0, width, height);
 
-        let horizon = groundY - height * 0.06;
+        let roadTop = groundY - height * 0.30;   // building bases / far side of the road
+        let walkBack = groundY - height * 0.13;  // back edge of the sidewalk (spectators stand here)
+
+        // distant buildings with lit windows
         let bw = width / 7;
         for (let i = 0; i < 8; i++) {
             let bx = i * bw - bw * 0.25;
-            let bh = height * (0.22 + ((i * 53) % 17) / 17 * 0.28);
-            let shade = 16 + ((i * 7) % 5) * 4;
+            let bh = height * (0.20 + ((i * 53) % 17) / 17 * 0.26);
+            let shade = 14 + ((i * 7) % 5) * 4;
             targetCtx.fillStyle = `rgb(${shade},${shade},${shade})`;
-            targetCtx.fillRect(bx, horizon - bh, bw * 0.92, bh + 60);
-            for (let wy = horizon - bh + 12; wy < horizon - 10; wy += 16) {
+            targetCtx.fillRect(bx, roadTop - bh, bw * 0.92, bh + 6);
+            for (let wy = roadTop - bh + 12; wy < roadTop - 8; wy += 16) {
                 for (let wx = bx + 8; wx < bx + bw * 0.92 - 8; wx += 14) {
                     let lit = ((Math.floor(wx) * 13 + Math.floor(wy) * 7) % 5) < 2;
-                    targetCtx.fillStyle = lit ? 'rgba(225,225,225,0.45)' : 'rgba(110,110,110,0.10)';
+                    targetCtx.fillStyle = lit ? 'rgba(225,225,225,0.4)' : 'rgba(110,110,110,0.08)';
                     targetCtx.fillRect(wx, wy, 7, 9);
                 }
             }
         }
-        // road + sidewalk
-        targetCtx.fillStyle = '#0f0f0f';
-        targetCtx.fillRect(0, groundY, width, height - groundY);
-        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 3;
+
+        // back road with lane dashes + passing cars
+        targetCtx.fillStyle = '#0a0a0a';
+        targetCtx.fillRect(0, roadTop, width, walkBack - roadTop);
+        targetCtx.fillStyle = '#363636';
+        let laneY = roadTop + (walkBack - roadTop) * 0.52;
+        for (let x = -((t * 40) % 70); x < width; x += 70) targetCtx.fillRect(x, laneY, 34, 3);
+        drawStreetCar(targetCtx, ((t * 70) % (width + 280)) - 140, roadTop + (walkBack - roadTop) * 0.34, 1, height);
+        drawStreetCar(targetCtx, width - (((t * 96) % (width + 340)) - 170), roadTop + (walkBack - roadTop) * 0.72, -1, height);
+
+        // traffic lights at the roadside (cycle through their lamps)
+        drawTrafficLight(targetCtx, width * 0.2, walkBack, height, t);
+        drawTrafficLight(targetCtx, width * 0.78, walkBack, height, t + 1.3);
+
+        // the sidewalk: spectators at the back edge, fighters across the front
+        let sg = targetCtx.createLinearGradient(0, walkBack, 0, height);
+        sg.addColorStop(0, '#1c1c1c'); sg.addColorStop(1, '#0d0d0d');
+        targetCtx.fillStyle = sg;
+        targetCtx.fillRect(0, walkBack, width, height - walkBack);
+        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, walkBack); targetCtx.lineTo(width, walkBack); targetCtx.stroke();
+        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 2;
         targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
-        targetCtx.strokeStyle = '#262626'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.moveTo(0, groundY + 16); targetCtx.lineTo(width, groundY + 16); targetCtx.stroke();
-        targetCtx.fillStyle = '#3a3a3a';
-        for (let x = 20; x < width; x += 90) targetCtx.fillRect(x, groundY + (height - groundY) * 0.62, 44, 5);
-        // streetlights with soft cones
-        [width * 0.15, width * 0.85].forEach(lx => {
-            let top = horizon - height * 0.02;
-            targetCtx.strokeStyle = '#444'; targetCtx.lineWidth = 4;
-            targetCtx.beginPath(); targetCtx.moveTo(lx, groundY); targetCtx.lineTo(lx, top); targetCtx.stroke();
-            targetCtx.save();
-            targetCtx.globalAlpha = 0.5; targetCtx.fillStyle = '#dcdcdc';
-            targetCtx.beginPath(); targetCtx.arc(lx, top, 6, 0, Math.PI * 2); targetCtx.fill();
-            targetCtx.globalAlpha = 0.10;
-            targetCtx.beginPath(); targetCtx.moveTo(lx - 34, groundY); targetCtx.lineTo(lx, top); targetCtx.lineTo(lx + 34, groundY); targetCtx.closePath(); targetCtx.fill();
-            targetCtx.restore();
-        });
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.05)'; targetCtx.lineWidth = 1;
+        for (let i = 1; i < 6; i++) {
+            let x = width * (i / 6);
+            targetCtx.beginPath(); targetCtx.moveTo(x, walkBack); targetCtx.lineTo(x + (x - width / 2) * 0.35, height); targetCtx.stroke();
+        }
+
         if (targetCtx !== ctx) { // static spectators in thumbnails (live draws animated ones)
-            let s = height / 430;
-            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.12 + i * 0.18), horizon + height * 0.05, s, 85, 'spectate', i * 1.3, 1);
+            let s = height / 460;
+            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.12 + i * 0.18), walkBack, s, 85, 'spectate', i * 1.3, 1);
         }
     } else if (stageId === 'bloodBall') {
         // ---- BLOOD BALL: greyscale disco club ----
@@ -687,8 +726,8 @@ function initStageActors() {
         let arr = [], n = 9;
         for (let i = 0; i < n; i++) {
             let x = 55 + i * (WIDTH - 110) / (n - 1) + (Math.random() * 28 - 14);
-            arr.push({ x, y: GROUND_Y - HEIGHT * 0.10, phase: Math.random() * Math.PI * 2,
-                       rate: 1.4 + Math.random() * 1.2, scale: 0.6 + Math.random() * 0.14,
+            arr.push({ x, y: GROUND_Y - HEIGHT * 0.13, phase: Math.random() * Math.PI * 2,
+                       rate: 1.4 + Math.random() * 1.2, scale: 0.5 + Math.random() * 0.12,
                        shade: 70 + Math.floor(Math.random() * 60), dir: Math.random() < 0.5 ? 1 : -1,
                        fleeing: false, gone: false });
         }
@@ -786,6 +825,56 @@ function drawBgStickman(c, x, gy, s, shade, mode, ph, dir) {
 function drawBgLimb(c, x0, y0, x1, y1) {
     let mx = (x0 + x1) / 2, my = (y0 + y1) / 2 + 3; // slight bend = natural joint
     c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(mx, my, x1, y1); c.stroke();
+}
+
+// A small greyscale car for the P Street back road. (x,y) is the road surface under the wheels.
+function drawStreetCar(c, x, y, dir, H) {
+    let w = H * 0.14, h = H * 0.052;
+    c.save();
+    c.translate(x, y);
+    c.fillStyle = '#2b2b2b';
+    c.beginPath();
+    c.moveTo(-w / 2, 0);
+    c.lineTo(-w / 2, -h * 0.55);
+    c.lineTo(-w * 0.28, -h * 0.55);
+    c.lineTo(-w * 0.15, -h);          // windshield up to roof
+    c.lineTo(w * 0.18, -h);
+    c.lineTo(w * 0.31, -h * 0.55);
+    c.lineTo(w / 2, -h * 0.55);
+    c.lineTo(w / 2, 0);
+    c.closePath();
+    c.fill();
+    c.fillStyle = 'rgba(200,200,200,0.45)'; // windows
+    c.fillRect(-w * 0.22, -h * 0.92, w * 0.18, h * 0.32);
+    c.fillRect(w * 0.02, -h * 0.92, w * 0.15, h * 0.32);
+    c.fillStyle = '#000';                   // tyres
+    c.beginPath(); c.arc(-w * 0.28, 0, h * 0.34, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(w * 0.28, 0, h * 0.34, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#555';
+    c.beginPath(); c.arc(-w * 0.28, 0, h * 0.15, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(w * 0.28, 0, h * 0.15, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(240,240,240,0.55)'; // headlight in travel direction
+    c.beginPath(); c.arc(dir * w * 0.5, -h * 0.28, 2.5, 0, Math.PI * 2); c.fill();
+    c.restore();
+}
+
+// A roadside traffic light whose three lamps cycle (greyscale: the live lamp glows).
+function drawTrafficLight(c, x, baseY, H, phase) {
+    let poleH = H * 0.22, boxW = H * 0.038, boxH = H * 0.10;
+    c.strokeStyle = '#3a3a3a'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(x, baseY); c.lineTo(x, baseY - poleH); c.stroke();
+    let bx = x - boxW / 2, by = baseY - poleH - boxH;
+    c.fillStyle = '#161616'; c.fillRect(bx, by, boxW, boxH);
+    c.strokeStyle = '#444'; c.lineWidth = 1; c.strokeRect(bx, by, boxW, boxH);
+    let active = Math.floor(phase % 3), r = boxW * 0.3;
+    for (let i = 0; i < 3; i++) {
+        let cyy = by + boxH * (0.22 + i * 0.29);
+        let lit = i === active;
+        c.fillStyle = lit ? '#eee' : '#2e2e2e';
+        if (lit) { c.shadowBlur = 9; c.shadowColor = '#fff'; }
+        c.beginPath(); c.arc(x, cyy, r, 0, Math.PI * 2); c.fill();
+        c.shadowBlur = 0;
+    }
 }
 
 function draw() {
