@@ -359,6 +359,7 @@ class Fighter {
         this.aiReactTimer = 0;   // cooldown between reactive defensive actions (anti-spam)
         this.aiBlockTimer = 0;   // how long the current committed block holds
         this.aiLevel = 0.5;      // 0..1 difficulty scalar; Ladder raises this per rung
+        this.switchCooldown = 0; // 2v2 tag cooldown
 
         // Combat state
         this.attacks = stats.attacks;
@@ -419,6 +420,7 @@ class Fighter {
         this.animTimer += dt;
         this.beastAnimTimer += dt;
         this.inputTimer += dt;
+        if (this.switchCooldown > 0) this.switchCooldown -= dt;
         this.comboTimer -= dt;
         if (this.comboTimer <= 0) this.comboCount = 0;
         if (this.parryBuffTimer > 0) this.parryBuffTimer -= dt;
@@ -1147,6 +1149,9 @@ class Fighter {
 
     handleInput() {
         let controls = this.playerControls();
+
+        // Tag out to the benched team-mate (2v2)
+        if (teamBattle && controls.tag && keyPressed(controls.tag)) { if (switchActive(this.team, false)) return; }
 
         // Ultimate (highest priority — can be invoked from neutral states)
         if (keyPressed(controls.ult)) { this.tryUltimate(); return; }
@@ -1947,6 +1952,19 @@ class Fighter {
         this._winFxTimer = 0;
     }
 
+    // 2v2 tag-in: burst onto the field with a signature entrance strike that damages
+    // whoever it catches. The pose is unique per fighter (see the ATTACK draw section).
+    startTagIn() {
+        let atk = { startup: 0.07, active: 0.2, recovery: 0.24, dmg: 10, w: 80, h: 84, ox: 22, oy: -68, kb: { x: 320, y: -270 }, stun: 0.45, type: 'tagIn' };
+        this.currentAttack = { ...atk, name: 'tagIn' };
+        this.changeState('ATTACK');
+        this.hasSpawnedHitbox = false;
+        this.specialDone = false;
+        this.vx = 820 * this.dir; // burst forward into the foe
+        let col = { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', SWORDSMAN: '#cfe8ff', RANGER: '#ffd27f' }[this.charType] || '#fff';
+        spawnParticles(this.x + this.dir * 18, this.y - 50, 16, col);
+    }
+
     drawBeastCompanion(ctx) {
         let beast = this.beastIndex || 0;
         let t = this.beastAnimTimer || this.animTimer;
@@ -2642,7 +2660,48 @@ class Fighter {
             leftArmAngle = 2.25; leftArmBend = -0.95;
             torsoLean = 0.10 + ex * 0.10;
 
-            if (atk.type === 'uppercut') {
+            if (atk.type === 'tagIn') {
+                // Signature 2v2 entrance strike — unique per fighter.
+                headY -= 2;
+                if (this.charType === 'BRAWLER') {            // flying superman punch
+                    rightArmAngle = mix(2.4, 1.3, ex); rightArmBend = mix(-0.7, -0.05, ex);
+                    leftArmAngle = -1.3; leftArmBend = 0.5;
+                    leftLegAngle = 0.5; rightLegAngle = -0.55; leftLegBend = 0.7; rightLegBend = 0.4;
+                    torsoLean = 0.3;
+                } else if (this.charType === 'SWORDSMAN') {   // dashing horizontal slash
+                    rightArmAngle = mix(-0.5, 1.5, ex); rightArmBend = mix(-0.6, -0.1, ex);
+                    leftArmAngle = 1.7; leftArmBend = 0.4;
+                    leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.45; rightLegBend = 0.3;
+                    torsoLean = mix(-0.1, 0.28, ex);
+                } else if (this.charType === 'MAGE') {         // floats in, palm-out blast
+                    rightArmAngle = mix(2.0, 1.4, ex); rightArmBend = mix(-0.5, 0.1, ex);
+                    leftArmAngle = -1.0; leftArmBend = -0.3;
+                    headY -= 8; leftLegAngle = 0.1; rightLegAngle = -0.16; leftLegBend = 0.4; rightLegBend = -0.3;
+                    torsoLean = 0.12;
+                } else if (this.charType === 'RANGER') {       // slide in low, gun thrust
+                    rightArmAngle = mix(0.4, 1.45, ex); rightArmBend = -0.2;
+                    leftArmAngle = 1.4; leftArmBend = -1.2;
+                    leftLegAngle = -0.6; rightLegAngle = 0.7; leftLegBend = 0.7; rightLegBend = 0.5;
+                    torsoLean = 0.06; headY += 4;
+                } else if (this.charType === 'DARK_RULER') {   // overhead greatsword cleave
+                    rightArmAngle = mix(-2.4, 0.3, ex); rightArmBend = -0.4;
+                    leftArmAngle = 1.3; leftArmBend = 0.4;
+                    leftLegAngle = -0.5; rightLegAngle = 0.55; leftLegBend = 0.5; rightLegBend = 0.45;
+                    torsoLean = mix(-0.18, 0.3, ex);
+                } else if (this.charType === 'TELEPATH') {     // glides in, double palm shove
+                    rightArmAngle = mix(2.2, 1.55, ex); rightArmBend = -0.15;
+                    leftArmAngle = mix(2.0, 1.4, ex); leftArmBend = 0.15;
+                    headY -= 10; leftLegAngle = -0.05; rightLegAngle = 0.12; leftLegBend = 0.12; rightLegBend = 0.14;
+                    torsoLean = 0.1;
+                } else if (this.charType === 'BEAST_TAMER') {  // whip-crack lunge
+                    rightArmAngle = mix(2.65, 1.1, ex); rightArmBend = mix(-0.7, -0.08, ex);
+                    leftArmAngle = 1.4; leftArmBend = -0.65;
+                    leftLegAngle = -0.45; rightLegAngle = 0.55; leftLegBend = 0.4; rightLegBend = 0.5;
+                    torsoLean = mix(-0.16, 0.26, ex);
+                } else {
+                    rightArmAngle = mix(2.4, 1.3, ex); rightArmBend = -0.2; torsoLean = 0.25;
+                }
+            } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
                 leftArmAngle  = mix(0.8, 2.6, ex);  leftArmBend  = -0.6;

@@ -166,6 +166,17 @@
         .meter-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6cf, #fff); transition: width 0.08s linear; }
         .meter-bar-bg.ready { border-color: #fff; box-shadow: 0 0 10px rgba(120,210,255,0.9); animation: meterPulse 0.7s infinite alternate; }
         .meter-bar-bg.ready .meter-bar-fill { background: linear-gradient(90deg, #ff0033, #fff, #ff0033); }
+        /* 2v2 stacked per-character health bars */
+        .team-hp { display: flex; flex-direction: column; gap: 6px; margin-bottom: 5px; width: 100%; }
+        .team-row { display: flex; align-items: center; gap: 7px; opacity: 0.55; transition: opacity 0.15s; }
+        .team-row.active { opacity: 1; }
+        .team-row.downed { opacity: 0.28; }
+        .team-hp-right .team-row { flex-direction: row-reverse; }
+        .team-icon { width: 30px; height: 30px; object-fit: cover; border: 2px solid #888; background: #111; flex: 0 0 auto; }
+        .team-row.active .team-icon { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
+        .team-hp .health-bar-bg.sm { height: 16px; margin-bottom: 0; flex: 1 1 auto; }
+        .team-row.downed .health-bar-fill { background: #555; }
+        .touch-tag { border-color: #6cf; color: #cfefff; }
         @keyframes meterPulse { from { box-shadow: 0 0 6px rgba(255,255,255,0.5); } to { box-shadow: 0 0 16px rgba(255,0,51,0.9); } }
         /* Training panel */
         #training-panel { position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%); pointer-events: auto; }

@@ -165,7 +165,7 @@ function setVolume(cat, val) {
 }
 
 const VOL_CATS = [['master', 'Master'], ['music', 'Music'], ['sfx', 'SFX'], ['voice', 'Voicelines']];
-const BIND_LABELS = { u: 'Up', d: 'Down', l: 'Left', r: 'Right', block: 'Block', atkL: 'Light', atkH: 'Heavy', special: 'Special', ult: 'Ultimate' };
+const BIND_LABELS = { u: 'Up', d: 'Down', l: 'Left', r: 'Right', block: 'Block', atkL: 'Light', atkH: 'Heavy', special: 'Special', ult: 'Ultimate', tag: 'Tag (2v2)' };
 function keyLabel(code) {
     if (!code) return '—';
     if (code.startsWith('Key')) return code.slice(3);
@@ -277,6 +277,8 @@ function updateTouchControlsVisibility() {
     if (!panel) return;
     let show = !!settings.touchControls && gameState === 'PLAYING';
     panel.classList.toggle('hidden', !show);
+    let tagBtn = panel.querySelector('.touch-tag');
+    if (tagBtn) tagBtn.classList.toggle('hidden', !teamBattle); // TAG only in 2v2
     if (!show) releaseAllTouchControls();
 }
 
@@ -430,6 +432,7 @@ function drawCharacterSelectPreview(dt) {
 function goToCharSelect(mode) {
     sfx.init(); // Initialize audio context on first user interaction
     currentMode = mode;
+    playerTeam = []; // 2v2 squad picks
     p1Selection = currentMode === 'ONLINE' && onlineState.slot === 1 ? p1Selection : null;
     p2Selection = currentMode === 'ONLINE' && onlineState.slot === 0 ? p2Selection : null;
     charSelectPreview = { p1: null, p2: null, p1Burst: 0, p2Burst: 0, timer: 0 };
@@ -437,7 +440,8 @@ function goToCharSelect(mode) {
     if (p2Selection) charSelectPreview.p2 = p2Selection;
     document.querySelectorAll('.char-card').forEach(c => c.classList.remove('locked', 'selected'));
     document.getElementById('char-select-title').innerText =
-        (currentMode === 'ONLINE' || currentMode === 'LADDER' || currentMode === 'PVE' || currentMode === 'TRAINING')
+        (currentMode === 'VS2' || currentMode === 'LADDER2') ? "Select Fighter 1 of 2"
+        : (currentMode === 'ONLINE' || currentMode === 'LADDER' || currentMode === 'PVE' || currentMode === 'TRAINING')
             ? "Select Your Fighter" : "Select Player 1";
     updateSelectionLabels();
     if (currentMode === 'ONLINE') updateOnlineSelectTitle();
@@ -453,6 +457,7 @@ function selectCharacter(charType, cardEl) {
         onlineSelectCharacter(resolvedType);
         return;
     }
+    if (currentMode === 'VS2' || currentMode === 'LADDER2') { selectTeamCharacter(resolvedType, cardEl); return; }
     if (!p1Selection) {
         p1Selection = resolvedType;
         playAudio(selectVoices[resolvedType]);
@@ -504,6 +509,15 @@ function backFromStageSelect() {
         updateOnlineSelectTitle();
         return;
     }
+    if (currentMode === 'VS2') { // re-pick the whole squad
+        playerTeam = [];
+        document.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected', 'locked'));
+        document.getElementById('char-select-title').innerText = 'Select Fighter 1 of 2';
+        let lbl = document.getElementById('p1-select-label'); if (lbl) lbl.innerText = '---';
+        showScreen('char-select-screen');
+        gameState = 'CHAR_SELECT';
+        return;
+    }
     let solo = currentMode === 'PVE' || currentMode === 'TRAINING' || currentMode === 'LADDER';
     if (solo) {
         p1Selection = null;
@@ -545,6 +559,43 @@ function renderStageThumbnails() {
     });
 }
 
+// 2v2 char select: collect the player's two fighters, then proceed.
+function selectTeamCharacter(type, cardEl) {
+    if (playerTeam.length >= 2) return;
+    playerTeam.push(type);
+    playAudio(selectVoices[type]);
+    charSelectPreview.p1 = type; charSelectPreview.p1Burst = 1;
+    if (cardEl) cardEl.classList.add('locked');
+    let lbl = document.getElementById('p1-select-label');
+    if (lbl) lbl.innerText = playerTeam.map(c => CHARACTERS[c] ? CHARACTERS[c].name.replace('THE ', '') : c).join(' + ');
+    if (playerTeam.length < 2) {
+        document.getElementById('char-select-title').innerText = 'Select Fighter 2 of 2';
+    } else {
+        document.getElementById('char-select-title').innerText = 'Squad Ready';
+        setTimeout(() => {
+            if (gameState !== 'CHAR_SELECT') return;
+            if (currentMode === 'LADDER2') enterLadder();
+            else goToStageSelect();
+        }, 650);
+    }
+}
+
+// Build both 2v2 squads (each fighter created off the shared P1/P2 control id).
+function buildTeams(p1chars, p2chars, cpuLevel) {
+    teamBattle = true;
+    let geo = getStageGeo();
+    let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
+    let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
+    teams = [[], []];
+    p1chars.forEach(c => { let f = new Fighter('P1', lx, c, false, 0); f.dir = 1; teams[0].push(f); });
+    p2chars.forEach(c => { let f = new Fighter('P2', rx, c, true, 1); f.dir = -1; if (cpuLevel != null) f.aiLevel = cpuLevel; teams[1].push(f); });
+    activeIdx = [0, 0];
+    pendingTag = [0, 0];
+    players = [teams[0][0], teams[1][0]];
+    document.getElementById('p1-name').innerText = CHARACTERS[p1chars[0]].name;
+    document.getElementById('p2-name').innerText = "CPU SQUAD";
+}
+
 function startGame() {
     showScreen(); // hide menus
     document.getElementById('pause-screen').classList.add('hidden');
@@ -562,6 +613,7 @@ function startGame() {
     initStageActors(); // animated background figures for the chosen stage
 
     trainingMode = (currentMode === 'TRAINING');
+    teamBattle = (currentMode === 'VS2');
     infiniteMeter = false;
     document.getElementById('training-panel').classList.toggle('hidden', !trainingMode);
     if (trainingMode) {
@@ -569,33 +621,43 @@ function startGame() {
         btn.classList.remove('on'); btn.innerText = 'Infinite Meter: OFF';
     }
 
-    players.push(new Fighter('P1', WIDTH/4, p1Selection, false, 0));
-    document.getElementById('p1-name').innerText = CHARACTERS[p1Selection].name;
-
-    if (trainingMode) {
-        // Standing dummy to practice combos / ultimates on
-        let dummy = new Fighter('DUMMY', WIDTH * 0.7, p1Selection, true, 1);
-        dummy.isDummy = true;
-        players.push(dummy);
-        document.getElementById('p2-name').innerText = "DUMMY";
-        document.getElementById('timer').classList.add('hidden');
-        document.getElementById('wave-counter').classList.add('hidden');
-    } else if (currentMode === 'PVE') {
-        waveCount = 1;
-        document.getElementById('p2-name').innerText = "THE HORDE";
-        document.getElementById('timer').classList.add('hidden');
-        document.getElementById('wave-counter').classList.remove('hidden');
-        startPvEWave();
-    } else {
-        players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU', 1));
-        document.getElementById('p2-name').innerText = currentMode === 'CPU' ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
+    if (teamBattle) {
+        // 2v2: your picked squad vs a random CPU squad
+        buildTeams(playerTeam.slice(0, 2), [getRandomCharacter(), getRandomCharacter()], null);
         document.getElementById('timer').classList.remove('hidden');
         document.getElementById('wave-counter').classList.add('hidden');
         matchTimer = 99;
         document.getElementById('timer').innerText = matchTimer;
-    }
+    } else {
+        players.push(new Fighter('P1', WIDTH/4, p1Selection, false, 0));
+        document.getElementById('p1-name').innerText = CHARACTERS[p1Selection].name;
 
-    // Best-of-3 rounds only for versus modes
+        if (trainingMode) {
+            // Standing dummy to practice combos / ultimates on
+            let dummy = new Fighter('DUMMY', WIDTH * 0.7, p1Selection, true, 1);
+            dummy.isDummy = true;
+            players.push(dummy);
+            document.getElementById('p2-name').innerText = "DUMMY";
+            document.getElementById('timer').classList.add('hidden');
+            document.getElementById('wave-counter').classList.add('hidden');
+        } else if (currentMode === 'PVE') {
+            waveCount = 1;
+            document.getElementById('p2-name').innerText = "THE HORDE";
+            document.getElementById('timer').classList.add('hidden');
+            document.getElementById('wave-counter').classList.remove('hidden');
+            startPvEWave();
+        } else {
+            players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU', 1));
+            document.getElementById('p2-name').innerText = currentMode === 'CPU' ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
+            document.getElementById('timer').classList.remove('hidden');
+            document.getElementById('wave-counter').classList.add('hidden');
+            matchTimer = 99;
+            document.getElementById('timer').innerText = matchTimer;
+        }
+    }
+    setupTeamHud(teamBattle);
+
+    // Best-of-3 rounds only for 1v1 versus modes
     let showRounds = (currentMode === 'CPU' || currentMode === 'PVP' || currentMode === 'ONLINE');
     roundWins = [0, 0]; currentRound = 1; roundAnnounce = null;
     document.querySelectorAll('.round-pips').forEach(el => el.classList.toggle('hidden', !showRounds));
@@ -690,15 +752,25 @@ function startLadderBattle(index) {
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
 
-    players.push(new Fighter('P1', lx, p1Selection, false, 0));
-    document.getElementById('p1-name').innerText = CHARACTERS[p1Selection].name;
-    let oppType = ladder.queue[index];
-    let opp = new Fighter('P2', rx, oppType, true, 1);
-    opp.dir = -1;
-    opp.aiLevel = ladderLevelFor(index, ladder.queue.length);
-    opp.maxHp = Math.floor(opp.maxHp * (1 + index * 0.05)); opp.hp = opp.maxHp; // mild stat ramp
-    players.push(opp);
-    document.getElementById('p2-name').innerText = "CPU - " + CHARACTERS[oppType].name;
+    let lvl = ladderLevelFor(index, ladder.queue.length);
+    let teamFight = currentMode === 'LADDER2';
+    if (teamFight) {
+        // 2v2 ladder: your squad vs the rung's challenger + a random partner
+        buildTeams(playerTeam.slice(0, 2), [ladder.queue[index], getRandomCharacter()], lvl);
+        teams[1].forEach(f => { f.maxHp = Math.floor(f.maxHp * (1 + index * 0.05)); f.hp = f.maxHp; });
+    } else {
+        teamBattle = false;
+        players.push(new Fighter('P1', lx, p1Selection, false, 0));
+        document.getElementById('p1-name').innerText = CHARACTERS[p1Selection].name;
+        let oppType = ladder.queue[index];
+        let opp = new Fighter('P2', rx, oppType, true, 1);
+        opp.dir = -1;
+        opp.aiLevel = lvl;
+        opp.maxHp = Math.floor(opp.maxHp * (1 + index * 0.05)); opp.hp = opp.maxHp; // mild stat ramp
+        players.push(opp);
+        document.getElementById('p2-name').innerText = "CPU - " + CHARACTERS[oppType].name;
+    }
+    setupTeamHud(teamFight);
 
     document.getElementById('timer').classList.remove('hidden');
     document.getElementById('wave-counter').classList.remove('hidden');
@@ -706,8 +778,8 @@ function startLadderBattle(index) {
     matchTimer = 99; document.getElementById('timer').innerText = matchTimer; matchTimerAccumulator = 0;
 
     roundWins = [0, 0]; currentRound = 1; roundAnnounce = null;
-    document.querySelectorAll('.round-pips').forEach(el => el.classList.remove('hidden'));
-    renderRoundPips();
+    document.querySelectorAll('.round-pips').forEach(el => el.classList.toggle('hidden', teamFight));
+    if (!teamFight) renderRoundPips();
     roundAnnounce = { text: "ROUND 1", t: 0, dur: 1.4 };
     beginIntroSequence('round1');
     updateHUD();
@@ -767,6 +839,7 @@ function returnToMenu() {
     gameState = 'MENU';
     pausedFromState = null;
     trainingMode = false;
+    teamBattle = false;
     infiniteMeter = false;
     timeScale = 1; ultActive = null; ultBanner = null; ultCamera = null; overkillFx = null; bodyParts = [];
     document.getElementById('hud').classList.add('hidden');

@@ -12,15 +12,20 @@ const ONLINE_REMOTE_BINDINGS = {
 
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
 const ONLINE_FIXED_DT = 1 / 60;
-const ONLINE_MAX_ROLLBACK_FRAMES = 10;
-const ONLINE_ROLLBACK_COOLDOWN_FRAMES = 3;
+// Buffer local inputs this many frames before they take effect. This gives the
+// network time to deliver each input BEFORE the frame that needs it, so the peer
+// rarely has to mispredict-and-rollback — the single biggest smoothness win. The
+// cost is ~INPUT_DELAY/60 s of input latency (3 frames = 50ms, standard for netplay).
+const ONLINE_INPUT_DELAY = 3;
+const ONLINE_MAX_ROLLBACK_FRAMES = 12;
+const ONLINE_ROLLBACK_COOLDOWN_FRAMES = 2;
 // When the local peer is running this many frames further ahead of confirmed
 // remote input than the remote peer is, it stalls one frame to let them catch up.
 // This is the GGPO-style time sync that keeps both frame counters from drifting
 // apart (drift past ONLINE_MAX_ROLLBACK_FRAMES is the root cause of hard desync).
 const ONLINE_FRAME_ADV_LIMIT = 2;
 const ONLINE_SYNC_RATE = 0.25;
-const ONLINE_STATE_BUFFER_FRAMES = 90;
+const ONLINE_STATE_BUFFER_FRAMES = 40; // only need ~rollback window + delay; less to retain/GC
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 240;
 let onlineState = {
@@ -127,8 +132,11 @@ function onlineResetRuntimeStats(seed = 0xC0FFEE) {
     onlineState.lastRemoteInputMs = null;
     onlineState.remoteInputStale = false;
     onlineMarkRemoteTraffic();
-    onlineState.localInputs.set(0, onlineBlankInput());
-    onlineState.remoteInputs.set(0, onlineBlankInput());
+    // Pre-seed the input-delay window (frames before the first real, delayed input).
+    for (let f = 0; f < ONLINE_INPUT_DELAY; f++) {
+        onlineState.localInputs.set(f, onlineBlankInput());
+        onlineState.remoteInputs.set(f, onlineBlankInput());
+    }
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
 
@@ -601,13 +609,14 @@ function onlineFixedUpdate(realDt) {
 
 function onlinePrepareLocalInput() {
     let frame = onlineState.frame;
+    // Input delay: what we press now takes effect (and is sent for) frame+DELAY, so it
+    // reaches the peer before that frame is simulated — far fewer mispredicts/rollbacks.
+    let targetFrame = frame + ONLINE_INPUT_DELAY;
     let input = onlineReadLocalInput();
-    onlineState.localInputs.set(frame, input);
+    if (!onlineState.localInputs.has(targetFrame)) onlineState.localInputs.set(targetFrame, input);
     onlineState.lastLocalInput = input;
-    // Piggyback our frame advantage (how far ahead of confirmed remote input we are)
-    // so the peer can run the symmetric time-sync comparison.
     let adv = frame - onlineState.maxRemoteFrame;
-    onlineSend('input', { frame, input, adv });
+    onlineSend('input', { frame: targetFrame, input, adv });
 }
 
 function onlineInputForFrame(map, frame, lastInput, isRemote) {

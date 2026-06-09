@@ -232,8 +232,8 @@ Object.values(music.stages).forEach(a => registerAudio(a, 'music'));
 setTimeout(applyVolumes, 0); // defer so the Tone `sfx` object exists when first applied
 
 const DEFAULT_BINDINGS = {
-    P1: { l: 'KeyA', r: 'KeyD', u: 'KeyW', d: 'KeyS', block: 'KeyI', atkL: 'KeyJ', atkH: 'KeyK', special: 'KeyL', ult: 'KeyO' },
-    P2: { l: 'ArrowLeft', r: 'ArrowRight', u: 'ArrowUp', d: 'ArrowDown', block: 'KeyU', atkL: 'KeyO', atkH: 'KeyP', special: 'Slash', ult: 'Period' }
+    P1: { l: 'KeyA', r: 'KeyD', u: 'KeyW', d: 'KeyS', block: 'KeyI', atkL: 'KeyJ', atkH: 'KeyK', special: 'KeyL', ult: 'KeyO', tag: 'KeyU' },
+    P2: { l: 'ArrowLeft', r: 'ArrowRight', u: 'ArrowUp', d: 'ArrowDown', block: 'KeyU', atkL: 'KeyO', atkH: 'KeyP', special: 'Slash', ult: 'Period', tag: 'Backslash' }
 };
 let keyBindings = JSON.parse(JSON.stringify(DEFAULT_BINDINGS));
 try { let b = JSON.parse(localStorage.getItem('massacreBindings')); if (b && b.P1 && b.P2) keyBindings = b; } catch (e) {}
@@ -266,6 +266,14 @@ const STAGES = {
 let ladder = { queue: [], index: 0, active: false };
 let ladderView = null; // canvas ladder-climb screen animation state
 let stageActors = null;
+
+// 2v2 tag-team battles (modes VS2 / LADDER2). `players` holds the two ACTIVE fighters
+// on the field; `teams` holds each side's full roster of two, `activeIdx` who is in.
+let teamBattle = false;
+let teams = [[], []];
+let activeIdx = [0, 0];
+let playerTeam = [];   // the two characters the player picked for their squad
+let pendingTag = [0, 0]; // brief pause-then-tag-in timer per side after a KO
 
 // --- STAGE GEOMETRY ---
 // Each stage describes the surfaces fighters collide with:

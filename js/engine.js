@@ -15,9 +15,11 @@ function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
     if (winnerIdx !== 0 && winnerIdx !== 1) return false;
-    // Ladder: the player's match-winning blow on the very last challenger earns the overkill.
-    if (currentMode === 'LADDER') return winnerIdx === 0 && ladder.active &&
-        ladder.index >= ladder.queue.length - 1 && roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
+    if (teamBattle) { // 2v2: overkill if this ult wipes the enemy squad
+        let enemy = teams[1 - winnerIdx];
+        return enemy && enemy.every(f => f.hp <= 0);
+    }
+    // A match-winning ultimate blow earns the overkill — including every Ladder rung.
     return roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
 }
 
@@ -184,7 +186,45 @@ function setMeterBar(id, p) {
     if (fill.parentElement) fill.parentElement.classList.toggle('ready', pct >= 100);
 }
 
+// Show/hide the 2v2 stacked bars and load each fighter's icon (called at match start).
+function setupTeamHud(on) {
+    for (let tm = 0; tm < 2; tm++) {
+        let pfx = tm === 0 ? 'p1' : 'p2';
+        let single = document.getElementById(pfx + '-single-hp');
+        let team = document.getElementById(pfx + '-team');
+        if (single) single.classList.toggle('hidden', on);
+        if (team) team.classList.toggle('hidden', !on);
+        if (!on) continue;
+        for (let i = 0; i < 2; i++) {
+            let f = teams[tm][i];
+            let icon = document.getElementById(pfx + '-team-icon-' + i);
+            if (icon && f) {
+                icon.onerror = function () { this.style.visibility = 'hidden'; };
+                icon.style.visibility = 'visible';
+                icon.src = 'textures/icons/' + (LADDER_ICON_FILE[f.charType] || 'x') + '.png';
+            }
+        }
+    }
+}
+
+function updateTeamHud() {
+    for (let tm = 0; tm < 2; tm++) {
+        let pfx = tm === 0 ? 'p1' : 'p2';
+        for (let i = 0; i < 2; i++) {
+            let f = teams[tm][i];
+            let hpEl = document.getElementById(pfx + '-team-hp-' + i);
+            let rowEl = document.getElementById(pfx + '-team-row-' + i);
+            if (!f || !hpEl || !rowEl) continue;
+            hpEl.style.width = Math.max(0, (f.hp / f.maxHp) * 100) + '%';
+            rowEl.classList.toggle('active', i === activeIdx[tm]);
+            rowEl.classList.toggle('downed', f.hp <= 0);
+        }
+        setMeterBar(pfx, players[tm]);
+    }
+}
+
 function updateHUD() {
+    if (teamBattle) { updateTeamHud(); return; }
     if (players.length >= 1) {
         document.getElementById('p1-hp').style.width = Math.max(0, (players[0].hp / players[0].maxHp) * 100) + '%';
         setMeterBar('p1', players[0]);
@@ -208,13 +248,94 @@ function updateHUD() {
     }
 }
 
+function isLadderMode() { return currentMode === 'LADDER' || currentMode === 'LADDER2'; }
+
+// ---------------- 2v2 TAG-TEAM ----------------
+// Bring the benched team-mate onto the field. `auto` (a KO swap) skips the manual guards.
+function switchActive(team, auto) {
+    if (!teamBattle) return false;
+    let curI = activeIdx[team], otherI = 1 - curI;
+    let cur = teams[team][curI], bench = teams[team][otherI];
+    if (!bench || bench.hp <= 0) return false;
+    if (!auto) {
+        if (!cur || cur.hp <= 0) return false;
+        if (cur.switchCooldown > 0) return false;
+        if (['HITSTUN', 'BLOCKBREAK', 'LEDGE', 'ULT', 'DEAD'].includes(cur.state)) return false;
+    }
+    // The incoming fighter takes the outgoing one's spot, turns to face the foe, and
+    // bursts in with a signature entrance strike.
+    let foe = players[1 - team];
+    let atX = cur ? cur.x : bench.x;
+    let atDir = foe ? (foe.x >= atX ? 1 : -1) : (cur ? cur.dir : bench.dir);
+    bench.x = atX; bench.y = GROUND_Y; bench.vx = 0; bench.vy = 0;
+    bench.dir = atDir;
+    bench.ledge = null; bench.ult = null; bench.currentAttack = null;
+    bench.invulnTimer = Math.max(bench.invulnTimer || 0, 0.55); // tag-in protection
+    bench.switchCooldown = 1.4;
+    activeIdx[team] = otherI;
+    players[team] = bench;
+    spawnParticles(bench.x, bench.y - 45, 22, team === 0 ? '#fff' : '#ff0033');
+    playAudio(attackSfx.beastSwitch);
+    bench.startTagIn(); // unique entrance attack that damages whoever it hits
+    return true;
+}
+
+// Benched fighters slowly recover and the CPU tags out when its active fighter is hurting.
+function updateBench(dt) {
+    if (!teamBattle) return;
+    // Delayed tag-in after a KO (the brief dramatic pause)
+    for (let tm = 0; tm < 2; tm++) {
+        if (pendingTag[tm] > 0) {
+            pendingTag[tm] -= dt;
+            if (pendingTag[tm] <= 0) switchActive(tm, true);
+        }
+    }
+    for (let tm = 0; tm < 2; tm++) {
+        let benchI = 1 - activeIdx[tm];
+        let bench = teams[tm][benchI];
+        if (bench && bench.hp > 0 && bench.hp < bench.maxHp) bench.hp = Math.min(bench.maxHp, bench.hp + 4 * dt);
+        // CPU auto-tag: swap out a badly hurt active fighter for a healthier rested one
+        let cur = teams[tm][activeIdx[tm]];
+        if (cur && cur.isAI && bench && bench.hp > 0 && cur.switchCooldown <= 0 &&
+            cur.hp > 0 && cur.hp < cur.maxHp * 0.3 && bench.hp > cur.hp + 25 &&
+            ['IDLE', 'WALK'].includes(cur.state) && Math.random() < 0.02) {
+            switchActive(tm, false);
+        }
+    }
+}
+
+function team2v2End(winnerIdx) {
+    // No best-of-3 in 2v2 — wiping a squad ends the match. Set roundWins so the
+    // win-animation/winner detection in endGame picks the right side.
+    roundWins = winnerIdx === 0 ? [ROUNDS_TO_WIN, 0] : winnerIdx === 1 ? [0, ROUNDS_TO_WIN] : [0, 0];
+    let title = winnerIdx === 0 ? 'PLAYER 1 WINS' : winnerIdx === 1 ? 'PLAYER 2 WINS' : 'DRAW';
+    endGame(title, winnerIdx === -1 ? 'Mutual Destruction' : 'Squad Wiped');
+}
+
 function checkWinCondition() {
     if (gameState !== 'PLAYING') return;
     if (trainingMode) return; // training never ends
     if (currentMode === 'ONLINE' && onlineState.slot !== 0) return; // host owns match outcomes
 
+    if (teamBattle) {
+        // A downed active fighter is replaced by a living team-mate after a brief pause
+        // (see updateBench); a squad with both fighters down loses the match.
+        for (let tm = 0; tm < 2; tm++) {
+            if (players[tm].hp <= 0 && pendingTag[tm] <= 0) {
+                let bench = teams[tm][1 - activeIdx[tm]];
+                if (bench && bench.hp > 0) pendingTag[tm] = 0.95; // hold on the KO, then tag in
+            }
+        }
+        let t0dead = teams[0].every(f => f.hp <= 0);
+        let t1dead = teams[1].every(f => f.hp <= 0);
+        if (t0dead && t1dead) team2v2End(-1);
+        else if (t0dead) team2v2End(1);
+        else if (t1dead) team2v2End(0);
+        return;
+    }
+
     let p1Alive = players[0].hp > 0;
-    
+
     if (currentMode === 'PVE') {
         let enemiesAlive = players.slice(1).some(p => p.hp > 0);
         if (!p1Alive) {
@@ -312,7 +433,7 @@ function endGame(title, subtitle) {
     let animMs = overkillFx ? 3200 : 2800;
     roundAnnounce = { text: title, t: 0, dur: animMs / 1000 };
     setTimeout(() => {
-        if (currentMode === 'LADDER') { ladderResolveMatch(); return; } // win -> climb, loss -> retry
+        if (isLadderMode()) { ladderResolveMatch(); return; } // win -> climb, loss -> retry
         document.getElementById('end-screen').classList.remove('hidden');
         if (currentMode === 'ONLINE') onlineBeginPostMatch();
     }, animMs);
@@ -477,15 +598,24 @@ function updateGameplay(dt) {
             matchTimer--;
             document.getElementById('timer').innerText = matchTimer;
             if (matchTimer <= 0) {
-                // Time up — award the round on remaining health
-                let p1 = players[0].hp / players[0].maxHp;
-                let p2 = players[1].hp / players[1].maxHp;
-                if (p1 > p2) endRound(0, "Time Up — health lead.");
-                else if (p2 > p1) endRound(1, "Time Up — health lead.");
-                else endRound(-1, "Time Up — dead even.");
+                if (teamBattle) {
+                    // Time up — the squad with more total remaining health wins
+                    let h0 = teams[0].reduce((s, f) => s + Math.max(0, f.hp), 0);
+                    let h1 = teams[1].reduce((s, f) => s + Math.max(0, f.hp), 0);
+                    team2v2End(h0 > h1 ? 0 : h1 > h0 ? 1 : -1);
+                } else {
+                    // Time up — award the round on remaining health
+                    let p1 = players[0].hp / players[0].maxHp;
+                    let p2 = players[1].hp / players[1].maxHp;
+                    if (p1 > p2) endRound(0, "Time Up — health lead.");
+                    else if (p2 > p1) endRound(1, "Time Up — health lead.");
+                    else endRound(-1, "Time Up — dead even.");
+                }
             }
         }
     }
+
+    if (teamBattle) updateBench(dt);
 
     players.forEach(p => {
         // During an ultimate's pause/payoff, freeze everyone except the performer
@@ -995,7 +1125,13 @@ function drawLadderScreen(c) {
     let pbox = 50, px = railL - 70;
     c.save(); c.shadowBlur = 16; c.shadowColor = '#fff';
     c.fillStyle = '#101010'; c.fillRect(px - pbox / 2, py - pbox / 2, pbox, pbox); c.restore();
-    drawCharIcon(c, p1Selection, px, py, pbox);
+    let mySquad = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam : [p1Selection];
+    if (mySquad.length >= 2) { // two mini-icons for the 2v2 squad
+        drawCharIcon(c, mySquad[0], px, py - 12, pbox - 20);
+        drawCharIcon(c, mySquad[1], px, py + 12, pbox - 20);
+    } else {
+        drawCharIcon(c, mySquad[0], px, py, pbox);
+    }
     c.strokeStyle = '#fff'; c.lineWidth = 2; c.strokeRect(px - pbox / 2, py - pbox / 2, pbox, pbox);
     c.fillStyle = '#fff'; c.font = 'bold 11px monospace';
     c.fillText('YOU', px, py + pbox / 2 + 12);
