@@ -48,7 +48,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.13.0</span>
+        <span class="menu-version">v0.14.4</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -165,6 +165,10 @@
             </div>
             <div class="char-card" data-char="COPYCAT" onclick="selectCharacter('COPYCAT', this)">
                 <img class="char-icon" src="textures/icons/copycat.png" alt="The Copy Cat"
+                     onerror="this.parentElement.classList.add('no-icon'); this.remove();">
+            </div>
+            <div class="char-card" data-char="CULT" onclick="selectCharacter('CULT', this)">
+                <img class="char-icon" src="textures/icons/cult.png" alt="The Cult"
                      onerror="this.parentElement.classList.add('no-icon'); this.remove();">
             </div>
         </div>

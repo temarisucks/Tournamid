@@ -96,6 +96,17 @@ const CHAR_INFO = [
             ["Up", "Piano Drop", "leap and drop a piano on top of your opponent"],
             ["Down", "Agility", "set a brief mark — if struck while marked, auto-leap the attack and kick them away"]
         ]
+    },
+    {
+        name: "THE CULT", role: "Ritual zone/trap controller",
+        passive: "Passive — Congregation: landing hits builds Devotion. As it climbs, your rituals grow — more cultists per action, bigger Dark Offering fans and Consecrated Ground, and a faster road to the install.",
+        specials: [
+            ["Neutral", "Dark Offering", "hurl a hexed bolt — fans into 1-3 bolts as Devotion grows"],
+            ["Side", "The Procession", "you hold still while cultists run out and plant a snare-trap ahead"],
+            ["Up", "Mimic Puppet", "drop a puppet that echoes your every move on a delay; use again to detonate it — knocks both fighters back but only damages the foe"],
+            ["Down", "Consecrated Ground", "plant a ritual zone: chips the foe inside, siphons their meter, and charges your install"]
+        ],
+        ult: "Ultimate — Summon Lumatrossia (install): become a giant horned demon for as long as the draining bar lasts. New kit — Backhand / Tyrant's Fist / Doomgaze beam, plus Side: blink behind the foe, Up: a beast that rains Mage-fire, Down: a portal that drops them from the sky (cooldown). Armored and grab-immune but cannot block; desummons when the bar empties; win the round as him and you revert next round."
     }
 ];
 
@@ -107,6 +118,7 @@ function showCharInfo() {
             <div class="role">${c.role}</div>
             <div class="passive">${c.passive}</div>
             <ul>${c.specials.map(s => `<li><span class="dir">${s[0]}</span> <b>${s[1]}</b> — ${s[2]}</li>`).join('')}</ul>
+            ${c.ult ? `<div class="passive">${c.ult}</div>` : ''}
         </div>`).join('');
     document.getElementById('info-controls').innerHTML =
         "Specials = the special key + a held direction. &nbsp; P1: <b>L</b> + W/A·D/S &nbsp;|&nbsp; P2: <b>/</b> + Arrow keys. &nbsp; No direction = Neutral.";
@@ -403,7 +415,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -433,6 +445,7 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
     fighter.y = 148;
     fighter.dir = dir;
     fighter.animTimer = charSelectPreview.timer;
+    fighter.isPreview = true; // lets characters strike a dedicated character-select pose
 
     if (burst > 0) {
         const moveByCharacter = {
@@ -808,7 +821,10 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT']);
+    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT'];
+    // Don't put the player's own pick(s) on the ladder, and cap the gauntlet at 9 rungs.
+    let picked = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam.slice() : [p1Selection];
+    ladder.queue = ladderShuffle(FULL_ROSTER.filter(c => !picked.includes(c))).slice(0, 9);
     // Pre-roll each rung's tag partner up front (LADDER2 only) so the climb screen can show BOTH opponents.
     ladder.partners = ladder.queue.map(challenger => {
         let p = getRandomCharacter();
@@ -838,7 +854,7 @@ function startLadderBattle(index) {
     showScreen();
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
-    players = []; hitboxes = []; projectiles = []; particles = []; bloodStains = []; bodyParts = [];
+    players = []; hitboxes = []; projectiles = []; particles = []; bloodStains = []; bodyParts = []; cultSummons = []; consecrateZones = []; cultTraps = []; lumBeastFx = []; lumPortalFx = [];
     overkillFx = null;
     // start clean: no lingering ult slow-mo / zoom from the previous fight
     ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;

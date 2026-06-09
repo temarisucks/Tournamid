@@ -347,6 +347,19 @@ class Projectile {
             ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.ellipse(cx, cy + 4, this.w / 2, this.h / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
             ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(cx + Math.sin(now * 6) * 12, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+        } else if (this.subtype === 'hex') {
+            // The Cult's hexed bolt — a dark sigil-orb rimmed in red
+            ctx.translate(cx, cy);
+            ctx.fillStyle = '#0a0a0a'; ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 2;
+            ctx.shadowBlur = 12; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.arc(0, 0, this.w / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.rotate(now * 5);
+            ctx.beginPath(); for (let i = 0; i < 3; i++) { let a = i * Math.PI * 2 / 3; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * this.w * 0.5, Math.sin(a) * this.w * 0.5); } ctx.stroke();
+        } else if (this.subtype === 'doomgaze') {
+            // Lumatrossia's eye beam — a searing horizontal lance
+            ctx.fillStyle = 'rgba(255,0,51,0.85)'; ctx.shadowBlur = 18; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.ellipse(cx, cy, this.w * 0.75, this.h / 2, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(cx, cy, this.w * 0.4, this.h * 0.22, 0, 0, Math.PI * 2); ctx.fill();
         } else if (this.subtype === 'piano') {
             // a tumbling grand piano (Copy Cat's Piano Drop)
             if (typeof pianoImg !== 'undefined' && pianoImg.complete && pianoImg.naturalWidth > 0) {
@@ -413,6 +426,17 @@ class Fighter {
         this.copiedKind = null;       // the ult kind the Copy Cat stole
         this.sealedEnemy = null;      // who to un-seal when the Copy Cat spends its copy
         this._nineLivesFx = 0;        // Nine Lives revive flash timer
+
+        // The Cult — Congregation (Devotion) + the Lumatrossia install
+        this.devotion = 0;            // 0..100, builds on landing hits; tiers grow the rituals
+        this.lumActive = false;       // currently transformed into Lumatrossia
+        this.lumTimer = 0;            // remaining install time (the draining ult bar)
+        this._cultSaved = null;       // saved fighter fields to restore on desummon
+        this._lumFx = 0;              // summon/desummon flash timer
+        this.maskId = (typeof CULT_MASKS !== 'undefined') ? Math.floor(Math.random() * CULT_MASKS) : 0; // leader's mask
+        this.puppet = null;           // Cult Up — the mimic puppet { hist, t }
+        this.portalCd = 0;            // Lumatrossia Down — drop-portal cooldown
+        this._portalSlam = null;      // marks a foe falling out of a portal { owner, dmg }
 
         // Combat state
         this.attacks = stats.attacks;
@@ -528,6 +552,20 @@ class Fighter {
         if (this.agilityTimer > 0) this.agilityTimer -= dt; // Copy Cat counter-mark
         if (this._nineLivesFx > 0) this._nineLivesFx -= dt;
         if (this.catPin) this.updateCatPin(dt);             // Cat Dash pin-and-slash
+        if (this._lumFx > 0) this._lumFx -= dt;             // Cult summon/desummon flash
+        if (this.devotion > 0 && !this.lumActive) this.devotion = Math.max(0, this.devotion - dt * 3.5); // Congregation decays
+        if (this.portalCd > 0) this.portalCd -= dt;         // Lumatrossia drop-portal cooldown
+        if (this.puppet) this.updatePuppet(dt);             // Cult mimic puppet records the leader
+        if (this._portalSlam && this.y >= GROUND_Y) {       // foe slams down out of a drop-portal
+            let ps = this._portalSlam; this._portalSlam = null;
+            this.takeDamage(ps.dmg, { x: 0, y: 0 }, 0.5, ps.owner, { unblockable: true });
+            spawnParticles(this.x, GROUND_Y - 10, 26, '#ff0033'); spawnParticles(this.x, GROUND_Y - 10, 14, '#fff');
+        }
+        if (this.lumActive) { // Lumatrossia install — the bar steadily empties, then desummons
+            this.lumTimer -= dt;
+            this.meter = Math.max(0, this.meterMax * (this.lumTimer / LUM_DURATION));
+            if (this.lumTimer <= 0) this.revertFromLumatrossia();
+        }
         if (this.tumbleTimer > 0) { this.tumbleTimer -= dt; this._tumbleAngle += Math.abs(this.vx) * dt * 0.04 * (this._tumbleDir || 1); }
         if (this.yankTimer > 0) this.updateYank(dt);
         if (this.rootTimer > 0) {
@@ -846,6 +884,114 @@ class Fighter {
         projectiles.push(p);
     }
 
+    // ---------------- THE CULT: Dark Offering & Consecrated Ground ----------------
+    spawnDarkOffering(dmgMod = 1) {
+        let atk = this.currentAttack;
+        let n = 1 + this.cultTier(); // 1 / 2 / 3 hexed bolts as Devotion grows
+        let px = this.x + (this.dir === 1 ? 22 : -22 - atk.w);
+        let py = this.y + atk.oy;
+        for (let i = 0; i < n; i++) {
+            let spread = (i - (n - 1) / 2) * 150; // vertical fan
+            let p = new Projectile(px, py, atk.pSpeed * this.dir, spread, atk.w, atk.h, atk.dmg * dmgMod,
+                { x: atk.kb.x * this.dir, y: atk.kb.y }, atk.stun, this, atk.pLife, null);
+            p.subtype = 'hex'; p.ownerId = this.id; p.ownerTeam = this.team; p.ownerCharType = this.charType;
+            projectiles.push(p);
+        }
+        playAudio(attackSfx.magic);
+    }
+
+    spawnConsecrate() {
+        let tier = this.cultTier();
+        let x = Math.max(70, Math.min(WIDTH - 70, this.x + this.dir * 64));
+        consecrateZones.push({ x, owner: this, team: this.team, t: 0, life: 5 + tier * 1.6, radius: 70 + tier * 26, tick: 0 });
+        spawnParticles(x, GROUND_Y - 8, 22, '#ff0033');
+        spawnParticles(x, GROUND_Y - 8, 10, '#fff');
+        playAudio(attackSfx.magic);
+    }
+
+    // Side — The Procession: cultists run out and plant a snare-trap ahead of the leader.
+    spawnProcessionTrap() {
+        let x = Math.max(70, Math.min(WIDTH - 70, this.x + this.dir * 190));
+        cultTraps.push({ x, owner: this, team: this.team, t: 0, arm: 0.42, life: 7 + this.cultTier(), triggered: false, radius: 44 });
+        playAudio(attackSfx.magic);
+    }
+
+    // Up — the mimic puppet: a full-size cultist falls in and echoes the leader on a delay.
+    spawnPuppet() {
+        this.puppet = { hist: [], t: 0, delay: 13, fall: 1 };
+        spawnParticles(this.x, GROUND_Y - 60, 18, '#ff0033');
+        playAudio(attackSfx.magic);
+    }
+    updatePuppet(dt) {
+        let pp = this.puppet;
+        pp.t += dt;
+        if (pp.fall > 0) pp.fall = Math.max(0, pp.fall - dt * 3.2); // drops into place at spawn
+        pp.hist.push({ x: this.x, dir: this.dir, state: this.state, atk: this.currentAttack ? this.currentAttack.type : null, st: this.stateTimer, anim: this.animTimer, y: this.y });
+        if (pp.hist.length > pp.delay + 4) pp.hist.shift();
+    }
+    explodePuppet() {
+        let pp = this.puppet; this.puppet = null;
+        let px = (pp.hist.length ? pp.hist[0].x : this.x);
+        for (let p of players) {
+            if (!p || p.state === 'DEAD') continue;
+            if (p.team === this.team) continue;                 // allies unharmed
+            if (Math.abs(p.x - px) > 170) continue;
+            let away = p.x < px ? -1 : 1;
+            p.takeDamage(16, { x: 440 * away, y: -300 }, 0.55, this); // damage ONLY the opponent
+        }
+        // the leader is thrown back too, but takes no damage
+        this.vx = -this.dir * 420; this.vy = -240;
+        spawnParticles(px, GROUND_Y - 40, 42, '#ff0033'); spawnParticles(px, GROUND_Y - 40, 22, '#fff');
+        playAudio(attackSfx.magic);
+    }
+
+    // Lumatrossia Side — blink behind the opponent.
+    lumTeleport() {
+        let foe = this.getClosestEnemy();
+        spawnParticles(this.x, this.y - 60, 22, '#ff0033'); // vanish
+        if (foe) {
+            this.x = Math.max(60, Math.min(WIDTH - 60, foe.x - foe.dir * 90));
+            this.dir = foe.x >= this.x ? 1 : -1;
+        } else {
+            this.x = Math.max(60, Math.min(WIDTH - 60, this.x + this.dir * 220));
+        }
+        this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+        this.invulnTimer = Math.max(this.invulnTimer, 0.22);
+        spawnParticles(this.x, this.y - 60, 26, '#ff0033'); spawnParticles(this.x, this.y - 60, 13, '#fff'); // reappear
+        playAudio(attackSfx.magic);
+    }
+
+    // Lumatrossia Down — a portal swallows the foe and drops them from the sky (cooldown).
+    lumPortal() {
+        if (this.portalCd > 0) return; // on cooldown
+        let foe = this.getClosestEnemy();
+        if (!foe || foe.state === 'DEAD' || foe.invulnTimer > 0) return;
+        this.portalCd = 6;
+        let fx = foe.x;
+        lumPortalFx.push({ x: fx, y: GROUND_Y - 6, t: 0, life: 0.95 });  // ground portal they fall into
+        lumPortalFx.push({ x: fx, y: 80, t: 0, life: 0.95 });            // sky portal they emerge from
+        foe.x = fx; foe.y = 80; foe.vy = 120; foe.vx = 0;
+        foe.state = 'HITSTUN'; foe.stateTimer = 2.2;
+        foe._portalSlam = { owner: this, dmg: 18 };
+        spawnParticles(fx, GROUND_Y - 8, 20, '#ff0033');
+        playAudio(attackSfx.magic);
+    }
+
+    // Lumatrossia Up — a beast maw forms above the foe and rains Mage-style fire down.
+    spawnBeastFire() {
+        let foe = this.getClosestEnemy();
+        let bx = Math.max(50, Math.min(WIDTH - 50, foe ? foe.x : this.x + this.dir * 160));
+        lumBeastFx.push({ x: bx, y: 72, t: 0, life: 0.85 });
+        for (let i = 0; i < 4; i++) {
+            let px = bx + (i - 1.5) * 34;
+            let p = new Projectile(px, 62, 0, 250, 20, 24, 8, { x: 50 * (i % 2 ? 1 : -1), y: 220 }, 0.3, this, 2.2, null);
+            p.subtype = 'fire'; p.burn = 3.2;
+            p.ownerId = this.id; p.ownerTeam = this.team; p.ownerCharType = this.charType;
+            projectiles.push(p);
+        }
+        playAudio(attackSfx.fire);
+    }
+
     // ---------------- TELEPATH PSI BARRIER (reflect) ----------------
     isReflecting() {
         if (this.state !== 'ATTACK' || !this.currentAttack || this.currentAttack.type !== 'psiBarrier') return false;
@@ -875,6 +1021,7 @@ class Fighter {
         if (currentMode === 'ONLINE' && onlineState && onlineState.slot !== 0) return;
         if (this.ultSealed) return; // a Copy Cat sealed your ultimate
         if (this.charType === 'COPYCAT' && !this.ultUnlocked) return; // locked until Nine Lives procs
+        if (this.lumActive) return; // already summoned Lumatrossia — can't re-ult mid-install
         let ready = (infiniteMeter && this.team === 0) || this.meter >= this.meterMax;
         if (!ready) return;
         if (!(infiniteMeter && this.team === 0)) this.meter = 0;
@@ -882,8 +1029,10 @@ class Fighter {
     }
 
     startUltimate() {
-        // The Copy Cat performs the ultimate it stole; everyone else runs their own.
-        let kind = (this.charType === 'COPYCAT') ? this.copiedKind : ULT_KIND[this.charType];
+        // The Copy Cat performs the ultimate it stole; The Cult installs Lumatrossia; everyone else runs their own.
+        let kind = (this.charType === 'COPYCAT') ? this.copiedKind
+                 : (this.charType === 'CULT') ? 'install'
+                 : ULT_KIND[this.charType];
         if (!kind) return; // Zombie has no ultimate (and an un-charged Copy Cat shouldn't reach here)
         if (this.charType === 'COPYCAT') {
             // spending the copy: free the sealed enemy and re-lock until the next Nine Lives
@@ -911,6 +1060,49 @@ class Fighter {
             this.stateTimer = 0;
         }
     }
+
+    // ---------------- THE CULT: Lumatrossia install ----------------
+    // Morph the controlled cultist into Lumatrossia. Swaps moveset/size/stats only —
+    // HP is shared (it's a power-state, not a second life bar). The draining ult bar is the clock.
+    becomeLumatrossia() {
+        if (this.lumActive) return;
+        const lum = CHARACTERS.LUMATROSSIA;
+        this._cultSaved = {
+            charType: this.charType, attacks: this.attacks,
+            width: this.width, height: this.height,
+            speed: this.speed, jumpForce: this.jumpForce
+        };
+        this.charType = 'LUMATROSSIA';
+        this.attacks = lum.attacks;
+        this.width = lum.width; this.height = lum.height;
+        this.speed = lum.speed; this.jumpForce = lum.jump;
+        this.lumActive = true;
+        this.lumTimer = LUM_DURATION;
+        this.puppet = null; // the Cult's mimic doesn't carry into the install
+        this.meter = this.meterMax; // the meter bar now reads as the install timer, draining down
+        this._lumFx = 1.0;
+        this.state = 'IDLE'; this.vx = 0; this.vy = 0; this.currentAttack = null;
+        spawnParticles(this.x, GROUND_Y - 70, 44, '#ff0033');
+        spawnParticles(this.x, GROUND_Y - 70, 22, '#fff');
+    }
+
+    // Desummon Lumatrossia and return the cult to battle.
+    revertFromLumatrossia() {
+        if (!this.lumActive) return;
+        const s = this._cultSaved;
+        if (s) {
+            this.charType = s.charType; this.attacks = s.attacks;
+            this.width = s.width; this.height = s.height;
+            this.speed = s.speed; this.jumpForce = s.jumpForce;
+        }
+        this._cultSaved = null;
+        this.lumActive = false; this.lumTimer = 0; this.meter = 0; this._lumFx = 1.0;
+        if (this.state !== 'DEAD') { this.state = this.y < GROUND_Y ? 'FALL' : 'IDLE'; this.currentAttack = null; }
+        spawnParticles(this.x, GROUND_Y - 60, 30, '#ff0033');
+    }
+
+    // Devotion tier (Congregation): 0/1/2 — more cultists, bigger zones, faster ult.
+    cultTier() { return this.devotion >= 66 ? 2 : this.devotion >= 33 ? 1 : 0; }
 
     // Called when the activation hit/projectile of an ultimate connects.
     onUltConnect(target) {
@@ -993,7 +1185,23 @@ class Fighter {
                 else if (u.kind === 'mindbreak') { u.phase = 'snare'; this.spawnUltActivation(); }
                 else if (u.kind === 'beaststorm') { u.phase = 'snare'; this.spawnUltActivation(); }
                 else if (u.kind === 'soultrain') { u.phase = 'rush'; }
+                else if (u.kind === 'install') { u.phase = 'summon'; this._lumFx = 1.4; }
             }
+            return;
+        }
+
+        // THE CULT — Summon Lumatrossia: cultists float up, then the install takes over
+        if (u.kind === 'install') {
+            timeScale = 0.5;
+            this.vx = 0; this.y = GROUND_Y;
+            ultCamera = { fx: this.x, fy: GROUND_Y - 90, zoom: 1.35 };
+            // four cultists rise, arms raised, chanting
+            for (let i = 0; i < 4; i++) {
+                if (onlineDeterministicRandom('cultRise' + i, this) < 0.25) {
+                    spawnParticles(this.x + (i - 1.5) * 40, GROUND_Y - 30 - u.t * 120, 2, '#ff0033');
+                }
+            }
+            if (u.t > 1.3) { this.becomeLumatrossia(); this.endUlt(); }
             return;
         }
 
@@ -1405,7 +1613,7 @@ class Fighter {
         if (keyPressed(controls.ult)) { this.tryUltimate(); return; }
 
         // Blocking
-        if (keys[controls.block] && this.y === GROUND_Y) {
+        if (keys[controls.block] && this.y === GROUND_Y && !this.lumActive) { // Lumatrossia cannot block
             this.changeState('BLOCK');
             return;
         } else if (this.state === 'BLOCK') {
@@ -1474,7 +1682,9 @@ class Fighter {
             LLH: 'comboLLH',
             LH: 'comboLH',
             LHL: 'comboLHL',
-            HLL: 'comboHLL'
+            HLL: 'comboHLL',
+            HLH: 'comboHLH',
+            HHL: 'comboHHL'
         };
         let comboName = routes[pattern] || (input === 'L' ? 'light' : 'heavy');
         this.startAttack(comboName);
@@ -1519,6 +1729,7 @@ class Fighter {
                      : this.charType === 'TELEPATH' ? dist < 120        // psychic snare range
                      : this.charType === 'BEAST_TAMER' ? dist < 170
                      : this.charType === 'PHANTOM' ? dist < 240        // soul-train rush has reach
+                     : this.charType === 'CULT' ? true                  // the install needs no target
                      : dist < 460;                                      // mage/ranger ranged
             if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
@@ -1534,6 +1745,8 @@ class Fighter {
             BEAST_TAMER:{ range: 150, kite: false, jumpy: 0.16 },
             PHANTOM:   { range: 88,  kite: false, jumpy: 0.08 },
             COPYCAT:   { range: 72,  kite: false, jumpy: 0.20 },
+            CULT:      { range: 240, kite: true,  jumpy: 0.06 },
+            LUMATROSSIA:{ range: 120, kite: false, jumpy: 0.04 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -1620,6 +1833,8 @@ class Fighter {
             if (dist < arch.range - 80) {
                 if (this.charType === 'MAGE' && r < 0.5) this.startAttack('specUp');          // blink away
                 else if (this.charType === 'RANGER' && r < 0.5) this.startAttack('specDown'); // roll out
+                else if (this.charType === 'CULT' && r < 0.4) this.startAttack('specDown');   // plant a zone underfoot
+                else if (this.charType === 'CULT' && r < 0.7) this.startAttack('specSide');   // shove with the procession
                 else this.startPlayerAttack(r < 0.6 ? 'L' : 'H');
             } else if (dist < arch.range + 240) {
                 if (this.charType === 'MAGE') {
@@ -1627,6 +1842,12 @@ class Fighter {
                     else if (r < 0.65) this.startPlayerAttack('H');          // big orb
                     else if (r < 0.80) this.startAttack('specSide');         // Arcane Roulette
                     else if (r < 0.90 && dist < 240) this.startAttack('specDown'); // Rune Trap
+                    else this.startPlayerAttack('L');
+                } else if (this.charType === 'CULT') {
+                    if (target.y < GROUND_Y - 30 && r < 0.5) this.startAttack('specUp');   // Rapture anti-air
+                    else if (r < 0.5) this.startAttack('specNeutral');       // Dark Offering bolts
+                    else if (r < 0.7) this.startAttack('specDown');          // Consecrated Ground
+                    else if (r < 0.85) this.startAttack('specSide');         // Procession
                     else this.startPlayerAttack('L');
                 } else { // RANGER
                     if (r < 0.5) this.startPlayerAttack('H');                // gun
@@ -1663,6 +1884,12 @@ class Fighter {
                     else if (r < 0.72) this.startAttack('specUp');              // Piano Drop
                     else if (r < 0.84) this.startAttack('specDown');            // Agility counter-mark
                     else this.startAttack('specNeutral');                      // Copy (replays last special)
+                } else if (this.charType === 'LUMATROSSIA') {
+                    if (r < 0.40) this.startPlayerAttack(r < 0.5 ? 'L' : 'H');  // huge backhand / slam
+                    else if (r < 0.58) this.startAttack('specSide');           // Goring Charge
+                    else if (r < 0.72) this.startAttack('specDown');           // Cataclysm
+                    else if (r < 0.85) this.startAttack('specNeutral');        // Doomgaze beam
+                    else this.startPlayerAttack('H');
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -1763,6 +1990,21 @@ class Fighter {
         if (t === 'lowHeavy') this.vx = 80 * this.dir;
         if (atk.combo === 'LLH') this.vx = 120 * this.dir;
         if (atk.combo === 'HLL') this.vx = 180 * this.dir;
+        // The Cult specials — the leader stays put and directs the flock
+        if (t === 'procession') { this.vx = 0; this.spawnProcessionTrap(); }    // cultists run out, plant a snare
+        if (t === 'cultPuppet') { this.vx = 0; if (this.puppet) this.explodePuppet(); else this.spawnPuppet(); } // summon or detonate
+        // Lumatrossia specials
+        if (t === 'lumTeleport') this.lumTeleport();                            // blink behind the foe
+        if (t === 'lumPortal') this.lumPortal();                                // drop them out of the sky
+        if (t === 'lumBeast') this.spawnBeastFire();                            // beast rains fire from above
+
+        // Cult — every action summons 1-3 cultists for the ritual (cosmetic flair)
+        if (this.charType === 'CULT' && typeof spawnCultists === 'function') {
+            let n = (atkName === 'light') ? 1 : (atkName === 'heavy') ? 2 : 2 + Math.min(1, this.cultTier());
+            let ck = t === 'darkOffering' ? 'throw' : t === 'procession' ? 'march'
+                   : t === 'cultPuppet' ? 'raise' : t === 'consecrate' ? 'kneel' : 'strike';
+            spawnCultists(this.x, GROUND_Y, this.dir, n, ck);
+        }
     }
 
     playAttackSound(atk) {
@@ -1805,6 +2047,11 @@ class Fighter {
             // claws slash, the dash pounce uses the knife swipe
             if (atk.type === 'catDash') playAudio(attackSfx.knife);
             else playAudio(attackSfx.kick);
+            return;
+        }
+        if (this.charType === 'CULT') { playAudio(attackSfx.magic); return; }            // ritual strikes
+        if (this.charType === 'LUMATROSSIA') {                                           // heavy demonic blows
+            playAudio(atk.name === 'heavy' || atk.type === 'cataclysm' ? attackSfx.kick : attackSfx.punch);
             return;
         }
         if (!atk.isProj) playAudio(attackSfx.punch);
@@ -1884,6 +2131,10 @@ class Fighter {
                 this.spawnBeastVenom(dmgMod);
             } else if (atk.type === 'beastRavenMark') {
                 this.spawnBeastRavenMark(dmgMod);
+            } else if (atk.type === 'darkOffering') {
+                this.spawnDarkOffering(dmgMod);                 // 1-3 hexed bolts (Devotion)
+            } else if (atk.type === 'consecrate') {
+                this.spawnConsecrate();                         // plant the ritual trap-zone
             } else if (atk.type === 'teleCrash') {
                 // Ground version = a low psychic sweep; the air dive detonates on landing (handled above)
                 if (!this._diving) {
@@ -1908,6 +2159,7 @@ class Fighter {
                 else hb.atk = atk; // remember the move so its sound can play on contact
                 hitboxes.push(hb);
                 if (atk.type === 'darkNova') { spawnParticles(this.x + 40 * this.dir, GROUND_Y - 10, 20, '#111'); spawnParticles(this.x - 40 * this.dir, GROUND_Y - 10, 14, '#ff0033'); }
+                if (atk.type === 'cataclysm') { spawnParticles(this.x, GROUND_Y - 12, 34, '#ff0033'); spawnParticles(this.x, GROUND_Y - 12, 20, '#888'); }
             }
         } else if (t >= atk.startup + atk.active + atk.recovery) {
             this.changeState(this.y < GROUND_Y ? (this.vy < 0 ? 'JUMP' : 'FALL') : 'IDLE');
@@ -2079,6 +2331,8 @@ class Fighter {
             vy = 170;
         } else if (atk.type === 'graveDrag') {
             subtype = 'mistChain';
+        } else if (atk.type === 'doomgaze') {
+            subtype = 'doomgaze'; pierce = true;
         }
 
         if (this.charType === 'PHANTOM') {
@@ -2233,6 +2487,13 @@ class Fighter {
         // Meter charges from the exchange — more from taking than dealing
         this.meter = Math.min(this.meterMax, this.meter + amount * 0.62 + (blocked ? 1 : 0));
         if (attacker) attacker.meter = Math.min(attacker.meterMax, attacker.meter + amount * 0.32 + 1);
+
+        // The Cult — Congregation: landing hits builds Devotion, which (by tier) grows the
+        // rituals and charges the Lumatrossia install faster.
+        if (attacker && attacker.charType === 'CULT' && !blocked && !attacker.lumActive) {
+            attacker.devotion = Math.min(100, attacker.devotion + 14);
+            attacker.meter = Math.min(attacker.meterMax, attacker.meter + amount * 0.12 * (1 + attacker.cultTier()));
+        }
 
         // Dark Ruler passive — Soul Siphon: heal a fraction of damage dealt
         if (attacker && attacker.charType === 'DARK_RULER' && !blocked && attacker.hp > 0) {
@@ -2706,12 +2967,15 @@ class Fighter {
         this._hover = (this._hover || 0) + (hoverTarget - (this._hover || 0)) * 0.2;
         ctx.translate(this.x, this.y - this._hover);
         ctx.scale(this.dir, 1); // Flip based on direction
+        if (this.charType === 'LUMATROSSIA') ctx.scale(1.55, 1.55); // the summoned demon towers over the arena
         if (this.tumbleTimer > 0) { ctx.translate(0, -42); ctx.rotate(this._tumbleAngle); ctx.translate(0, 42); } // post-ult floor tumble
 
         ctx.strokeStyle = '#fff';
+        if (this.charType === 'LUMATROSSIA') ctx.strokeStyle = '#e8e8e8';
+        if (this.charType === 'CULT') ctx.strokeStyle = '#cfcfcf';
         if (this.state === 'HITSTUN') ctx.strokeStyle = '#f55'; // Red flash on hit
         if (this.overkillRed) ctx.strokeStyle = '#ff0033';
-        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : (this.charType === 'PHANTOM') ? 3.4 : 4; // bigger = thicker
+        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : (this.charType === 'PHANTOM') ? 3.4 : (this.charType === 'LUMATROSSIA') ? 5 : 4; // bigger = thicker
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
@@ -2878,6 +3142,31 @@ class Fighter {
                 rightArmAngle = -0.85 + Math.sin(t * 6 - 0.5) * 0.5;
                 leftArmBend = 0.85 + beat * 0.28; rightArmBend = -0.85 - beat * 0.28;
                 torsoLean = roll * 0.07;
+            } else if (this.charType === 'CULT') {
+                if (this.isPreview) {
+                    // character-select pose: a beckoning recruiter — one hand extended to
+                    // welcome you to the flock, the other raised in a slow ritual sign
+                    let sway = Math.sin(t * 1.5);
+                    headY += sway * 2;
+                    leftArmAngle = 1.5 + sway * 0.06; leftArmBend = 0.12;   // hand offered forward, palm up
+                    rightArmAngle = 2.55 + Math.sin(t * 1.5 + 1) * 0.08; rightArmBend = -0.4; // ritual sign raised
+                    leftLegAngle = -0.28; rightLegAngle = 0.3; leftLegBend = 0.32; rightLegBend = 0.3;
+                    torsoLean = 0.05 + sway * 0.03;
+                } else {
+                    // ominous chant — hands clasped low in front, hood swaying to the ritual
+                    let sway = Math.sin(t * 1.8), breath = Math.sin(t * 2.4);
+                    headY += breath * 1.5;
+                    leftArmAngle = 1.16 + sway * 0.05; leftArmBend = 0.72;   // hands meet in prayer
+                    rightArmAngle = 1.0 - sway * 0.05; rightArmBend = 0.55;
+                    torsoLean = 0.07 + sway * 0.03;
+                }
+            } else if (this.charType === 'LUMATROSSIA') {
+                // a towering, heaving menace — slow breath, heavy claws hanging wide
+                let breath = Math.sin(t * 1.6);
+                headY += breath * 2;
+                leftArmAngle = 0.66 + breath * 0.06; leftArmBend = 0.5;
+                rightArmAngle = -0.66 - breath * 0.06; rightArmBend = -0.5;
+                torsoLean = 0.04 + breath * 0.02;
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -2955,6 +3244,22 @@ class Fighter {
                 leftLegAngle = 0.12 + rise * 0.05; rightLegAngle = -0.16 - rise * 0.05;
                 leftLegBend = 0.2; rightLegBend = -0.18;
                 torsoLean = Math.sin(t * 1.5) * 0.03;
+            } else if (this.charType === 'CULT') {
+                // both arms raised high to the heavens in triumphant worship, swaying
+                let sway = Math.sin(t * 2.2);
+                headY += -6 + sway * 2;               // head tilted back to the sky
+                leftArmAngle = 2.9 + Math.sin(t * 2) * 0.12; rightArmAngle = 3.1 - Math.sin(t * 2 + 1) * 0.12;
+                leftArmBend = -0.25; rightArmBend = 0.25;
+                leftLegAngle = -0.3; rightLegAngle = 0.32; leftLegBend = 0.3; rightLegBend = 0.3;
+                torsoLean = sway * 0.05;
+            } else if (this.charType === 'LUMATROSSIA') {
+                // throws its arms wide and high and roars, towering over the arena
+                let roar = Math.sin(t * 5);
+                headY += -4 + roar * 2;
+                leftArmAngle = 2.2 + roar * 0.1; rightArmAngle = -2.2 - roar * 0.1; // flung wide & up
+                leftArmBend = -0.4; rightArmBend = 0.4;
+                leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.28; rightLegBend = 0.28; // wide planted
+                torsoLean = -0.06;
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
@@ -3093,6 +3398,14 @@ class Fighter {
                 leftArmAngle = 1.65 + Math.sin(t * 4) * 0.04; leftArmBend = -0.35;  // paws down & forward
                 rightArmAngle = 1.5 + Math.sin(t * 4 + 0.5) * 0.04; rightArmBend = 0.25;
                 headY += 2; torsoLean = 0.2;
+            } else if (this.charType === 'CULT') {
+                // huddled low under the robe, hands tucked together
+                leftArmAngle = 1.3; leftArmBend = 0.5; rightArmAngle = 1.15; rightArmBend = 0.4;
+                torsoLean = 0.14;
+            } else if (this.charType === 'LUMATROSSIA') {
+                // a giant crouching low, fists gathered to erupt
+                leftArmAngle = 1.4; leftArmBend = -0.7; rightArmAngle = 1.6; rightArmBend = -0.7;
+                torsoLean = 0.18;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -3171,6 +3484,16 @@ class Fighter {
                     torsoLean = -0.06;
                 }
                 headY += rise ? -2 : 2;
+            } else if (this.charType === 'CULT') {
+                // robe billows — legs tucked, arms spread as if borne aloft by the flock
+                leftLegAngle = -0.2; rightLegAngle = 0.4; leftLegBend = 0.8; rightLegBend = 0.7;
+                leftArmAngle = 2.5; rightArmAngle = -2.5; leftArmBend = -0.3; rightArmBend = 0.3; // arms flared out, robe-light
+                headY += rise ? -3 : 1; torsoLean = rise ? -0.04 : 0.06;
+            } else if (this.charType === 'LUMATROSSIA') {
+                // a heavy leap — legs splayed bracing, claws hauled wide
+                leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.5; rightLegBend = 0.55;
+                leftArmAngle = 1.1; rightArmAngle = -1.1; leftArmBend = 0.4; rightArmBend = -0.4;
+                headY += 2; torsoLean = rise ? 0.16 : 0.24;
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -3220,6 +3543,13 @@ class Fighter {
                 leftArmAngle = 1.85 + brace; leftArmBend = -1.05;   // forearms crossed up high
                 rightArmAngle = 1.35 - brace; rightArmBend = -0.95;
                 torsoLean = 0.16; // ducked forward and coiled
+            } else if (this.charType === 'CULT') {
+                // a warding ritual — one hand thrust up making a sign, the other clutched to
+                // the chest, head bowed deep into the cowl (no boxer's guard here)
+                headY += 9; // bow the head
+                leftArmAngle = 2.75 + brace; leftArmBend = -0.35;  // warding hand raised high
+                rightArmAngle = 1.25 - brace; rightArmBend = 0.55; // other clutched to the chest
+                torsoLean = 0.2; // hunched forward over the ward
             } else {
                 // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
@@ -3720,12 +4050,20 @@ class Fighter {
                 leftLegBend = 0.34 + Math.max(0, beat) * 0.26;
                 rightLegBend = 0.30 + Math.max(0, -beat) * 0.26;
             }
+            else if (this.charType === 'LUMATROSSIA') { // a wide, planted colossus stance
+                leftLegAngle = rearAng - 0.16; rightLegAngle = leadAng + 0.16;
+                leftLegBend = 0.26; rightLegBend = 0.26;
+            }
             else { leftLegBend = 0.34; rightLegBend = 0.30; }
         } else if (this.state === 'BLOCK') {
             if (this.charType === 'COPYCAT') {
                 // a low feral guard-crouch, weight coiled on the back leg
                 leftLegAngle = rearAng - 0.2; rightLegAngle = leadAng + 0.26;
                 leftLegBend = 0.7; rightLegBend = 0.62;
+            } else if (this.charType === 'CULT') {
+                // settled into a robed huddle
+                leftLegAngle = rearAng - 0.08; rightLegAngle = leadAng + 0.06;
+                leftLegBend = 0.56; rightLegBend = 0.5;
             } else {
                 leftLegAngle = rearAng - 0.12;
                 rightLegAngle = leadAng + 0.10;
@@ -3736,6 +4074,10 @@ class Fighter {
                 // hunkered right down on all-four readiness, haunches gathered to pounce
                 leftLegAngle = rearAng - 0.34; rightLegAngle = leadAng + 0.34;
                 leftLegBend = 1.05; rightLegBend = 1.02;
+            } else if (this.charType === 'CULT') {
+                // sinks low beneath the robe
+                leftLegAngle = rearAng - 0.18; rightLegAngle = leadAng + 0.18;
+                leftLegBend = 0.92; rightLegBend = 0.9;
             } else {
                 leftLegAngle = rearAng - 0.22;
                 rightLegAngle = leadAng + 0.22;
@@ -3755,20 +4097,30 @@ class Fighter {
                     leftLegBend = 0.22; rightLegBend = 0.2;
                 }
                 headY += drift * 3 - 4; torsoLean = isWalkingForward ? 0.12 : -0.1;
+            } else if (this.charType === 'CULT') {
+                // A gliding processional — tiny shuffling steps under the robe, the body
+                // floating, and the hands kept clasped in the ritual posture while it moves.
+                let glide = Math.sin(t * 5), bob = Math.sin(t * 2.5);
+                leftLegAngle = -0.1 + glide * 0.1; rightLegAngle = 0.12 - glide * 0.1;
+                leftLegBend = 0.32 + Math.max(0, glide) * 0.16; rightLegBend = 0.30 + Math.max(0, -glide) * 0.16;
+                headY += bob * 2.5 - 2; torsoLean = isWalkingForward ? 0.05 : -0.03;
+                leftArmAngle = 1.16; leftArmBend = 0.72;    // hands stay clasped, gliding forward
+                rightArmAngle = 1.0; rightArmBend = 0.55;
             } else {
                 // Alternating gait: the two legs swing in OPPOSITE phase around a
                 // near-vertical centre, and each knee bends as that foot lifts/swings.
-                let heavy = this.charType === 'DARK_RULER';
-                let cadence = this.charType === 'ZOMBIE' ? 6 : this.charType === 'MAGE' ? 7 : heavy ? 7.5 : 12;
+                let heavy = this.charType === 'DARK_RULER' || this.charType === 'LUMATROSSIA';
+                let cadence = this.charType === 'ZOMBIE' ? 6 : this.charType === 'MAGE' ? 7
+                            : this.charType === 'LUMATROSSIA' ? 5.5 : heavy ? 7.5 : 12;
                 let phase = Math.sin(t * cadence);
-                let swing = phase * (heavy ? 0.66 : 0.5);  // wider, heavier stride
+                let swing = phase * (heavy ? 0.66 : 0.5);
                 let liftL = Math.max(0, phase);            // left foot in swing phase
                 let liftR = Math.max(0, -phase);           // right foot in swing phase
                 leftLegAngle = -0.04 + swing;
                 rightLegAngle = -0.04 - swing;
                 leftLegBend = 0.30 + liftL * (heavy ? 0.78 : 0.55);
                 rightLegBend = 0.30 + liftR * (heavy ? 0.78 : 0.55);
-                if (heavy) { headY += Math.abs(phase) * 9; torsoLean = 0.17; } // lumbering trudge
+                if (heavy) { headY += Math.abs(phase) * 9; torsoLean = 0.17; }   // lumbering trudge
             }
         }
 
@@ -4133,6 +4485,52 @@ class Fighter {
                 ctx.beginPath(); ctx.arc(0, headY + 36, 26 + (1.1 - this._nineLivesFx) * 46, 0, Math.PI * 2); ctx.stroke();
             }
             ctx.restore();
+        } else if (this.charType === 'CULT') {
+            ctx.save();
+            // robe / cloak draped over the lower body
+            let hem = Math.sin(t * 2) * 1.5;
+            ctx.fillStyle = '#1c1c1c'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-7, -42); ctx.lineTo(7, -42);
+            ctx.lineTo(13 + hem, -4); ctx.lineTo(-13 - hem, -4);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            // large pointed hood / cowl framing the head and shoulders
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.moveTo(-18, headY + 12);
+            ctx.quadraticCurveTo(-20, headY - 22, 0, headY - 42); // peak
+            ctx.quadraticCurveTo(20, headY - 22, 18, headY + 12);
+            ctx.quadraticCurveTo(0, headY + 4, -18, headY + 12); // inner brow
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            // the leader's big unique mask filling the cowl
+            if (typeof drawCultMask === 'function') drawCultMask(ctx, 3, headY + 2, this.maskId || 0, 2.0);
+            // Devotion embers rising as Congregation builds
+            if (this.devotion > 33) {
+                ctx.fillStyle = '#ff0033'; ctx.globalAlpha = 0.5;
+                for (let i = 0; i < (this.devotion >= 66 ? 3 : 2); i++) {
+                    let py = headY - 14 - ((t * 30 + i * 18) % 30);
+                    ctx.beginPath(); ctx.arc((i - 1) * 8, py, 1.6, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+            ctx.restore();
+        } else if (this.charType === 'LUMATROSSIA') {
+            ctx.save();
+            // curved devil horns
+            ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-7, headY - 7); ctx.quadraticCurveTo(-17, headY - 19, -10, headY - 31);
+            ctx.moveTo(7, headY - 7); ctx.quadraticCurveTo(17, headY - 19, 10, headY - 31);
+            ctx.stroke();
+            // burning eyes
+            ctx.fillStyle = '#ff0033'; ctx.shadowBlur = 10; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.arc(-4, headY - 1, 1.8, 0, Math.PI * 2); ctx.arc(5, headY - 1, 1.8, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+            // a low infernal aura while summoned (and flares on (de)summon)
+            ctx.globalAlpha = 0.25 + (this._lumFx > 0 ? this._lumFx * 0.4 : 0);
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 3; ctx.shadowBlur = 16; ctx.shadowColor = '#ff0033';
+            ctx.beginPath(); ctx.ellipse(0, -2, 26, 8, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
         } else if (this.charType === 'ZOMBIE') {
             // Missing eye / exposed skull detail
             ctx.fillStyle = '#ff0033';
@@ -4351,6 +4749,18 @@ class Fighter {
                 ctx.strokeStyle = 'rgba(223,228,242,0.7)'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#dfe4f2';
                 for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.6 - k * 0.15; ctx.beginPath(); ctx.arc(16, -46, 22 + k * 5, -1.0 + Math.sin(t * 4 + k) * 0.1, 1.0 + Math.sin(t * 4 + k) * 0.1); ctx.stroke(); }
                 ctx.globalAlpha = 1; ctx.restore();
+            } else if (this.charType === 'CULT') {
+                // a warding sigil — a glowing ritual rune conjured in front of the cowl
+                ctx.save();
+                ctx.translate(18, -50); ctx.rotate(Math.sin(t * 4) * 0.08);
+                let pulse = 0.85 + Math.sin(t * 9) * 0.1;
+                ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 2; ctx.shadowBlur = 12; ctx.shadowColor = '#ff0033';
+                ctx.beginPath(); ctx.arc(0, 0, 16 * pulse, 0, Math.PI * 2); ctx.stroke();          // ring
+                ctx.beginPath();                                                                   // inscribed triangle
+                for (let i = 0; i <= 3; i++) { let a = -Math.PI / 2 + i * Math.PI * 2 / 3; let fx = Math.cos(a) * 16 * pulse, fy = Math.sin(a) * 16 * pulse; i ? ctx.lineTo(fx, fy) : ctx.moveTo(fx, fy); }
+                ctx.stroke();
+                ctx.globalAlpha = 0.18; ctx.fillStyle = '#ff0033'; ctx.fill(); ctx.globalAlpha = 1;
+                ctx.restore();
             } else if (this.charType === 'BRAWLER') {
                 // the original guard arcs — Brawler keeps his signature block
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 3;

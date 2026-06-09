@@ -55,6 +55,15 @@ let particles = [];
 let bloodStains = [];
 let bodyParts = [];
 
+// The Cult — transient summoned-cultist visual actors and Consecrated Ground trap zones
+const CULT_MASKS = 6;       // number of distinct cultist mask shapes
+let cultSummons = [];
+let consecrateZones = [];
+let cultTraps = [];         // snare-traps planted by the Procession
+let lumBeastFx = [];        // Lumatrossia's fire-breathing beast maws
+let lumPortalFx = [];       // Lumatrossia's drop-portals (visual rings)
+const LUM_DURATION = 13;    // seconds the Lumatrossia install lasts before the bar empties
+
 // --- META: ultimates, block-break, training ---
 let infiniteMeter = false; // training toggle: ultimates always ready
 let trainingMode = false;  // dummy opponent
@@ -68,7 +77,7 @@ let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
 let suppressRollbackEffects = false;
 
-const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, COPYCAT: 60, ZOMBIE: 40 };
+const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, COPYCAT: 60, CULT: 96, LUMATROSSIA: 999, ZOMBIE: 40 };
 const ULT_LINES = {
     BRAWLER: "YOU'RE DEAD",
     SWORDSMAN: "OUTPLAYED.",
@@ -78,7 +87,8 @@ const ULT_LINES = {
     TELEPATH: "IDIOT",
     BEAST_TAMER: "ALPHA COMMAND.",
     PHANTOM: "SOUL TRAIN.",
-    COPYCAT: "I can do anything better than you!"
+    COPYCAT: "I can do anything better than you!",
+    CULT: "RISE, LUMATROSSIA!"
 };
 
 // Which ultimate "kind" each character runs. The Copy Cat has none of its own —
@@ -113,7 +123,8 @@ const ultVoices = {
     TELEPATH: new Audio('audio/voicelines/telepathult.wav'),
     BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav'),
     PHANTOM: new Audio('audio/voicelines/phantomult.wav'),
-    COPYCAT: new Audio('audio/voicelines/copycatult.wav')
+    COPYCAT: new Audio('audio/voicelines/copycatult.wav'),
+    CULT: new Audio('audio/voicelines/cultult.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -240,7 +251,8 @@ const selectVoices = {
     TELEPATH: makeAudio('audio/voicelines/telepath.wav', 0.92),
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92),
     PHANTOM: makeAudio('audio/voicelines/phantom.wav', 0.92),
-    COPYCAT: makeAudio('audio/voicelines/copycat.wav', 0.92)
+    COPYCAT: makeAudio('audio/voicelines/copycat.wav', 0.92),
+    CULT: makeAudio('audio/sfx/cult.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -251,7 +263,8 @@ const winVoices = {
     TELEPATH: makeAudio('audio/voicelines/telepathwin.wav', 0.95),
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95),
     PHANTOM: makeAudio('audio/voicelines/phantomwin.wav', 0.95),
-    COPYCAT: makeAudio('audio/voicelines/copycatwin.wav', 0.95)
+    COPYCAT: makeAudio('audio/voicelines/copycatwin.wav', 0.95),
+    CULT: makeAudio('audio/sfx/cultwin.wav', 0.95)
 };
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
@@ -447,7 +460,9 @@ function createAttackVariant(fighter, variant) {
         comboLLH: melee(baseHeavy, { startup: 0.14, active: 0.2, recovery: 0.34, dmg: Math.round(13 * comboScale), w: 66, h: 62, ox: 18, oy: -70, kb: {x: 170, y: -520}, stun: 0.5, type: 'comboLLH', combo: 'LLH' }),
         comboLH: melee(baseHeavy, { startup: 0.12, active: 0.17, recovery: 0.28, dmg: Math.round(9 * comboScale), w: 66, h: 34, ox: 22, oy: -48, kb: {x: 240, y: -80}, stun: 0.34, type: 'comboLH', combo: 'LH' }),
         comboLHL: melee(baseLight, { startup: 0.1, active: 0.18, recovery: 0.3, dmg: Math.round(12 * comboScale), w: 82, h: 24, ox: 18, oy: -30, kb: {x: 260, y: -220}, stun: 0.46, type: 'comboLHL', combo: 'LHL' }),
-        comboHLL: melee(baseHeavy, { startup: 0.13, active: 0.2, recovery: 0.34, dmg: Math.round(14 * comboScale), w: 58, h: 54, ox: 20, oy: -58, kb: {x: 330, y: -180}, stun: 0.5, type: 'comboHLL', combo: 'HLL' })
+        comboHLL: melee(baseHeavy, { startup: 0.13, active: 0.2, recovery: 0.34, dmg: Math.round(14 * comboScale), w: 58, h: 54, ox: 20, oy: -58, kb: {x: 330, y: -180}, stun: 0.5, type: 'comboHLL', combo: 'HLL' }),
+        comboHLH: melee(baseHeavy, { startup: 0.16, active: 0.2, recovery: 0.36, dmg: Math.round(15 * comboScale), w: 72, h: 60, ox: 22, oy: -60, kb: {x: 300, y: -320}, stun: 0.54, type: 'comboHLH', combo: 'HLH' }),
+        comboHHL: melee(baseLight, { startup: 0.12, active: 0.2, recovery: 0.34, dmg: Math.round(13 * comboScale), w: 88, h: 28, ox: 20, oy: -34, kb: {x: 340, y: -210}, stun: 0.5, type: 'comboHHL', combo: 'HHL' })
     };
 
     if (fighter.charType === 'MAGE' && variant.startsWith('combo')) {
@@ -562,6 +577,29 @@ const CHARACTERS = {
             specSide: { startup: 0.14, active: 0.2, recovery: 0.34, dmg: 6, w: 54, h: 60, ox: 22, oy: -55, kb: {x: 0, y: 0}, stun: 0.3, type: 'catDash' },        // Cat Dash — lunge + pin & slash
             specUp: { startup: 0.16, active: 0.1, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'pianoDrop' },                // Piano Drop — drops a piano on the foe
             specDown: { startup: 0.06, active: 0.1, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'agility' }                 // Agility — counter mark
+        }
+    },
+    CULT: {
+        name: "THE CULT", hp: 96, speed: 250, jump: -560, width: 32, height: 90,
+        attacks: {
+            light: { startup: 0.1, active: 0.12, recovery: 0.18, dmg: 5, w: 52, h: 24, ox: 24, oy: -55, kb: {x: 120, y: -60}, stun: 0.26, type: 'cultLight' },     // a cultist swings in
+            heavy: { startup: 0.2, active: 0.16, recovery: 0.3, dmg: 11, w: 74, h: 34, ox: 30, oy: -52, kb: {x: 240, y: -130}, stun: 0.42, type: 'cultHeavy' },     // two cultists lunge
+            specNeutral: { startup: 0.2, active: 0.1, recovery: 0.34, dmg: 7, isProj: true, pSpeed: 520, pLife: 1.7, w: 22, h: 22, oy: -58, kb: {x: 150, y: -90}, stun: 0.35, type: 'darkOffering' }, // hexed bolt(s)
+            specSide: { startup: 0.2, active: 0.16, recovery: 0.36, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'procession' }, // cultists run out and plant a snare-trap
+            specUp: { startup: 0.14, active: 0.1, recovery: 0.34, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'cultPuppet' },  // summon / detonate the mimic puppet
+            specDown: { startup: 0.22, active: 0.1, recovery: 0.4, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'consecrate' }                 // ritual trap-zone
+        }
+    },
+    // Summoned by The Cult's ultimate (install). Never selectable on its own.
+    LUMATROSSIA: {
+        name: "LUMATROSSIA", hp: 96, speed: 195, jump: -520, width: 52, height: 132,
+        attacks: {
+            light: { startup: 0.16, active: 0.16, recovery: 0.28, dmg: 9, w: 100, h: 38, ox: 48, oy: -96, kb: {x: 320, y: -120}, stun: 0.4, type: 'lumBackhand' },   // huge sweep
+            heavy: { startup: 0.32, active: 0.2, recovery: 0.4, dmg: 18, w: 112, h: 74, ox: 44, oy: -74, kb: {x: 300, y: -380}, stun: 0.62, type: 'lumFist', armor: true }, // overhead slam
+            specNeutral: { startup: 0.3, active: 0.12, recovery: 0.42, dmg: 14, isProj: true, pSpeed: 760, pLife: 1.2, w: 42, h: 42, oy: -104, kb: {x: 260, y: -120}, stun: 0.5, type: 'doomgaze' }, // eye beam
+            specSide: { startup: 0.08, active: 0.06, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumTeleport' },  // blink behind the foe
+            specUp: { startup: 0.2, active: 0.18, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumBeast' },        // beast rains mage-fire from above
+            specDown: { startup: 0.26, active: 0.1, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumPortal' }      // portal: drop the foe from the sky (cooldown)
         }
     },
     ZOMBIE: {

@@ -11,6 +11,292 @@ function spawnParticles(x, y, amount, color) {
     }
 }
 
+// ---------------- THE CULT: summoned-cultist flair + Consecrated Ground ----------------
+function spawnCultists(x, y, dir, n, kind) {
+    if (suppressRollbackEffects) return;
+    for (let i = 0; i < n; i++) {
+        let cx = (kind === 'march') ? x - dir * (12 + i * 26)
+               : x - dir * ((i + 1) * 26) + (Math.random() - 0.5) * 12;
+        cultSummons.push({ x: cx, y, dir, t: 0, life: kind === 'kneel' ? 1.0 : kind === 'march' ? 0.85 : 0.62, kind, mask: Math.floor(Math.random() * CULT_MASKS), scale: 0.82 + Math.random() * 0.12, phase: Math.random() * Math.PI * 2 });
+    }
+    if (cultSummons.length > 40) cultSummons.splice(0, cultSummons.length - 40);
+}
+function updateCultSummons(dt) {
+    for (let c of cultSummons) {
+        c.t += dt;
+        if (c.kind === 'march') c.x += c.dir * 430 * dt; // the procession advances
+    }
+    cultSummons = cultSummons.filter(c => c.t < c.life);
+}
+function drawCultMask(c, mx, my, mask, scale) {
+    let s = scale || 1.5; // masks are big and prominent
+    c.save();
+    c.translate(mx, my); c.scale(s, s);
+    c.fillStyle = '#e2e2e2'; c.strokeStyle = '#000'; c.lineWidth = 1 / s;
+    c.beginPath(); c.ellipse(0, 0, 5, 6.5, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+    c.fillStyle = '#000'; c.strokeStyle = '#000'; c.lineWidth = 1.2 / s;
+    if (mask === 0) { c.beginPath(); c.moveTo(1, -2); c.lineTo(11, 0); c.lineTo(1, 2); c.closePath(); c.fill(); } // beak
+    else if (mask === 1) { c.beginPath(); c.moveTo(-3, -5); c.lineTo(-6, -11); c.moveTo(3, -5); c.lineTo(6, -11); c.stroke(); } // horns
+    else if (mask === 2) { c.beginPath(); c.arc(-1.5, -1, 1, 0, Math.PI * 2); c.arc(2.5, -1, 1, 0, Math.PI * 2); c.fill(); } // blank eyes
+    else if (mask === 3) { c.beginPath(); c.moveTo(-3, -2); c.lineTo(3, -2); c.lineTo(0, 4); c.closePath(); c.fill(); } // triangle
+    else if (mask === 4) { c.beginPath(); c.moveTo(-3, 1); c.lineTo(3, 1); c.stroke(); for (let k = -2; k <= 2; k += 2) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k, 2); c.stroke(); } } // stitched smile
+    else { c.beginPath(); c.moveTo(0, -3); c.lineTo(-5, -9); c.moveTo(-3, -6); c.lineTo(-6, -6); c.moveTo(0, -3); c.lineTo(5, -9); c.moveTo(3, -6); c.lineTo(6, -6); c.stroke(); } // antlers
+    c.restore();
+}
+// The pose (limb angles) for a summoned cultist, animated by ritual + time.
+// Convention matches the fighters: angle 0 = straight down, +sin toward facing, ~π = up.
+function cultistPose(kind, t, prog, ph) {
+    let ease = Math.sin(Math.min(1, prog) * Math.PI); // 0->1->0 across the action
+    // neutral robed stance
+    let p = { llA: -0.26, llB: 0.34, rlA: 0.30, rlB: 0.30, laA: 0.5, laB: 0.6, raA: -0.5, raB: -0.6, lean: 0.04, headDY: 0, hipDY: 0 };
+    if (kind === 'march') {
+        let g = Math.sin(t * 11 + ph);
+        p.llA = -0.04 + g * 0.42; p.rlA = -0.04 - g * 0.42;
+        p.llB = 0.30 + Math.max(0, g) * 0.5; p.rlB = 0.30 + Math.max(0, -g) * 0.5;
+        p.laA = 1.5 - g * 0.35; p.laB = 0.4; p.raA = 1.5 + g * 0.35; p.raB = 0.4; // arms reaching forward, swinging
+        p.lean = 0.2; p.headDY = Math.abs(g) * 1.5;
+    } else if (kind === 'raise') {
+        let lift = ease;
+        p.laA = 2.95; p.laB = -0.25; p.raA = 3.05; p.raB = 0.25;   // both arms thrust overhead
+        p.llA = -0.12; p.rlA = 0.14; p.llB = 0.18; p.rlB = 0.18;   // legs together, on tiptoe
+        p.lean = -0.05; p.headDY = -lift * 8; p.hipDY = -lift * 8;  // the body floats up
+    } else if (kind === 'kneel') {
+        p.llA = -0.5; p.llB = 1.0; p.rlA = 0.55; p.rlB = 1.0;       // dropped onto the knees
+        p.laA = 1.5; p.laB = 0.4; p.raA = 1.45; p.raB = 0.4;        // hands clasped low in prayer
+        p.lean = 0.16; p.headDY = 8; p.hipDY = 14;
+    } else if (kind === 'throw') {
+        let wind = prog < 0.4 ? 1 : 1 - (prog - 0.4) / 0.6;        // draw back, then hurl
+        p.raA = 1.0 + wind * 1.6; p.raB = -0.2 - wind * 0.4;       // throwing arm whips forward
+        p.laA = 1.4; p.laB = 0.3;
+        p.llA = -0.34; p.rlA = 0.5; p.llB = 0.4; p.rlB = 0.5;
+        p.lean = 0.05 + (1 - wind) * 0.2;
+    } else { // strike — an overhand swing
+        let sw = Math.min(1, prog * 1.4);
+        p.raA = 2.5 - sw * 1.5; p.raB = -0.5 + sw * 0.5;           // chamber high, swing down-forward
+        p.laA = 1.6; p.laB = 0.4;
+        p.llA = -0.4; p.rlA = 0.55; p.llB = 0.4; p.rlB = 0.5;      // lunging stance
+        p.lean = -0.05 + sw * 0.3;
+    }
+    return p;
+}
+// A fully two-bone-rigged hooded cultist, animated per ritual.
+function drawRiggedCultist(c, s) {
+    let prog = s.t / s.life;
+    let p = cultistPose(s.kind, s.t, prog, s.phase || 0);
+    let now = performance.now() / 1000;
+    c.save();
+    c.translate(s.x, s.y);
+    c.scale(s.dir * s.scale, s.scale);
+    c.globalAlpha = prog > 0.82 ? Math.max(0, (1 - prog) / 0.18) : 1; // fade out at the end
+    c.lineCap = 'round'; c.lineJoin = 'round';
+
+    const pelvisY = -32 + p.hipDY, neckY = -54 + p.hipDY;
+    let neckX = Math.sin(p.lean) * (pelvisY - neckY);
+    let headX = neckX + Math.sin(p.lean) * 9, headY = neckY - 11 + p.headDY;
+
+    function limb(sx, sy, ang, bend, up, lo) {
+        let ua = ang + bend, la = ang - bend;
+        let jx = sx + Math.sin(ua) * up, jy = sy + Math.cos(ua) * up;
+        let ex = jx + Math.sin(la) * lo, ey = jy + Math.cos(la) * lo;
+        c.beginPath(); c.moveTo(sx, sy); c.lineTo(jx, jy); c.lineTo(ex, ey); c.stroke();
+        return { jx, jy };
+    }
+    c.strokeStyle = '#cfcfcf'; c.lineWidth = 3;
+    // legs (knees always bend toward facing)
+    let ll = limb(0, pelvisY, p.llA, Math.abs(p.llB), 14, 15);
+    let rl = limb(0, pelvisY, p.rlA, Math.abs(p.rlB), 14, 15);
+    // spine
+    c.beginPath(); c.moveTo(0, pelvisY); c.lineTo(neckX, neckY); c.stroke();
+    // arms
+    let la2 = limb(neckX, neckY + 3, p.laA, p.laB, 12, 13);
+    let ra2 = limb(neckX, neckY + 3, p.raA, p.raB, 12, 13);
+    // joint pips
+    c.fillStyle = '#cfcfcf';
+    [ll, rl, la2, ra2].forEach(j => { c.beginPath(); c.arc(j.jx, j.jy, 1.6, 0, Math.PI * 2); c.fill(); });
+    // head
+    c.beginPath(); c.arc(headX, headY, 8, 0, Math.PI * 2); c.stroke();
+    // robe draped over the lower body
+    let hem = Math.sin(now * 3 + (s.phase || 0)) * 1.6;
+    c.fillStyle = '#1a1a1a'; c.strokeStyle = '#000'; c.lineWidth = 1.4;
+    c.beginPath();
+    c.moveTo(neckX * 0.5 - 7, pelvisY - 6); c.lineTo(neckX * 0.5 + 7, pelvisY - 6);
+    c.lineTo(13 + hem, -3); c.lineTo(-13 - hem, -3); c.closePath(); c.fill(); c.stroke();
+    // big pointed hood framing the head
+    c.fillStyle = '#242424'; c.strokeStyle = '#000'; c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(headX - 14, headY + 10);
+    c.quadraticCurveTo(headX - 15, headY - 18, headX, headY - 32);
+    c.quadraticCurveTo(headX + 15, headY - 18, headX + 14, headY + 10);
+    c.quadraticCurveTo(headX, headY + 4, headX - 14, headY + 10);
+    c.closePath(); c.fill(); c.stroke();
+    // big unique mask
+    drawCultMask(c, headX + 2, headY + 1, s.mask, 1.7);
+    c.restore();
+}
+function drawCultSummons(c) {
+    for (let s of cultSummons) drawRiggedCultist(c, s);
+}
+function updateConsecrateZones(dt) {
+    for (let z of consecrateZones) {
+        z.t += dt;
+        z.tick -= dt;
+        if (z.t >= z.life) continue;
+        if (z.tick <= 0) {
+            z.tick = 0.4;
+            for (let p of players) {
+                if (!p || p.team === z.team || p.state === 'DEAD') continue;
+                if (Math.abs(p.x - z.x) <= z.radius && p.y >= GROUND_Y - 4) {
+                    p.takeDamage(2, { x: 0, y: 0 }, 0.12, z.owner, { unblockable: true }); // chip
+                    p.meter = Math.max(0, p.meter - 6); // siphon their meter
+                    if (z.owner && !z.owner.lumActive) z.owner.meter = Math.min(z.owner.meterMax, z.owner.meter + 3); // feed the install
+                    spawnParticles(p.x, p.y - 30, 5, '#ff0033');
+                }
+            }
+        }
+    }
+    consecrateZones = consecrateZones.filter(z => z.t < z.life);
+}
+function drawConsecrateZones(c) {
+    for (let z of consecrateZones) {
+        let life = 1 - z.t / z.life;
+        let pulse = 0.5 + 0.5 * Math.sin(performance.now() / 140);
+        c.save();
+        c.globalAlpha = Math.min(1, life * 1.5);
+        c.strokeStyle = '#ff0033'; c.lineWidth = 2; c.shadowBlur = 12; c.shadowColor = '#ff0033';
+        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius, 14 + pulse * 3, 0, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius * 0.6, 9 + pulse * 2, 0, 0, Math.PI * 2); c.stroke();
+        // a ring of ritual ticks
+        c.strokeStyle = 'rgba(255,255,255,0.5)';
+        for (let i = 0; i < 8; i++) { let a = i / 8 * Math.PI * 2 + z.t; let ex = z.x + Math.cos(a) * z.radius, ey = GROUND_Y - 2 + Math.sin(a) * (14 + pulse * 3); c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex, ey - 10); c.stroke(); }
+        c.restore();
+    }
+}
+
+// --- The Procession snare-traps ---
+function updateCultTraps(dt) {
+    for (let z of cultTraps) {
+        z.t += dt;
+        if (z.triggered || z.t < z.arm || z.t >= z.life) continue;
+        for (let p of players) {
+            if (!p || p.team === z.team || p.state === 'DEAD') continue;
+            if (Math.abs(p.x - z.x) <= z.radius && p.y >= GROUND_Y - 30) {
+                z.triggered = true;
+                p.takeDamage(12, { x: 0, y: -380 }, 0.6, z.owner, { unblockable: true }); // snap shut + pop up
+                spawnParticles(z.x, GROUND_Y - 10, 24, '#ff0033'); spawnParticles(z.x, GROUND_Y - 10, 12, '#fff');
+                break;
+            }
+        }
+    }
+    cultTraps = cultTraps.filter(z => z.t < z.life && !z.triggered);
+}
+function drawCultTraps(c) {
+    for (let z of cultTraps) {
+        let armed = z.t >= z.arm;
+        let pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+        c.save();
+        c.globalAlpha = z.t > z.life - 0.6 ? Math.max(0, (z.life - z.t) / 0.6) : (armed ? 1 : 0.55);
+        c.strokeStyle = armed ? '#ff0033' : '#888'; c.lineWidth = 2; c.shadowBlur = armed ? 10 : 0; c.shadowColor = '#ff0033';
+        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius, 10, 0, 0, Math.PI * 2); c.stroke();
+        c.fillStyle = armed ? '#ff0033' : '#666';
+        for (let i = 0; i < 8; i++) { // jagged snare teeth
+            let a = i / 8 * Math.PI * 2, ex = z.x + Math.cos(a) * z.radius, ey = GROUND_Y - 2 + Math.sin(a) * 10;
+            c.beginPath(); c.moveTo(ex - 3, ey); c.lineTo(ex + 3, ey); c.lineTo(ex, ey - 7 - (armed ? pulse * 3 : 0)); c.closePath(); c.fill();
+        }
+        c.restore();
+    }
+}
+
+// --- Lumatrossia drop-portals + fire-breathing beast maws ---
+function updateLumFx(dt) {
+    for (let f of lumPortalFx) f.t += dt;
+    lumPortalFx = lumPortalFx.filter(f => f.t < f.life);
+    for (let f of lumBeastFx) f.t += dt;
+    lumBeastFx = lumBeastFx.filter(f => f.t < f.life);
+}
+function drawLumFx(c) {
+    for (let f of lumPortalFx) {
+        let p = f.t / f.life;
+        c.save(); c.translate(f.x, f.y); c.rotate(f.t * 6);
+        c.globalAlpha = Math.min(1, (1 - p) * 1.6);
+        c.strokeStyle = '#ff0033'; c.lineWidth = 4; c.shadowBlur = 16; c.shadowColor = '#ff0033';
+        for (let k = 0; k < 3; k++) c.beginPath(), c.ellipse(0, 0, 46 - k * 9, 17 - k * 3, 0, 0, Math.PI * 2), c.stroke();
+        c.restore();
+    }
+    for (let f of lumBeastFx) {
+        let open = Math.sin(Math.min(1, f.t / f.life) * Math.PI);
+        c.save(); c.translate(f.x, f.y);
+        c.fillStyle = '#111'; c.strokeStyle = '#ff0033'; c.lineWidth = 3; c.shadowBlur = 12; c.shadowColor = '#ff0033';
+        c.beginPath(); c.ellipse(0, 0, 30, 24, 0, 0, Math.PI * 2); c.fill(); c.stroke();      // head
+        c.beginPath(); c.moveTo(-20, -16); c.lineTo(-30, -34); c.moveTo(20, -16); c.lineTo(30, -34); c.stroke(); // horns
+        c.fillStyle = '#ff0033'; c.beginPath(); c.ellipse(0, 14, 16, 6 + open * 12, 0, 0, Math.PI * 2); c.fill(); // maw
+        c.fillStyle = '#fff';
+        for (let i = -2; i <= 2; i++) { c.beginPath(); c.moveTo(i * 6, 10); c.lineTo(i * 6 - 2, 18); c.lineTo(i * 6 + 2, 18); c.closePath(); c.fill(); } // fangs
+        c.fillStyle = '#ff0033'; c.shadowBlur = 8; c.beginPath(); c.arc(-11, -4, 3, 0, Math.PI * 2); c.arc(11, -4, 3, 0, Math.PI * 2); c.fill(); // eyes
+        c.restore();
+    }
+}
+
+// --- The Cult's mimic puppet (echoes the leader on a delay) ---
+function puppetPose(snap, now) {
+    let st = snap.state;
+    if (st === 'ATTACK') return cultistPose(snap.atk === 'darkOffering' ? 'throw' : 'strike', snap.anim, 0.5, 0);
+    if (st === 'WALK') return cultistPose('march', snap.anim, 0.5, 0);
+    if (st === 'JUMP' || st === 'FALL') return { llA: -0.2, llB: 0.8, rlA: 0.3, rlB: 0.7, laA: 1.0, laB: 0.3, raA: -1.0, raB: -0.3, lean: 0.05, headDY: 0, hipDY: 0 };
+    let bob = Math.sin(now * 3);
+    return { llA: -0.26, llB: 0.34, rlA: 0.30, rlB: 0.30, laA: 0.5, laB: 0.6, raA: -0.5, raB: -0.6, lean: 0.04, headDY: bob * 1.5, hipDY: 0 };
+}
+function drawStickFigure(c, p, d) {
+    let neckX = Math.sin(p.lean) * (d.pelvisY - d.neckY);
+    let headX = neckX + Math.sin(p.lean) * (d.hr + 1), headY = d.neckY - d.hr - 3 + (p.headDY || 0);
+    function limb(sx, sy, ang, bend, up, lo) {
+        let uA = ang + bend, lA = ang - bend;
+        let jx = sx + Math.sin(uA) * up, jy = sy + Math.cos(uA) * up;
+        let ex = jx + Math.sin(lA) * lo, ey = jy + Math.cos(lA) * lo;
+        c.beginPath(); c.moveTo(sx, sy); c.lineTo(jx, jy); c.lineTo(ex, ey); c.stroke();
+        return { jx, jy };
+    }
+    let j1 = limb(0, d.pelvisY, p.llA, Math.abs(p.llB), d.ul, d.ll);
+    let j2 = limb(0, d.pelvisY, p.rlA, Math.abs(p.rlB), d.ul, d.ll);
+    c.beginPath(); c.moveTo(0, d.pelvisY); c.lineTo(neckX, d.neckY); c.stroke();
+    let j3 = limb(neckX, d.neckY + 3, p.laA, p.laB, d.ua, d.la);
+    let j4 = limb(neckX, d.neckY + 3, p.raA, p.raB, d.ua, d.la);
+    c.fillStyle = c.strokeStyle; [j1, j2, j3, j4].forEach(j => { c.beginPath(); c.arc(j.jx, j.jy, 1.8, 0, Math.PI * 2); c.fill(); });
+    c.beginPath(); c.arc(headX, headY, d.hr, 0, Math.PI * 2); c.stroke();
+    return { headX, headY, neckX };
+}
+function drawCultPuppets(c) {
+    let now = performance.now() / 1000;
+    for (let leader of players) {
+        if (!leader || !leader.puppet || leader.state === 'DEAD') continue;
+        let pp = leader.puppet;
+        let snap = pp.hist.length ? pp.hist[0] : { x: leader.x, dir: leader.dir, state: 'IDLE', anim: 0, atk: null };
+        let footY = GROUND_Y - (pp.fall || 0) * 130; // drops into place
+        c.save();
+        c.translate(snap.x, footY);
+        c.scale(snap.dir || 1, 1);
+        c.globalAlpha = 0.88;
+        // marionette strings up into the dark
+        c.strokeStyle = 'rgba(255,255,255,0.28)'; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(-9, -92); c.lineTo(-9, -300); c.moveTo(9, -92); c.lineTo(9, -300); c.stroke();
+        // body (player-sized rig)
+        c.strokeStyle = '#cfcfcf'; c.lineWidth = 4; c.lineCap = 'round'; c.lineJoin = 'round';
+        let dims = { ul: 19, ll: 20, ua: 16, la: 17, hr: 12, pelvisY: -36, neckY: -60 };
+        let h = drawStickFigure(c, puppetPose(snap, now), dims);
+        // robe
+        let hem = Math.sin(now * 3) * 1.6;
+        c.fillStyle = '#1a1a1a'; c.strokeStyle = '#000'; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(-8, -44); c.lineTo(8, -44); c.lineTo(15 + hem, -3); c.lineTo(-15 - hem, -3); c.closePath(); c.fill(); c.stroke();
+        // hood + mask
+        c.fillStyle = '#242424';
+        c.beginPath();
+        c.moveTo(h.headX - 17, h.headY + 12); c.quadraticCurveTo(h.headX - 19, h.headY - 22, h.headX, h.headY - 40);
+        c.quadraticCurveTo(h.headX + 19, h.headY - 22, h.headX + 17, h.headY + 12);
+        c.quadraticCurveTo(h.headX, h.headY + 4, h.headX - 17, h.headY + 12); c.closePath(); c.fill(); c.stroke();
+        drawCultMask(c, h.headX + 3, h.headY + 2, leader.maskId || 0, 2.0);
+        c.restore();
+    }
+}
+
 function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
@@ -427,12 +713,16 @@ function nextRound() {
     if (gameState !== 'ROUND_END') return;
     if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('next-round');
     currentRound++;
-    hitboxes = []; projectiles = []; particles = []; bodyParts = [];
+    hitboxes = []; projectiles = []; particles = []; bodyParts = []; cultSummons = []; consecrateZones = []; cultTraps = []; lumBeastFx = []; lumPortalFx = [];
     initStageActors(); // bring fled spectators back for the new round
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
     [[players[0], lx, 1], [players[1], rx, -1]].forEach(([p, x, dir]) => {
+        // The Cult: winning/ending a round as Lumatrossia drops the install — revert and reset the bar
+        if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
+        if ('devotion' in p) p.devotion = 0;
+        p.puppet = null; p._portalSlam = null; p.portalCd = 0;
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
@@ -682,6 +972,10 @@ function updateGameplay(dt) {
     particles = particles.filter(p => p.life > 0);
     bodyParts.forEach(p => p.update(dt));
     bodyParts = bodyParts.filter(p => p.life > 0);
+    updateCultSummons(dt);
+    updateConsecrateZones(dt);
+    updateCultTraps(dt);
+    updateLumFx(dt);
 
     if (gameState === 'PLAYING') checkCollisions();
     updateHUD(); // keep meters/health live (meter charges continuously)
@@ -1446,7 +1740,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', CULT: 'cult', LUMATROSSIA: 'lumatrossia', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];
@@ -1612,8 +1906,14 @@ function draw() {
         }
     }
 
+    drawConsecrateZones(ctx); // The Cult's ritual sigils, painted on the floor behind fighters
+    drawCultTraps(ctx);       // Procession snare-traps on the floor
+
     // Entities
     players.forEach(p => p.draw(ctx));
+    drawCultSummons(ctx); // summoned cultists performing the ritual alongside the leader
+    drawCultPuppets(ctx); // the mimic puppet echoing the leader
+    drawLumFx(ctx);       // Lumatrossia's drop-portals + fire-breathing beast maws
     drawYankChains(ctx); // Grave Drag chains, world space, on top of the fighters
     drawRootGrips(ctx);  // Grave Grasp hands clamping a rooted foe
     projectiles.forEach(p => p.draw(ctx));
