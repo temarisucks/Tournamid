@@ -423,6 +423,7 @@ class Fighter {
         this.blockMax = BLOCK_DUR[typeName] || 60;
         this.blockHealth = this.blockMax;
         this.blockBreakTimer = 0; // stagger time after a guard break
+        this._guardBreakFx = 0;   // timer for the guard-shatter burst animation
 
         // Ultimate meter & state
         this.meter = 0;
@@ -605,6 +606,7 @@ class Fighter {
             case 'BLOCKBREAK':
                 this.x += this.vx * dt;
                 this.vx *= 0.9; // stagger slide
+                if (this._guardBreakFx > 0) this._guardBreakFx -= dt;
                 this.blockBreakTimer -= dt;
                 if (this.blockBreakTimer <= 0) {
                     this.blockHealth = this.blockMax * 0.4; // guard returns partially
@@ -2078,8 +2080,11 @@ class Fighter {
         } else if (guardBroke) {
             this.changeState('BLOCKBREAK');
             this.blockBreakTimer = 0.9;
+            this._guardBreakFx = 0.5; // drives the expanding shatter burst in draw()
+            let gc = this.guardColor();
             sfx.playDeath(); // shatter stinger
-            spawnParticles(this.x, this.y - 50, 24, '#fff');
+            spawnParticles(this.x + this.dir * 16, this.y - 46, 26, gc); // guard shards in its own colour
+            spawnParticles(this.x + this.dir * 16, this.y - 46, 10, '#fff');
         } else {
             this.rootTimer = 0; // being struck breaks the Grave Grasp hold
             this.changeState('HITSTUN');
@@ -2158,6 +2163,12 @@ class Fighter {
     }
 
     // Grave Grasp: spectral hands clamp us in place. Held until it lapses or we're struck.
+    // Colour of this fighter's guard — used by the block shield, its shatter shards,
+    // and the block-break burst so each character's break matches their block.
+    guardColor() {
+        return { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', PHANTOM: '#dfe4f2' }[this.charType] || '#ffffff';
+    }
+
     startRoot() {
         if (this.state === 'DEAD') return;
         this.rootTimer = 1.4;
@@ -2935,8 +2946,38 @@ class Fighter {
                 rightArmAngle = 1.5 - brace; rightArmBend = -0.5;  // whip hand low and ready
                 leftLegAngle = -0.3; rightLegAngle = 0.4; leftLegBend = 0.5; rightLegBend = 0.5;
                 torsoLean = -0.16;
+            } else if (this.charType === 'SWORDSMAN') {
+                // katana raised across the body as a parrying guard
+                rightArmAngle = 1.95 - brace; rightArmBend = -0.45; // blade hand up & forward
+                leftArmAngle = 2.25 + brace; leftArmBend = -0.7;    // off-hand braces the blade
+                torsoLean = -0.06;
+            } else if (this.charType === 'MAGE') {
+                // one hand thrust forward casting a barrier, the other guards the face
+                rightArmAngle = 1.5; rightArmBend = 0.12 + brace;   // palm out, conjuring
+                leftArmAngle = 2.4; leftArmBend = -0.6;
+                torsoLean = -0.05;
+            } else if (this.charType === 'RANGER') {
+                // crossed forearms, gun-hand braced across the body (no magic)
+                rightArmAngle = 1.7 - brace; rightArmBend = -0.35;
+                leftArmAngle = 2.0 + brace; leftArmBend = -0.85;
+                torsoLean = -0.14;
+            } else if (this.charType === 'DARK_RULER') {
+                // an outstretched palm summons a wall of dark energy
+                rightArmAngle = 1.55; rightArmBend = 0.08 + brace;
+                leftArmAngle = 2.3; leftArmBend = -0.7;
+                torsoLean = -0.04;
+            } else if (this.charType === 'TELEPATH') {
+                // both palms forward, projecting a psychic barrier as she hovers
+                rightArmAngle = 1.5; rightArmBend = 0.15 + brace;
+                leftArmAngle = 1.72; leftArmBend = 0.1 - brace;
+                torsoLean = 0.0;
+            } else if (this.charType === 'PHANTOM') {
+                // arms drawn across the chest, shroud pulled forward like a veil
+                leftArmAngle = 2.0 + brace; leftArmBend = -1.12;
+                rightArmAngle = 2.5 - brace; rightArmBend = -1.12;
+                torsoLean = -0.1;
             } else {
-                // Both forearms raised high in front of the face (tight guard)
+                // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
                 leftArmBend = -0.95; rightArmBend = -0.95;
                 torsoLean = -0.12;
@@ -3945,15 +3986,72 @@ class Fighter {
         }
 
         if (this.state === 'BLOCK') {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(0, -46, 34 + Math.sin(t * 18) * 2, -0.9, 0.9);
-            ctx.stroke();
-            ctx.strokeStyle = 'rgba(255, 0, 51, 0.55)';
-            ctx.beginPath();
-            ctx.arc(0, -46, 42, -0.65, 0.65);
-            ctx.stroke();
+            if (this.charType === 'MAGE') {
+                // hexagonal arcane shield, slowly spinning
+                ctx.save();
+                ctx.translate(20, -46); ctx.rotate(t * 0.6);
+                let pulse = 1 + Math.sin(t * 10) * 0.05;
+                ctx.strokeStyle = 'rgba(201,139,255,0.85)'; ctx.lineWidth = 2.5;
+                ctx.shadowBlur = 12; ctx.shadowColor = '#c98bff';
+                ctx.beginPath();
+                for (let i = 0; i <= 6; i++) { let a = i / 6 * Math.PI * 2, r = 26 * pulse; let fx = Math.cos(a) * r, fy = Math.sin(a) * r; i ? ctx.lineTo(fx, fy) : ctx.moveTo(fx, fy); }
+                ctx.closePath(); ctx.stroke();
+                ctx.globalAlpha = 0.16; ctx.fillStyle = '#c98bff'; ctx.fill(); ctx.globalAlpha = 1;
+                ctx.restore();
+            } else if (this.charType === 'TELEPATH') {
+                // psychic bubble — concentric shimmering rings
+                ctx.save();
+                ctx.strokeStyle = 'rgba(155,227,255,0.8)'; ctx.shadowBlur = 12; ctx.shadowColor = '#9be3ff';
+                for (let k = 0; k < 3; k++) { ctx.lineWidth = 2.5 - k * 0.6; ctx.beginPath(); ctx.arc(18, -46, 20 + k * 6 + Math.sin(t * 8 + k) * 1.5, -1.1, 1.1); ctx.stroke(); }
+                ctx.globalAlpha = 0.12; ctx.fillStyle = '#9be3ff'; ctx.beginPath(); ctx.arc(18, -46, 24, -1.1, 1.1); ctx.fill(); ctx.globalAlpha = 1;
+                ctx.restore();
+            } else if (this.charType === 'DARK_RULER') {
+                // a jagged wall of dark energy rimmed in red
+                ctx.save();
+                ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 2.5; ctx.shadowBlur = 10; ctx.shadowColor = '#ff0033';
+                ctx.beginPath();
+                let bx = 22; ctx.moveTo(bx, -74);
+                for (let i = 1; i <= 7; i++) { let yy = -74 + i * 9; let jag = (i % 2 ? 8 : -2) + Math.sin(t * 12 + i) * 1.5; ctx.lineTo(bx + jag, yy); }
+                ctx.stroke();
+                ctx.restore();
+            } else if (this.charType === 'PHANTOM') {
+                // a ghostly mist veil drifting in front
+                ctx.save();
+                ctx.strokeStyle = 'rgba(223,228,242,0.7)'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#dfe4f2';
+                for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.6 - k * 0.15; ctx.beginPath(); ctx.arc(16, -46, 22 + k * 5, -1.0 + Math.sin(t * 4 + k) * 0.1, 1.0 + Math.sin(t * 4 + k) * 0.1); ctx.stroke(); }
+                ctx.globalAlpha = 1; ctx.restore();
+            } else if (this.charType === 'BRAWLER') {
+                // the original guard arcs — Brawler keeps his signature block
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(0, -46, 34 + Math.sin(t * 18) * 2, -0.9, 0.9); ctx.stroke();
+                ctx.strokeStyle = 'rgba(255, 0, 51, 0.55)';
+                ctx.beginPath(); ctx.arc(0, -46, 42, -0.65, 0.65); ctx.stroke();
+            }
+            // SWORDSMAN / RANGER / BEAST_TAMER / ZOMBIE guard with body + weapon (their pose), no energy overlay
+        } else if (this.state === 'BLOCKBREAK') {
+            // The guard SHATTERS: shards burst outward, then dazed stars circle the head.
+            if (this._guardBreakFx > 0) {
+                let p = 1 - this._guardBreakFx / 0.5; // 0 -> 1 over the burst
+                ctx.save();
+                ctx.strokeStyle = this.guardColor(); ctx.globalAlpha = Math.max(0, 1 - p); ctx.lineWidth = 2;
+                ctx.shadowBlur = 8; ctx.shadowColor = this.guardColor();
+                for (let i = 0; i < 8; i++) {
+                    let a = i / 8 * Math.PI * 2, r0 = 10 + p * 10, r1 = 18 + p * 46;
+                    ctx.beginPath();
+                    ctx.moveTo(16 + Math.cos(a) * r0, -46 + Math.sin(a) * r0);
+                    ctx.lineTo(16 + Math.cos(a) * r1, -46 + Math.sin(a) * r1);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+            // dazed stars spinning over the head for the whole stagger (reads as stunned)
+            ctx.save();
+            ctx.fillStyle = '#ffd23f'; ctx.shadowBlur = 6; ctx.shadowColor = '#ffd23f';
+            for (let i = 0; i < 3; i++) {
+                let a = t * 6 + i * (Math.PI * 2 / 3);
+                ctx.beginPath(); ctx.arc(Math.cos(a) * 12, headY - 14 + Math.sin(a) * 4, 2.2, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore();
         }
 
         ctx.restore();

@@ -229,6 +229,20 @@ function setupTeamHud(on) {
     }
 }
 
+// Position the "ult-lethal" line on a fighter's HP bar: at the strongest living
+// enemy's ult damage (as a fraction of maxHp). Hidden when no enemy can ultimate.
+function setUltLine(lineId, victim, enemies) {
+    let el = document.getElementById(lineId);
+    if (!el) return;
+    let dmg = 0;
+    if (enemies) for (let e of enemies) {
+        if (e && e.hp > 0 && ULT_DAMAGE[e.charType]) dmg = Math.max(dmg, ULT_DAMAGE[e.charType]);
+    }
+    if (!victim || victim.maxHp <= 0 || dmg <= 0) { el.classList.add('hidden'); return; }
+    el.style.left = Math.min(100, (dmg / victim.maxHp) * 100) + '%';
+    el.classList.remove('hidden');
+}
+
 function updateTeamHud() {
     for (let tm = 0; tm < 2; tm++) {
         let pfx = tm === 0 ? 'p1' : 'p2';
@@ -238,6 +252,7 @@ function updateTeamHud() {
             let rowEl = document.getElementById(pfx + '-team-row-' + i);
             if (!f || !hpEl || !rowEl) continue;
             hpEl.style.width = Math.max(0, (f.hp / f.maxHp) * 100) + '%';
+            setUltLine(pfx + '-team-ult-' + i, f, teams[1 - tm]); // threat = the opposing squad's ults
             rowEl.classList.toggle('active', i === activeIdx[tm]);
             rowEl.classList.toggle('downed', f.hp <= 0);
         }
@@ -251,10 +266,12 @@ function updateHUD() {
         setHudIcon('p1', players[0]);
         document.getElementById('p1-hp').style.width = Math.max(0, (players[0].hp / players[0].maxHp) * 100) + '%';
         setMeterBar('p1', players[0]);
+        setUltLine('p1-ult-line', players[0], players.slice(1)); // enemies' ults (none in PVE → hidden)
     }
     if (currentMode !== 'PVE' && players.length >= 2) setMeterBar('p2', players[1]);
 
     if (currentMode === 'PVE') {
+        document.getElementById('p2-ult-line')?.classList.add('hidden'); // aggregate horde bar has no single ult
         if (players.length >= 2) setHudIcon('p2', players[1]);
         // Find total HP of enemies
         let totalMax = 0, totalCur = 0;
@@ -270,6 +287,7 @@ function updateHUD() {
     } else if (players.length >= 2) {
         setHudIcon('p2', players[1]);
         document.getElementById('p2-hp').style.width = Math.max(0, (players[1].hp / players[1].maxHp) * 100) + '%';
+        setUltLine('p2-ult-line', players[1], [players[0]]);
     }
 }
 

@@ -59,6 +59,21 @@ const ULT_LINES = {
     PHANTOM: "SOUL TRAIN."
 };
 
+// Total damage each character's ultimate deals once it connects. Used to draw the
+// "ult-lethal" threshold line on HP bars: if a fighter's HP is at/below the strongest
+// enemy's value here, that enemy's ultimate will kill them outright.
+// KEEP IN SYNC if an ultimate's damage is ever retuned.
+const ULT_DAMAGE = {
+    BRAWLER: 46,    // grab + wall bounces + launch
+    SWORDSMAN: 55,  // opener + 7 dash slices + finisher
+    MAGE: 50,       // orb + sustained payoff ticks
+    RANGER: 36,     // bomb + blast + execute shot
+    DARK_RULER: 40, // the giant crescent slash
+    TELEPATH: 58,   // snare + vice ticks + crush
+    BEAST_TAMER: 64,// bind + brute + raven + whip
+    PHANTOM: 42     // seize + void chips + smash
+};
+
 // Ultimate voice lines (played when an ultimate is activated)
 const ultVoices = {
     BRAWLER: new Audio('audio/voicelines/brawlerult.wav'),
