@@ -48,7 +48,7 @@ let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
 let suppressRollbackEffects = false;
 
-const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, ZOMBIE: 40 };
+const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, COPYCAT: 60, ZOMBIE: 40 };
 const ULT_LINES = {
     BRAWLER: "YOU'RE DEAD",
     SWORDSMAN: "OUTPLAYED.",
@@ -57,7 +57,15 @@ const ULT_LINES = {
     DARK_RULER: "KNEEL.",
     TELEPATH: "IDIOT",
     BEAST_TAMER: "ALPHA COMMAND.",
-    PHANTOM: "SOUL TRAIN."
+    PHANTOM: "SOUL TRAIN.",
+    COPYCAT: "I can do anything better than you!"
+};
+
+// Which ultimate "kind" each character runs. The Copy Cat has none of its own —
+// it copies the kind of whichever opponent's ultimate it survived (Nine Lives).
+const ULT_KIND = {
+    BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb',
+    DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm', PHANTOM: 'soultrain'
 };
 
 // Total damage each character's ultimate deals once it connects. Used to draw the
@@ -84,7 +92,8 @@ const ultVoices = {
     DARK_RULER: new Audio('audio/voicelines/darkrulerult.wav'),
     TELEPATH: new Audio('audio/voicelines/telepathult.wav'),
     BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav'),
-    PHANTOM: new Audio('audio/voicelines/phantomult.wav')
+    PHANTOM: new Audio('audio/voicelines/phantomult.wav'),
+    COPYCAT: new Audio('audio/voicelines/copycatult.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -196,8 +205,12 @@ const attackSfx = {
     brute: makeAudioSet(['audio/sfx/brute1.wav', 'audio/sfx/brute2.wav'], 0.72),
     beastSwitch: makeAudio('audio/sfx/switch.wav', 0.66, 3),
     phantomHit: makeAudio('audio/sfx/phantomhit.wav', 0.7, 3), // Phantom special connects
-    soulTrain: makeAudio('audio/sfx/soultrain.wav', 0.85, 2)   // Soul Train ultimate
+    soulTrain: makeAudio('audio/sfx/soultrain.wav', 0.85, 2),  // Soul Train ultimate
+    piano: makeAudio('audio/sfx/Piano.wav', 0.8, 2)            // Copy Cat's Piano Drop impact
 };
+// Copy Cat's Piano Drop sprite
+const pianoImg = new Image();
+pianoImg.src = 'textures/piano.png';
 const selectVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawler.wav', 0.92),
     SWORDSMAN: makeAudio('audio/voicelines/swordsman.wav', 0.92),
@@ -206,7 +219,8 @@ const selectVoices = {
     DARK_RULER: makeAudio('audio/voicelines/darkruler.wav', 0.92),
     TELEPATH: makeAudio('audio/voicelines/telepath.wav', 0.92),
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92),
-    PHANTOM: makeAudio('audio/voicelines/phantom.wav', 0.92)
+    PHANTOM: makeAudio('audio/voicelines/phantom.wav', 0.92),
+    COPYCAT: makeAudio('audio/voicelines/copycat.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -216,7 +230,8 @@ const winVoices = {
     DARK_RULER: makeAudio('audio/voicelines/darkrulerwin.wav', 0.95),
     TELEPATH: makeAudio('audio/voicelines/telepathwin.wav', 0.95),
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95),
-    PHANTOM: makeAudio('audio/voicelines/phantomwin.wav', 0.95)
+    PHANTOM: makeAudio('audio/voicelines/phantomwin.wav', 0.95),
+    COPYCAT: makeAudio('audio/voicelines/copycatwin.wav', 0.95)
 };
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
@@ -514,6 +529,17 @@ const CHARACTERS = {
             specSide: { startup: 0.22, active: 0.14, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 540, pLife: 0.92, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // mist-chain that reels the foe in (blockable)
             specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 96, ox: 8, oy: -104, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
             specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 0, y: 0}, stun: 0.3, grab: true, type: 'graveGrasp' } // ground hands ROOT the foe in place (unblockable)
+        }
+    },
+    COPYCAT: {
+        name: "THE COPY CAT", hp: 88, speed: 360, jump: -580, width: 32, height: 88,
+        attacks: {
+            light: { startup: 0.08, active: 0.1, recovery: 0.14, dmg: 4, w: 46, h: 22, ox: 24, oy: -56, kb: {x: 120, y: -60}, stun: 0.22, type: 'catClaw' },   // quick scratch
+            heavy: { startup: 0.18, active: 0.14, recovery: 0.26, dmg: 9, w: 60, h: 30, ox: 28, oy: -52, kb: {x: 240, y: -130}, stun: 0.4, type: 'catSlash' },   // raking double slash
+            specNeutral: { startup: 0.14, active: 0.12, recovery: 0.26, dmg: 7, w: 60, h: 30, ox: 26, oy: -55, kb: {x: 180, y: -100}, stun: 0.35, type: 'copyClaw' }, // Copy — replays the last special used (default: claw)
+            specSide: { startup: 0.14, active: 0.2, recovery: 0.34, dmg: 6, w: 54, h: 60, ox: 22, oy: -55, kb: {x: 0, y: 0}, stun: 0.3, type: 'catDash' },        // Cat Dash — lunge + pin & slash
+            specUp: { startup: 0.16, active: 0.1, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'pianoDrop' },                // Piano Drop — drops a piano on the foe
+            specDown: { startup: 0.06, active: 0.1, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'agility' }                 // Agility — counter mark
         }
     },
     ZOMBIE: {

@@ -101,6 +101,10 @@ function checkCollisions() {
                         // Dark Ruler seizes the foe — the throw resolves over the next frames
                         h.grabThrow.captureThrow(p);
                         h.active = false;
+                    } else if (h.catPin) {
+                        // Copy Cat's Cat Dash pounce catches the foe — pin & slash
+                        h.catPin.startCatPin(p);
+                        h.active = false;
                     } else {
                         // Melee swing sound plays only on contact (whiffs stay silent)
                         if (h.atk && h.owner) h.owner.playAttackSound(h.atk);
@@ -167,6 +171,7 @@ function checkCollisions() {
                     if (proj.subtype === 'mistChain' && landed && p.startYank) {
                         p.startYank(proj.owner); // reel the foe all the way to the Phantom
                     }
+                    if (proj.subtype === 'piano') playAudio(attackSfx.piano); // Piano Drop crunch on contact
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby
                         let bx = proj.x + proj.w/2, by = proj.y + proj.h/2;
@@ -1441,7 +1446,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];

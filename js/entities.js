@@ -162,6 +162,18 @@ class Projectile {
         // Arcing projectiles fall under gravity
         if (this.subtype === 'fire') this.vy += 600 * dt;
 
+        // Piano Drop (Copy Cat): plummets, then SMASHES the floor with its sound
+        if (this.subtype === 'piano') {
+            this.vy += 900 * dt;
+            if (this.y + this.h >= GROUND_Y + 4) {
+                this.active = false;
+                let bx = this.x + this.w / 2;
+                playAudio(attackSfx.piano);
+                spawnParticles(bx, GROUND_Y - 6, 22, '#fff');
+                spawnParticles(bx, GROUND_Y - 6, 10, '#444');
+            }
+        }
+
         // Ultimate bomb (Ranger): arcs, clangs on the floor, then detonates
         if (this.subtype === 'bomb') {
             this.vy += 1400 * dt;
@@ -335,6 +347,15 @@ class Projectile {
             ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.ellipse(cx, cy + 4, this.w / 2, this.h / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
             ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(cx + Math.sin(now * 6) * 12, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+        } else if (this.subtype === 'piano') {
+            // a tumbling grand piano (Copy Cat's Piano Drop)
+            if (typeof pianoImg !== 'undefined' && pianoImg.complete && pianoImg.naturalWidth > 0) {
+                ctx.drawImage(pianoImg, this.x, this.y, this.w, this.h);
+            } else {
+                ctx.fillStyle = '#111'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.fillRect(this.x, this.y, this.w, this.h); ctx.strokeRect(this.x, this.y, this.w, this.h);
+                ctx.fillStyle = '#fff'; for (let k = 0; k < 6; k++) ctx.fillRect(this.x + 4 + k * (this.w - 8) / 6, this.y + this.h - 12, (this.w - 8) / 6 - 1.5, 10);
+            }
         } else if ((this.owner ? this.owner.charType : this.ownerCharType) === 'MAGE') {
             // Basic arcane sigil: glowing ringed orb with a spinning rune
             ctx.translate(cx, cy);
@@ -381,6 +402,17 @@ class Fighter {
         this.tumbleTimer = 0; this._tumbleAngle = 0; this._tumbleDir = 1; // post-ult floor tumble
         this.yankTimer = 0; this.yankSource = null; this.yankFromX = 0;   // Grave Drag reel-in
         this.rootTimer = 0; // Grave Grasp: held in place by spectral hands until it lapses or you're hit
+
+        // The last special THIS fighter performed — a Copy Cat's neutral steals the opponent's.
+        this.lastSpecialAtk = null;
+        // Copy Cat
+        this.agilityTimer = 0;        // Agility counter-mark active window
+        this.catPin = null;           // { target, t, hits, hitTick } Cat Dash pin-and-slash
+        this.ultUnlocked = (this.charType !== 'COPYCAT'); // Copy Cat's ult is locked until Nine Lives procs
+        this.ultSealed = false;       // an enemy whose ult was copied & sealed
+        this.copiedKind = null;       // the ult kind the Copy Cat stole
+        this.sealedEnemy = null;      // who to un-seal when the Copy Cat spends its copy
+        this._nineLivesFx = 0;        // Nine Lives revive flash timer
 
         // Combat state
         this.attacks = stats.attacks;
@@ -493,6 +525,9 @@ class Fighter {
         if (this.beastSnakeSwingTimer > 0) this.beastSnakeSwingTimer -= dt;
         if (this.regrabTimer > 0) this.regrabTimer -= dt;
         if (this.charType === 'PHANTOM') this.updateFadingVeil(dt);
+        if (this.agilityTimer > 0) this.agilityTimer -= dt; // Copy Cat counter-mark
+        if (this._nineLivesFx > 0) this._nineLivesFx -= dt;
+        if (this.catPin) this.updateCatPin(dt);             // Cat Dash pin-and-slash
         if (this.tumbleTimer > 0) { this.tumbleTimer -= dt; this._tumbleAngle += Math.abs(this.vx) * dt * 0.04 * (this._tumbleDir || 1); }
         if (this.yankTimer > 0) this.updateYank(dt);
         if (this.rootTimer > 0) {
@@ -765,6 +800,52 @@ class Fighter {
         }
     }
 
+    // ---------------- COPY CAT: Cat Dash pin & Piano Drop ----------------
+    // The pounce connected — pin the foe to the ground and rake them, then leap off.
+    startCatPin(target) {
+        if (this.catPin || !target || target.state === 'DEAD' || target.invulnTimer > 0) return;
+        this.catPin = { target, t: 0, hits: 0, hitTick: 0 };
+        this.dir = target.x >= this.x ? 1 : -1;
+        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+        spawnParticles(target.x, target.y - 30, 12, '#fff');
+        playAudio(attackSfx.knife);
+    }
+
+    updateCatPin(dt) {
+        let cp = this.catPin, tg = cp.target;
+        if (!tg || tg.state === 'DEAD') { this.catPin = null; if (this.state === 'ATTACK') this.changeState('IDLE'); return; }
+        cp.t += dt;
+        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+        // hold them pinned under the cat
+        tg.state = 'HITSTUN'; tg.stateTimer = 0.4; tg.vx = 0; tg.vy = 0;
+        tg.x = this.x + this.dir * 22; tg.y = GROUND_Y;
+        // a flurry of rapid slashes
+        cp.hitTick -= dt;
+        if (cp.hitTick <= 0 && cp.hits < 5) {
+            cp.hitTick = 0.1; cp.hits++;
+            tg.takeDamage(3, { x: 0, y: 0 }, 0.25, this, { unblockable: true });
+            spawnParticles(tg.x, tg.y - 30, 8, '#fff');
+            playAudio(attackSfx.knife);
+        }
+        // then spring off, popping them up
+        if (cp.hits >= 5 && cp.t > 0.62) {
+            tg.takeDamage(6, { x: 140 * this.dir, y: -320 }, 0.45, this, { unblockable: true });
+            this.vy = -380; this.vx = -this.dir * 180; this.changeState('JUMP');
+            spawnParticles(this.x, GROUND_Y - 30, 16, '#fff');
+            this.catPin = null;
+        }
+    }
+
+    // Piano Drop — a piano plummets from above onto the foe (or smashes the ground).
+    dropPiano() {
+        let foe = this.getClosestEnemy();
+        let tx = foe ? foe.x + (foe.vx || 0) * 0.18 : this.x + this.dir * 150; // lead the target slightly
+        let p = new Projectile(tx - 38, -120, 0, 220, 76, 58, 14, { x: 60 * this.dir, y: 300 }, 0.5, this, 4.5, null);
+        p.subtype = 'piano';
+        p.ownerId = this.id; p.ownerTeam = this.team; p.ownerCharType = this.charType;
+        projectiles.push(p);
+    }
+
     // ---------------- TELEPATH PSI BARRIER (reflect) ----------------
     isReflecting() {
         if (this.state !== 'ATTACK' || !this.currentAttack || this.currentAttack.type !== 'psiBarrier') return false;
@@ -792,6 +873,8 @@ class Fighter {
         // Online ultimates are host-authoritative. Guests send the ult input, but
         // wait for the host's ult-sync instead of creating a competing timeline.
         if (currentMode === 'ONLINE' && onlineState && onlineState.slot !== 0) return;
+        if (this.ultSealed) return; // a Copy Cat sealed your ultimate
+        if (this.charType === 'COPYCAT' && !this.ultUnlocked) return; // locked until Nine Lives procs
         let ready = (infiniteMeter && this.team === 0) || this.meter >= this.meterMax;
         if (!ready) return;
         if (!(infiniteMeter && this.team === 0)) this.meter = 0;
@@ -799,8 +882,14 @@ class Fighter {
     }
 
     startUltimate() {
-        let kind = { BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb', DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm', PHANTOM: 'soultrain' }[this.charType];
-        if (!kind) return; // Zombie has no ultimate
+        // The Copy Cat performs the ultimate it stole; everyone else runs their own.
+        let kind = (this.charType === 'COPYCAT') ? this.copiedKind : ULT_KIND[this.charType];
+        if (!kind) return; // Zombie has no ultimate (and an un-charged Copy Cat shouldn't reach here)
+        if (this.charType === 'COPYCAT') {
+            // spending the copy: free the sealed enemy and re-lock until the next Nine Lives
+            if (this.sealedEnemy) { this.sealedEnemy.ultSealed = false; this.sealedEnemy = null; }
+            this.ultUnlocked = false; this.copiedKind = null;
+        }
         this.state = 'ULT';
         this.stateTimer = 0;
         this.vx = 0; this.vy = 0;
@@ -1306,6 +1395,7 @@ class Fighter {
     }
 
     handleInput() {
+        if (this.catPin) return; // locked while pinning a foe with Cat Dash
         let controls = this.playerControls();
 
         // Tag out to the benched team-mate (2v2)
@@ -1392,6 +1482,7 @@ class Fighter {
     }
 
     handleAI(dt) {
+        if (this.catPin) return; // locked while pinning a foe with Cat Dash
         const target = this.getClosestEnemy();
         if (!target) {
             this.vx *= 0.8;
@@ -1442,6 +1533,7 @@ class Fighter {
             TELEPATH:  { range: 120, kite: false, jumpy: 0.30 },
             BEAST_TAMER:{ range: 150, kite: false, jumpy: 0.16 },
             PHANTOM:   { range: 88,  kite: false, jumpy: 0.08 },
+            COPYCAT:   { range: 72,  kite: false, jumpy: 0.20 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -1513,6 +1605,7 @@ class Fighter {
             if (this.charType === 'RANGER' && r < 0.25) { this.startAttack('specSide'); return; }
             if (this.charType === 'BEAST_TAMER' && r < 0.35) { this.startAttack('specSide'); return; }
             if (this.charType === 'PHANTOM' && r < 0.45) { this.startAttack('specSide'); return; } // Grave Drag yank
+            if (this.charType === 'COPYCAT' && r < 0.45) { this.startAttack('specSide'); return; } // Cat Dash pounce
         }
 
         // Jump to chase an airborne target up close, or hop the gap when far
@@ -1564,6 +1657,12 @@ class Fighter {
                     else if (r < 0.62) this.startAttack('specNeutral');         // Soul Siphon drain
                     else if (r < 0.80) this.startAttack('specDown');            // Grave Grasp root
                     else this.startAttack('specSide');                         // Grave Drag yank
+                } else if (this.charType === 'COPYCAT') {
+                    if (r < 0.40) this.startPlayerAttack(r < 0.22 ? 'L' : 'H'); // quick claws
+                    else if (r < 0.58) this.startAttack('specSide');            // Cat Dash pin
+                    else if (r < 0.72) this.startAttack('specUp');              // Piano Drop
+                    else if (r < 0.84) this.startAttack('specDown');            // Agility counter-mark
+                    else this.startAttack('specNeutral');                      // Copy (replays last special)
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -1598,14 +1697,26 @@ class Fighter {
         return closest;
     }
 
-    startAttack(atkName) {
+    startAttack(atkName, overrideAtk = null) {
         if (this.state === 'ATTACK' || this.state === 'HITSTUN' || this.state === 'BLOCK') return;
-        
-        let atk = this.attacks[atkName] || createAttackVariant(this, atkName);
+
+        // Copy Cat — the neutral special MIMICS the OPPONENT's most recent special.
+        if (!overrideAtk && this.charType === 'COPYCAT' && atkName === 'specNeutral') {
+            let foe = this.getClosestEnemy();
+            if (foe && foe.lastSpecialAtk) overrideAtk = foe.lastSpecialAtk; // steal their last special
+        }
+
+        let atk = overrideAtk || this.attacks[atkName] || createAttackVariant(this, atkName);
         if (!atk) return;
-        if (this.charType === 'BEAST_TAMER') atk = this.beastAttackFor(atkName, atk);
+        if (!overrideAtk && this.charType === 'BEAST_TAMER') atk = this.beastAttackFor(atkName, atk);
 
         this.currentAttack = { ...atk, name: atkName };
+
+        // Remember the last special performed so a Copy Cat can steal it (snapshot the
+        // resolved move, before any speed modifiers below).
+        if (atkName === 'specNeutral' || atkName === 'specSide' || atkName === 'specUp' || atkName === 'specDown') {
+            this.lastSpecialAtk = { ...this.currentAttack };
+        }
         if (this.charType === 'BEAST_TAMER' && (atkName === 'specSide' || atkName === 'specUp' || atkName === 'specDown')) {
             this.beastAnimTimer = 0;
         }
@@ -1635,6 +1746,9 @@ class Fighter {
         if (t === 'risingEdge') { this.vy = -560; this.vx = 90 * this.dir; }
         if (t === 'psiLift') { this.vy = -560; this.vx = 60 * this.dir; }                 // Telepath rise
         if (t === 'wraithRise') { this.vy = -600; this.vx = 70 * this.dir; this.invulnTimer = Math.max(this.invulnTimer, 0.14); } // Phantom rise (anti-air grab)
+        if (t === 'catDash') { this.vx = 1180 * this.dir; this.invulnTimer = Math.max(this.invulnTimer, 0.12); } // Cat Dash: long pouncing lunge
+        if (t === 'pianoDrop') { this.vy = -460; this.dropPiano(); }                                  // hop up and drop a piano on the foe
+        if (t === 'agility') { this.agilityTimer = 1.6; spawnParticles(this.x, this.y - 50, 12, '#ffd23f'); } // place the counter-mark
         if (t === 'teleCrash') { this._diving = this.y < GROUND_Y; if (this._diving) { this.vy = 1050; this.vx = 0; } } // air dive-bomb
         if (t === 'uppercut') { this.vy = -700; this.vx = 200 * this.dir; }
         if (t === 'risingSlash') { this.vy = -560; this.vx = 110 * this.dir; }
@@ -1685,6 +1799,12 @@ class Fighter {
         if (this.charType === 'BRAWLER') {
             if (atk.name === 'heavy' || atk.type === 'lowHeavy' || atk.type === 'airHeavy') playAudio(attackSfx.kick);
             else playAudio(attackSfx.punch);
+            return;
+        }
+        if (this.charType === 'COPYCAT') {
+            // claws slash, the dash pounce uses the knife swipe
+            if (atk.type === 'catDash') playAudio(attackSfx.knife);
+            else playAudio(attackSfx.kick);
             return;
         }
         if (!atk.isProj) playAudio(attackSfx.punch);
@@ -1784,6 +1904,7 @@ class Fighter {
                 let hb = new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, {x: atk.kb.x * this.dir, y: atk.kb.y}, atk.stun, this, atk.active);
                 if (atk.grab) hb.grab = true; // unblockable command grab
                 if (atk.type === 'abyssalGrab') hb.grabThrow = this; // seize, then throw
+                else if (atk.type === 'catDash') { hb.catPin = this; hb.atk = atk; } // pounce → pin & slash
                 else hb.atk = atk; // remember the move so its sound can play on contact
                 hitboxes.push(hb);
                 if (atk.type === 'darkNova') { spawnParticles(this.x + 40 * this.dir, GROUND_Y - 10, 20, '#111'); spawnParticles(this.x - 40 * this.dir, GROUND_Y - 10, 14, '#ff0033'); }
@@ -2026,6 +2147,19 @@ class Fighter {
             return false;
         }
 
+        // Copy Cat — Agility: while marked, auto-leap the attack and kick the attacker away
+        if (this.charType === 'COPYCAT' && this.agilityTimer > 0 && !opts.unblockable && attacker && attacker !== this) {
+            this.agilityTimer = 0;
+            this.catPin = null;
+            this.vy = -540; this.vx = -this.dir * 140; this.changeState('JUMP'); // somersault over them
+            this.invulnTimer = Math.max(this.invulnTimer, 0.32);
+            let away = attacker.x < this.x ? -1 : 1;
+            attacker.takeDamage(8, { x: 360 * away, y: -240 }, 0.5, this);
+            spawnParticles(this.x, this.y - 40, 18, '#ffd23f');
+            playAudio(attackSfx.kick);
+            return false;
+        }
+
         // Phantom Fading Veil — faded out; attacks pass through (true unblockables still land)
         if (this.charType === 'PHANTOM' && this._fadeIntangible && !opts.unblockable) {
             spawnParticles(this.x, this.y - 45, 6, '#9aa6c8');
@@ -2088,6 +2222,7 @@ class Fighter {
             spawnParticles(this.x + this.dir * 16, this.y - 46, 10, '#fff');
         } else {
             this.rootTimer = 0; // being struck breaks the Grave Grasp hold
+            this.catPin = null; // and breaks a Cat Dash pin if the cat gets interrupted
             this.changeState('HITSTUN');
             this.stateTimer = stun;
             sfx.playHit();
@@ -2125,6 +2260,25 @@ class Fighter {
         if (this.isDummy) { this.hp = this.maxHp; return !blocked; }
 
         if (this.hp <= 0) {
+            // Copy Cat — Nine Lives: a lethal ULTIMATE doesn't kill. Survive at full HP,
+            // copy that ult, and seal the attacker's ult until you spend your copy.
+            if (this.charType === 'COPYCAT' && opts.isUlt && !this.ultUnlocked && attacker && attacker !== this && ULT_KIND[attacker.charType]) {
+                this.hp = this.maxHp; this.blockHealth = this.blockMax;
+                this.ultUnlocked = true;
+                this.meter = this.meterMax;
+                this.copiedKind = ULT_KIND[attacker.charType];
+                this.sealedEnemy = attacker;
+                attacker.ultSealed = true;
+                if (attacker.ult) attacker.endUlt(); // cut the killing cinematic short
+                this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+                this.changeState('IDLE');
+                this.invulnTimer = Math.max(this.invulnTimer, 0.6);
+                this._nineLivesFx = 1.1;
+                spawnParticles(this.x, this.y - 40, 34, '#ffd23f');
+                spawnParticles(this.x, this.y - 40, 16, '#fff');
+                updateHUD();
+                return false;
+            }
             // Training never ends — if the CPU dummy KOs the player, just respawn them.
             if (trainingMode && !this.isDummy) {
                 this.hp = this.maxHp; this.blockHealth = this.blockMax;
@@ -2715,6 +2869,15 @@ class Fighter {
                 rightLegAngle = -0.1 + Math.cos(t * 1.1) * 0.05;
                 leftLegBend = -0.15; rightLegBend = 0.65;
                 torsoLean = 0.34 + sway * 0.05; // Heavy forward lean
+            } else if (this.charType === 'COPYCAT') {
+                // Got a GROOVE to them — bopping to a beat: head bounces, arms swing
+                // loose, shoulders roll. (the knee-bounce is added in the leg stance)
+                let beat = Math.sin(t * 6), roll = Math.sin(t * 3);
+                headY += beat * 4 - 1;
+                leftArmAngle = 0.85 + Math.sin(t * 6 + 0.5) * 0.5;
+                rightArmAngle = -0.85 + Math.sin(t * 6 - 0.5) * 0.5;
+                leftArmBend = 0.85 + beat * 0.28; rightArmBend = -0.85 - beat * 0.28;
+                torsoLean = roll * 0.07;
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -2925,6 +3088,11 @@ class Fighter {
                 leftArmAngle = 1.75; leftArmBend = -0.45;  // planted low & forward
                 rightArmAngle = 2.45; rightArmBend = -0.7; // whip coiled by the shoulder
                 torsoLean = 0.16;
+            } else if (this.charType === 'COPYCAT') {
+                // a cat hunkered to pounce — both paws planted low in front, tail-end up
+                leftArmAngle = 1.65 + Math.sin(t * 4) * 0.04; leftArmBend = -0.35;  // paws down & forward
+                rightArmAngle = 1.5 + Math.sin(t * 4 + 0.5) * 0.04; rightArmBend = 0.25;
+                headY += 2; torsoLean = 0.2;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -2991,6 +3159,18 @@ class Fighter {
                 rightArmAngle = 2.3 + Math.sin(t * 5) * 0.05; rightArmBend = -0.6; // whip hand up & back
                 leftArmAngle = -1.5; leftArmBend = 0.4;                            // off-hand flung out for balance
                 headY += rise ? -2 : 1; torsoLean = rise ? 0.12 : -0.05;
+            } else if (this.charType === 'COPYCAT') {
+                // a springy cat-leap: knees tucked tight rising, paws reaching out to land
+                if (rise) {
+                    leftLegAngle = 0.3; rightLegAngle = -0.25; leftLegBend = 1.15; rightLegBend = 1.1; // tucked
+                    leftArmAngle = 1.4; rightArmAngle = -1.4; leftArmBend = 0.9; rightArmBend = -0.9;  // paws drawn in
+                    torsoLean = 0.14;
+                } else {
+                    leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.55; rightLegBend = 0.5;  // splay to land
+                    leftArmAngle = 1.5; rightArmAngle = -1.5; leftArmBend = 0.3; rightArmBend = -0.3;  // paws reach down
+                    torsoLean = -0.06;
+                }
+                headY += rise ? -2 : 2;
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -3034,6 +3214,12 @@ class Fighter {
                 leftArmAngle = 2.0 + brace; leftArmBend = -1.12;
                 rightArmAngle = 2.5 - brace; rightArmBend = -1.12;
                 torsoLean = -0.1;
+            } else if (this.charType === 'COPYCAT') {
+                // a hunched, hissing cat-guard — claws raised and crossed in front, ears low
+                headY += 3;
+                leftArmAngle = 1.85 + brace; leftArmBend = -1.05;   // forearms crossed up high
+                rightArmAngle = 1.35 - brace; rightArmBend = -0.95;
+                torsoLean = 0.16; // ducked forward and coiled
             } else {
                 // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
@@ -3143,6 +3329,30 @@ class Fighter {
                 leftArmAngle = mix(0.8, 2.7, ex); leftArmBend = -0.5;
                 leftLegAngle = -0.15; rightLegAngle = 0.18; leftLegBend = 0.3; rightLegBend = 0.35;
                 headY -= ex * 3; torsoLean = -0.06;
+            } else if (atk.type === 'catDash') {
+                // pouncing lunge — claws thrown forward, body stretched into the dash
+                rightArmAngle = mix(2.2, 1.35, ex); rightArmBend = mix(-0.5, 0.1, ex);
+                leftArmAngle = mix(2.0, 1.5, ex); leftArmBend = mix(0.4, 0.0, ex);
+                leftLegAngle = -0.6; rightLegAngle = 0.55; leftLegBend = 0.4; rightLegBend = 0.5;
+                torsoLean = mix(0.1, 0.4, ex); headY += 3;
+            } else if (atk.type === 'pianoDrop') {
+                // springs up and sweeps both arms down, conjuring the piano above the foe
+                rightArmAngle = mix(3.0, 1.5, ex); rightArmBend = -0.2;
+                leftArmAngle = mix(3.0, 1.6, ex); leftArmBend = 0.2;
+                leftLegAngle = -0.2; rightLegAngle = 0.22; leftLegBend = 0.45; rightLegBend = 0.45;
+                headY -= 2; torsoLean = -0.04;
+            } else if (atk.type === 'agility') {
+                // a low, coiled ready-stance as the counter-mark sets
+                rightArmAngle = 1.7; rightArmBend = 0.3;
+                leftArmAngle = 1.95; leftArmBend = 0.35;
+                leftLegAngle = -0.4; rightLegAngle = 0.4; leftLegBend = 0.7; rightLegBend = 0.66;
+                headY += 4; torsoLean = 0.08;
+            } else if (atk.type === 'catClaw' || atk.type === 'catSlash' || atk.type === 'copyClaw') {
+                // raking claw swipe
+                rightArmAngle = mix(2.4, 1.2, ex); rightArmBend = mix(-0.55, 0.08, ex);
+                leftArmAngle = 1.6; leftArmBend = 0.35;
+                leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.5, ex); leftLegBend = 0.32; rightLegBend = 0.42;
+                torsoLean = mix(0.04, 0.24, ex); headY -= 1;
             } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
@@ -3437,6 +3647,15 @@ class Fighter {
                     rightArmAngle = 1.5 + Math.sin(t * 5) * 0.1; rightArmBend = 0.0;
                     leftArmAngle = 1.3; leftArmBend = -0.2; torsoLean = 0.15;
                 }
+            } else if (this.charType === 'COPYCAT') {
+                // mimicking the stolen power — a generic dynamic casting stance
+                if (dec) { rightArmAngle = 2.4; rightArmBend = -0.5; leftArmAngle = 1.7; leftArmBend = -0.2; torsoLean = -0.06; headY -= 2; }
+                else {
+                    rightArmAngle = 1.5 + Math.sin(t * 8) * 0.12; rightArmBend = 0.0;
+                    leftArmAngle = 1.7; leftArmBend = 0.1;
+                    leftLegAngle = -0.3; rightLegAngle = 0.34; leftLegBend = 0.34; rightLegBend = 0.36;
+                    torsoLean = 0.1; headY -= 1;
+                }
             }
         } else if (this.state === 'LEDGE') {
             // Hanging from a stage lip. dir faces into the stage, so +x (local)
@@ -3495,15 +3714,33 @@ class Fighter {
             leftLegAngle = rearAng - breathe;
             rightLegAngle = leadAng + breathe;
             if (this.charType === 'TELEPATH') { leftLegBend = 0.3; rightLegBend = 0.6; leftLegAngle += 0.08; } // knees tucked as she floats, one bent more
+            else if (this.charType === 'COPYCAT') {
+                // bob the knees alternately to the beat — that's the groove
+                let beat = Math.sin(t * 6);
+                leftLegBend = 0.34 + Math.max(0, beat) * 0.26;
+                rightLegBend = 0.30 + Math.max(0, -beat) * 0.26;
+            }
             else { leftLegBend = 0.34; rightLegBend = 0.30; }
         } else if (this.state === 'BLOCK') {
-            leftLegAngle = rearAng - 0.12;
-            rightLegAngle = leadAng + 0.10;
-            leftLegBend = 0.50; rightLegBend = 0.46;
+            if (this.charType === 'COPYCAT') {
+                // a low feral guard-crouch, weight coiled on the back leg
+                leftLegAngle = rearAng - 0.2; rightLegAngle = leadAng + 0.26;
+                leftLegBend = 0.7; rightLegBend = 0.62;
+            } else {
+                leftLegAngle = rearAng - 0.12;
+                rightLegAngle = leadAng + 0.10;
+                leftLegBend = 0.50; rightLegBend = 0.46;
+            }
         } else if (this.state === 'CROUCH') {
-            leftLegAngle = rearAng - 0.22;
-            rightLegAngle = leadAng + 0.22;
-            leftLegBend = 0.88; rightLegBend = 0.86; // deep fold, feet stay planted
+            if (this.charType === 'COPYCAT') {
+                // hunkered right down on all-four readiness, haunches gathered to pounce
+                leftLegAngle = rearAng - 0.34; rightLegAngle = leadAng + 0.34;
+                leftLegBend = 1.05; rightLegBend = 1.02;
+            } else {
+                leftLegAngle = rearAng - 0.22;
+                rightLegAngle = leadAng + 0.22;
+                leftLegBend = 0.88; rightLegBend = 0.86; // deep fold, feet stay planted
+            }
         } else if (this.state === 'WALK') {
             if (this.charType === 'TELEPATH') {
                 // She doesn't walk — she glides, legs trailing the direction of travel
@@ -3860,6 +4097,42 @@ class Fighter {
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(-10, headY - 8); ctx.lineTo(10, headY - 8); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(-9, headY - 11); ctx.lineTo(-17, headY - 15); ctx.moveTo(9, headY - 11); ctx.lineTo(17, headY - 15); ctx.stroke();
+        } else if (this.charType === 'COPYCAT') {
+            ctx.save();
+            ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            // Cat ears — two pointed triangles atop the head
+            ctx.beginPath(); ctx.moveTo(-11, headY - 6); ctx.lineTo(-2, headY - 8); ctx.lineTo(-8, headY - 22); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(11, headY - 6); ctx.lineTo(2, headY - 8); ctx.lineTo(8, headY - 22); ctx.closePath(); ctx.fill();
+            // whiskers off the muzzle (front of the face = +x)
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(5, headY + 2); ctx.lineTo(17, headY + 0);
+            ctx.moveTo(5, headY + 4); ctx.lineTo(17, headY + 6);
+            ctx.stroke();
+            // Tail — curls up behind (away from the facing direction), swishing
+            let sway = Math.sin(t * 4) * 6;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-6, -26);
+            ctx.quadraticCurveTo(-24, -30, -27, -48 + sway);
+            ctx.quadraticCurveTo(-29, -62 + sway, -19, -64 + sway);
+            ctx.stroke();
+            // Agility counter-mark — a spinning star hovering over the head
+            if (this.agilityTimer > 0) {
+                ctx.save();
+                ctx.translate(0, headY - 30); ctx.rotate(t * 4);
+                ctx.fillStyle = '#ffd23f'; ctx.shadowBlur = 8; ctx.shadowColor = '#ffd23f';
+                for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.arc(0, -6, 2.0, 0, Math.PI * 2); ctx.fill(); }
+                ctx.beginPath(); ctx.arc(0, 0, 2.6, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
+            // Nine Lives — an expanding golden ring as the cat shrugs off a lethal ult
+            if (this._nineLivesFx > 0) {
+                ctx.globalAlpha = Math.min(1, this._nineLivesFx);
+                ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.shadowBlur = 14; ctx.shadowColor = '#ffd23f';
+                ctx.beginPath(); ctx.arc(0, headY + 36, 26 + (1.1 - this._nineLivesFx) * 46, 0, Math.PI * 2); ctx.stroke();
+            }
+            ctx.restore();
         } else if (this.charType === 'ZOMBIE') {
             // Missing eye / exposed skull detail
             ctx.fillStyle = '#ff0033';

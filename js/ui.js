@@ -86,6 +86,16 @@ const CHAR_INFO = [
             ["Up", "Wraith Rise", "rising spectral anti-air grab that doubles as a ghostly recovery"],
             ["Down", "Grave Grasp", "spectral hands erupt from the floor to root the foe (unblockable low)"]
         ]
+    },
+    {
+        name: "THE COPY CAT", role: "Fast-moving mimic / opportunist",
+        passive: "Passive — Nine Lives: a lethal ultimate won't kill you. You survive at full HP (the round continues), gain access to your own ult — a COPY of that ultimate — and the enemy's ult is sealed until you use yours.",
+        specials: [
+            ["Neutral", "Copy", "mimics the LAST special your opponent used — steal their move and fire it back"],
+            ["Side", "Cat Dash", "pounce across the arena; on a catch, pin the foe and rake them, then spring off"],
+            ["Up", "Piano Drop", "leap and drop a piano on top of your opponent"],
+            ["Down", "Agility", "set a brief mark — if struck while marked, auto-leap the attack and kick them away"]
+        ]
     }
 ];
 
@@ -393,7 +403,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -798,7 +808,7 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM']);
+    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT']);
     // Pre-roll each rung's tag partner up front (LADDER2 only) so the climb screen can show BOTH opponents.
     ladder.partners = ladder.queue.map(challenger => {
         let p = getRandomCharacter();
