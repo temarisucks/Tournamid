@@ -998,7 +998,7 @@ class Fighter {
                 tg.state = 'HITSTUN'; tg.stateTimer = 4; tg.vx = 0; tg.vy = 0;
                 tg.x = this.x + this.dir * 42; tg.y = GROUND_Y; this.y = GROUND_Y;
                 ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 72, zoom: 1.95 };
-                if (!u.seizeHit) { u.seizeHit = true; tg.takeDamage(5, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true }); spawnParticles(tg.x, tg.y - 60, 14, '#cfd8ff'); }
+                if (!u.seizeHit) { u.seizeHit = true; tg.takeDamage(3, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true }); spawnParticles(tg.x, tg.y - 60, 14, '#cfd8ff'); }
                 if (u.t > 0.6) {
                     u.phase = 'shatter'; u.t = 0;
                     u.wallDir = this.dir; // keep driving them forward into the wall ahead
@@ -1027,7 +1027,7 @@ class Fighter {
                 ultCamera = { fx: WIDTH / 2, fy: HEIGHT / 2, zoom: 1 };
                 if (u.voidHits < 4 && u.t > 0.35 + u.voidHits * 0.32) {
                     u.voidHits++;
-                    tg.takeDamage(4, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true });
+                    tg.takeDamage(3, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true });
                     playAudio(attackSfx.magic);
                 }
                 if (u.t > 1.7) {
@@ -1055,7 +1055,7 @@ class Fighter {
                     u.smashed = true;
                     tg.y = GROUND_Y;
                     let away = (tg.x >= this.x) ? 1 : -1;
-                    tg.takeDamage(38, { x: 520 * away, y: -220 }, 0.95, this, { isUlt: true, unblockable: true });
+                    tg.takeDamage(24, { x: 520 * away, y: -220 }, 0.95, this, { isUlt: true, unblockable: true });
                     tg.tumbleTimer = 0.85; tg._tumbleAngle = 0; tg._tumbleDir = away; // skid + roll across the floor
                     spawnParticles(tg.x, GROUND_Y - 28, 52, '#fff');
                     spawnParticles(tg.x, GROUND_Y - 28, 30, '#ff0033');
@@ -1976,7 +1976,7 @@ class Fighter {
             proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
         }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
-        if (subtype === 'mistChain') proj.unblockable = true; // Grave Drag yanks through guard
+        // Grave Drag (mistChain) is blockable — a guarded hit returns false from takeDamage, so the yank won't fire
         projectiles.push(proj);
     }
 

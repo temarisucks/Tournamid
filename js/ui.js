@@ -82,7 +82,7 @@ const CHAR_INFO = [
         passive: "Passive — Fading Veil: hold still and he fades intangible for a moment — attacks and projectiles pass through. Acting snaps him solid (short cooldown).",
         specials: [
             ["Neutral", "Soul Siphon", "long reaching spectral claw that drains the foe's HP to heal him"],
-            ["Side", "Grave Drag", "fling a mist-chain that yanks the foe into grab range (unblockable)"],
+            ["Side", "Grave Drag", "fling a slow mist-chain that yanks the foe into grab range — guard it to deny the pull"],
             ["Up", "Wraith Rise", "rising spectral anti-air grab that doubles as a ghostly recovery"],
             ["Down", "Grave Grasp", "spectral hands erupt from the floor to root the foe (unblockable low)"]
         ]
