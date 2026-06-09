@@ -91,6 +91,7 @@ const music = {
         moonBridge: makeMusic('audio/music/Tournamid - Moon Bridge.wav'),
         bloodBall: makeMusic('audio/music/Tournamid - Blood Ball.wav'),
         pStreet: makeMusic('audio/music/Tournamid - P Street.wav'),
+        championsArena: makeMusic('audio/music/Tournamid - Champions Arena.wav'),
         livingGraveyard: makeMusic('audio/music/Tournamid - Living Graveyard.wav'),
         darkCastle: makeMusic('audio/music/Tournamid - Dark Castle.wav')
     },
@@ -269,12 +270,13 @@ const STAGES = {
     platform: { name: 'Sky Platform' },
     pStreet: { name: 'P Street' },
     bloodBall: { name: 'Blood Ball' },
+    championsArena: { name: "Champions Arena" },
     livingGraveyard: { name: 'Living Graveyard' },
     darkCastle: { name: "Dark King's Castle" }
 };
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)
-let ladder = { queue: [], index: 0, active: false };
+let ladder = { queue: [], partners: [], index: 0, active: false }; // partners[i] = the rung's tag partner (LADDER2 only)
 let ladderView = null; // canvas ladder-climb screen animation state
 let stageActors = null;
 
@@ -299,9 +301,9 @@ function stagePlatformLayout(w, gy, h) {
         ringOut: true,
         main: { left: w * 0.22, right: w * 0.78, top: gy },
         platforms: [
-            { left: w * 0.40, right: w * 0.60, top: gy - h * 0.16 }, // center high platform (jump-reachable)
-            { left: w * 0.03, right: w * 0.17, top: gy - h * 0.087 }, // left floating ledge
-            { left: w * 0.83, right: w * 0.97, top: gy - h * 0.087 }  // right floating ledge
+            { left: w * 0.40, right: w * 0.60, top: gy - h * 0.30 },   // center high platform
+            { left: w * 0.03, right: w * 0.17, top: gy - h * 0.20 },   // left floating ledge
+            { left: w * 0.83, right: w * 0.97, top: gy - h * 0.20 }    // right floating ledge
         ]
     };
 }

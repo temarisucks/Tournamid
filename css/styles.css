@@ -45,6 +45,7 @@
             animation: streakSweep 6s linear infinite; }
         @keyframes streakSweep { 0% { left: -30%; opacity: 0; } 30% { opacity: 1; } 70% { opacity: 1; } 100% { left: 110%; opacity: 0; } }
         .menu-screen > * { position: relative; z-index: 1; }
+        .menu-version { position: absolute; left: 16px; bottom: 12px; z-index: 2; color: #666; font-size: 0.8rem; letter-spacing: 1px; font-family: inherit; }
 
         .title-glitch { position: relative; font-size: 4.7rem; letter-spacing: 12px; color: #fff; text-transform: uppercase;
             text-shadow: 5px 5px 0 #900, 0 0 36px rgba(255,0,51,0.45); margin-bottom: 6px; animation: titlePulse 3.5s ease-in-out infinite; }

@@ -19,7 +19,12 @@ class Particle {
             this.life = 0; // kill particle
             // Create a permanent stain
             if (settings.blood && bloodStains.length < 500) {
-                bloodStains.push({ x: this.x, y: this.y + (Math.random()*4-2), size: this.size * (Math.random()+1) });
+                bloodStains.push({ x: this.x, y: this.y + (Math.random()*4-2), size: this.size * (Math.random()+1), type: 'floor' });
+            }
+        } else if (this.color === '#ff0033' && this.life <= 0 && this.y > 50 && this.y < GROUND_Y - 6 && selectedStage === 'dojo') {
+            // Blood that never reached the floor splatters onto the back wall instead
+            if (settings.blood && bloodStains.length < 500) {
+                bloodStains.push({ x: this.x, y: this.y, size: this.size * (0.7 + Math.random() * 0.8), type: 'wall' });
             }
         }
     }
@@ -547,9 +552,11 @@ class Fighter {
         if (floorY !== null && this.y >= floorY && this.vy >= 0) {
             this.y = floorY;
             this.vy = 0;
+            this._onSurface = true; // resting on the main floor or a platform — may jump
             if (this.state !== 'ATTACK') this._diving = false; // clear glide-block once not mid dive-attack
             if (this.state === 'FALL') this.changeState('IDLE');
         } else {
+            this._onSurface = false;
             if (this.state !== 'ATTACK' && this.state !== 'HITSTUN' && this.state !== 'DEAD' && this.state !== 'BLOCKBREAK') {
                 this.changeState(this.vy < 0 ? 'JUMP' : 'FALL');
             }
@@ -1335,9 +1342,11 @@ class Fighter {
             this.changeState('IDLE');
         }
 
-        // Jump
-        if (!crouching && keyPressed(controls.u) && this.y === GROUND_Y) {
+        // Jump — from the main floor OR while standing on a platform (so raised
+        // platforms can be climbed by hopping ledge to ledge)
+        if (!crouching && keyPressed(controls.u) && (this.y === GROUND_Y || this._onSurface)) {
             this.vy = this.jumpForce;
+            this._onSurface = false;
             this.changeState('JUMP');
         }
 
@@ -3666,11 +3675,60 @@ class Fighter {
             ctx.beginPath(); ctx.moveTo(-16, headY - 8); ctx.lineTo(16, headY - 8); ctx.lineTo(0, headY - 35); ctx.closePath();
             ctx.fillStyle = '#111'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
         } else if (this.charType === 'RANGER') {
-            // Ranger Hood
-            ctx.beginPath(); ctx.arc(0, headY+2, 14, Math.PI, 0); ctx.strokeStyle = '#888'; ctx.lineWidth = 3; ctx.stroke();
+            ctx.save();
+            // --- Fedora ---
+            let brimY = headY - 7;
+            ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#bdbdbd'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+            // crown — pinched dome with a slight front dent, drawn first so the brim overlaps its base
+            ctx.beginPath();
+            ctx.moveTo(-11, brimY);
+            ctx.quadraticCurveTo(-11, headY - 24, -4, headY - 25);
+            ctx.quadraticCurveTo(0, headY - 20, 4, headY - 25); // center pinch
+            ctx.quadraticCurveTo(11, headY - 24, 12, brimY);
+            ctx.closePath(); ctx.fill();
+            // hat band — pale gray so it still reads on the white felt
+            ctx.strokeStyle = '#cfcfcf'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(-10, brimY - 1); ctx.lineTo(12, brimY - 1); ctx.stroke();
+            // brim — wide flat ellipse snapped slightly down at the front
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.ellipse(1, brimY + 1, 22, 4.5, 0.06, 0, Math.PI * 2); ctx.fill();
+
+            // --- Cigarette in the mouth, ember + rising smoke ---
+            let cigX = 10, cigY = headY + 4;
+            ctx.strokeStyle = '#f2ede0'; ctx.lineWidth = 2.4; ctx.lineCap = 'butt';
+            ctx.beginPath(); ctx.moveTo(cigX, cigY); ctx.lineTo(cigX + 9, cigY + 1.6); ctx.stroke();
+            let emX = cigX + 9, emY = cigY + 1.6;
+            ctx.fillStyle = '#ff5a22'; ctx.shadowBlur = 6; ctx.shadowColor = '#ff3300';
+            ctx.beginPath(); ctx.arc(emX + 1, emY + 0.2, 1.6, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+            // smoke curling up off the ember
+            ctx.strokeStyle = 'rgba(205,205,210,0.45)'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(emX + 1, emY);
+            for (let i = 1; i <= 6; i++) {
+                let yy = emY - i * 5;
+                let xx = emX + 1 + Math.sin(t * 3 + i * 0.8) * 3 + i * 0.6;
+                ctx.lineTo(xx, yy);
+            }
+            ctx.stroke();
+            ctx.restore();
         } else if (this.charType === 'SWORDSMAN') {
             // Topknot / Ronin hair
             ctx.beginPath(); ctx.moveTo(0, headY - 12); ctx.lineTo(6, headY - 22); ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.stroke();
+            // Wheat straw clenched in his teeth — a stalk poking forward with little grains at the tip
+            ctx.save();
+            ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            let mx = 9, my = headY + 4;            // corner of the mouth
+            let tx = mx + 13, ty = my + 4;          // tip, angled downward and forward
+            ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(tx, ty); ctx.stroke();
+            // tiny sticks fanning out of the end (the wheat head)
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + 5, ty - 4);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + 6, ty + 1);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + 5, ty + 5);
+            ctx.moveTo(tx, ty); ctx.lineTo(tx + 2, ty + 6);
+            ctx.stroke();
+            ctx.restore();
         } else if (this.charType === 'DARK_RULER') {
             // Dark crown sitting on the head (black with a faint red rim + red gem)
             let cy0 = headY - 10;

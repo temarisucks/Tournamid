@@ -796,6 +796,12 @@ function ladderLevelFor(index, total) {
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
     ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM']);
+    // Pre-roll each rung's tag partner up front (LADDER2 only) so the climb screen can show BOTH opponents.
+    ladder.partners = ladder.queue.map(challenger => {
+        let p = getRandomCharacter();
+        if (p === challenger) p = getRandomCharacter(); // one re-roll to avoid a mirror pair
+        return p;
+    });
     ladder.index = 0; ladder.active = true;
     showLadderScreen(false); // light up rung 1, then drop into the fight
 }
@@ -837,8 +843,9 @@ function startLadderBattle(index) {
     let lvl = ladderLevelFor(index, ladder.queue.length);
     let teamFight = currentMode === 'LADDER2';
     if (teamFight) {
-        // 2v2 ladder: your squad vs the rung's challenger + a random partner
-        buildTeams(playerTeam.slice(0, 2), [ladder.queue[index], getRandomCharacter()], lvl);
+        // 2v2 ladder: your squad vs the rung's challenger + its pre-rolled partner (shown on the climb screen)
+        let partner = ladder.partners[index] || getRandomCharacter();
+        buildTeams(playerTeam.slice(0, 2), [ladder.queue[index], partner], lvl);
         teams[1].forEach(f => { f.maxHp = Math.floor(f.maxHp * (1 + index * 0.05)); f.hp = f.maxHp; });
     } else {
         teamBattle = false;

@@ -1143,16 +1143,123 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
             let s = height / 430;
             for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.2 + i * 0.15), groundY - height * 0.01, s, 95, 'dance', i * 1.7 + t, 1);
         }
+    } else if (stageId === 'championsArena') {
+        drawChampionsArena(targetCtx, width, height, groundY);
     } else {
+        // ---- ORIGINAL / DOJO: a plain room. A back wall behind the floor so blood
+        // can splatter across it, with a baseboard where wall meets ground. ----
+        let wall = targetCtx.createLinearGradient(0, 0, 0, groundY);
+        wall.addColorStop(0, '#0c0c0c'); wall.addColorStop(1, '#070707');
+        targetCtx.fillStyle = wall;
+        targetCtx.fillRect(0, 0, width, groundY);
+        // faint vertical paneling on the wall
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.035)'; targetCtx.lineWidth = 2;
+        for (let x = width * 0.12; x < width; x += width * 0.16) {
+            targetCtx.beginPath(); targetCtx.moveTo(x, height * 0.06); targetCtx.lineTo(x, groundY); targetCtx.stroke();
+        }
+        // floor
         targetCtx.fillStyle = '#050505';
-        targetCtx.fillRect(0, 0, width, height);
-        targetCtx.strokeStyle = '#333';
-        targetCtx.lineWidth = 2;
-        targetCtx.beginPath();
-        targetCtx.moveTo(0, groundY);
-        targetCtx.lineTo(width, groundY);
-        targetCtx.stroke();
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        // baseboard + floor line
+        targetCtx.strokeStyle = '#2a2a2a'; targetCtx.lineWidth = 4;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
+        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY + 5); targetCtx.lineTo(width, groundY + 5); targetCtx.stroke();
     }
+}
+
+// ---- CHAMPIONS ARENA: a sports stadium. Tiered stands packed with crowd ring the
+// background, and a giant jumbotron hangs center-stage mirroring the live battle. ----
+function drawChampionsArena(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    let bg = c.createLinearGradient(0, 0, 0, height);
+    bg.addColorStop(0, '#0a0a0a'); bg.addColorStop(0.6, '#0f0f0f'); bg.addColorStop(1, '#070707');
+    c.fillStyle = bg; c.fillRect(0, 0, width, height);
+
+    // --- Tiered stands sweeping up the back, with a packed crowd ---
+    let standsTop = height * 0.20, standsBottom = groundY - height * 0.05;
+    let rows = 7;
+    for (let r = 0; r < rows; r++) {
+        let f0 = r / rows, f1 = (r + 1) / rows;
+        let yTop = standsBottom + (standsTop - standsBottom) * f1;
+        let yBot = standsBottom + (standsTop - standsBottom) * f0;
+        // each tier is a touch lighter toward the front
+        let shade = 16 + r * 3;
+        c.fillStyle = `rgb(${shade},${shade},${shade})`;
+        c.fillRect(0, yTop, width, yBot - yTop + 1);
+        // crowd: rows of little heads, shimmering slightly so the stands feel alive
+        let headR = Math.max(1.4, (yBot - yTop) * 0.22);
+        let step = headR * 2.6;
+        for (let x = step * 0.5; x < width; x += step) {
+            let flick = ((Math.floor(x) * 7 + r * 31 + Math.floor(t * 2)) % 11);
+            let v = flick < 2 ? 150 : (60 + ((Math.floor(x) + r) % 4) * 22);
+            c.fillStyle = `rgb(${v},${v},${v})`;
+            c.beginPath();
+            c.arc(x + Math.sin(t * 1.5 + x) * 0.6, yTop + (yBot - yTop) * 0.5, headR, 0, Math.PI * 2);
+            c.fill();
+        }
+    }
+    // railing between the stands and the field
+    c.strokeStyle = '#3a3a3a'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, standsBottom); c.lineTo(width, standsBottom); c.stroke();
+
+    // --- Arena floor / court markings ---
+    c.fillStyle = '#0c0c0c';
+    c.fillRect(0, groundY, width, height - groundY);
+    c.strokeStyle = '#444'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.10)'; c.lineWidth = 2;
+    // center line + center circle painted on the floor
+    c.beginPath(); c.moveTo(width * 0.5, groundY); c.lineTo(width * 0.5, height); c.stroke();
+    c.beginPath(); c.ellipse(width * 0.5, groundY + (height - groundY) * 0.55, width * 0.12, (height - groundY) * 0.4, 0, 0, Math.PI * 2); c.stroke();
+
+    // --- The JUMBOTRON hanging center-stage ---
+    let mw = width * 0.30, mh = mw * 0.52;
+    let mx = width * 0.5 - mw / 2, my = height * 0.045;
+    // suspension cables to the top of the screen
+    c.strokeStyle = '#2a2a2a'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(width * 0.5 - mw * 0.3, 0); c.lineTo(width * 0.5 - mw * 0.3, my); c.stroke();
+    c.beginPath(); c.moveTo(width * 0.5 + mw * 0.3, 0); c.lineTo(width * 0.5 + mw * 0.3, my); c.stroke();
+    // housing / frame
+    c.fillStyle = '#161616';
+    c.fillRect(mx - 8, my - 8, mw + 16, mh + 16);
+    c.strokeStyle = '#555'; c.lineWidth = 3;
+    c.strokeRect(mx - 8, my - 8, mw + 16, mh + 16);
+
+    // screen contents: a live feed of the fight (only on the real canvas, not thumbnails)
+    let sx = mx, sy = my, sw = mw, sh = mh;
+    c.save();
+    c.beginPath(); c.rect(sx, sy, sw, sh); c.clip();
+    c.fillStyle = '#06121c'; c.fillRect(sx, sy, sw, sh);
+    if (c === ctx && typeof players !== 'undefined' && players.length) {
+        // frame the action: center on the living fighters, mapped into the screen rect
+        let alive = players.filter(p => p && p.state !== 'DEAD');
+        let group = alive.length ? alive : players;
+        let fx = group.reduce((a, p) => a + p.x, 0) / group.length;
+        fx = Math.max(width * 0.28, Math.min(width * 0.72, fx));
+        let fy = groundY - height * 0.08;
+        let viewW = width * 0.42, sc = sw / viewW;
+        c.translate(sx + sw / 2, sy + sh / 2);
+        c.scale(sc, sc);
+        c.translate(-fx, -fy);
+        // mini ground line + the live fighters
+        c.strokeStyle = '#15303f'; c.lineWidth = 3 / sc;
+        c.beginPath(); c.moveTo(fx - viewW, groundY); c.lineTo(fx + viewW, groundY); c.stroke();
+        players.forEach(p => { if (p && p.draw) p.draw(c); });
+    } else {
+        // thumbnail / pre-fight: a stylized "LIVE" placeholder
+        c.fillStyle = '#9ad8ff'; c.font = `bold ${Math.floor(sh * 0.3)}px monospace`;
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText('LIVE', sx + sw / 2, sy + sh / 2);
+    }
+    c.restore();
+    // glassy scanlines over the screen
+    c.strokeStyle = 'rgba(255,255,255,0.04)'; c.lineWidth = 1;
+    for (let yy = sy + 2; yy < sy + sh; yy += 4) { c.beginPath(); c.moveTo(sx, yy); c.lineTo(sx + sw, yy); c.stroke(); }
+    // a red "● LIVE" tag in the corner of the screen
+    c.fillStyle = '#ff0033'; c.beginPath(); c.arc(sx + 12, sy + 11, 3.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#fff'; c.font = 'bold 10px monospace'; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.fillText('LIVE', sx + 20, sy + 11);
 }
 
 // ---------------- ANIMATED STAGE BACKGROUND ACTORS ----------------
@@ -1396,7 +1503,12 @@ function drawLadderScreen(c) {
         }
         c.fillStyle = '#151515'; c.fillRect(cx - box / 2, y - box / 2, box, box);
         c.globalAlpha = cleared ? 0.35 : 1;
-        drawCharIcon(c, ladder.queue[i], cx, y, box);
+        if (currentMode === 'LADDER2') { // a 2v2 rung fields a pair — show both challengers
+            drawCharIcon(c, ladder.queue[i], cx, y - 12, box - 20);
+            drawCharIcon(c, ladder.partners[i] || ladder.queue[i], cx, y + 12, box - 20);
+        } else {
+            drawCharIcon(c, ladder.queue[i], cx, y, box);
+        }
         c.globalAlpha = 1;
         c.strokeStyle = cleared ? '#333' : (isTarget ? '#ff0033' : '#666'); c.lineWidth = 2;
         c.strokeRect(cx - box / 2, y - box / 2, box, box);
@@ -1428,6 +1540,10 @@ function drawLadderScreen(c) {
     c.beginPath(); c.moveTo(px + pbox / 2, py); c.lineTo(railL, py); c.stroke();
 
     let nextName = CHARACTERS[ladder.queue[ladder.index]] ? CHARACTERS[ladder.queue[ladder.index]].name : '';
+    if (currentMode === 'LADDER2') {
+        let pt = ladder.partners[ladder.index];
+        if (CHARACTERS[pt]) nextName += '  +  ' + CHARACTERS[pt].name;
+    }
     let cap = ladderView && ladderView.phase === 'climb' ? 'Climbing the ladder...' : ('NEXT  —  ' + nextName);
     c.fillStyle = '#ddd'; c.font = '18px monospace';
     c.fillText(cap, WIDTH / 2, HEIGHT - 40);
@@ -1459,11 +1575,17 @@ function draw() {
     drawStageActors(ctx);
     drawOverkillBackground(ctx);
 
-    // Blood Stains (Draw first so they are on the floor)
+    // Blood Stains (Draw first so they sit on the floor / back wall, behind fighters)
     if (settings.blood) {
         ctx.fillStyle = '#aa0022'; // Darker red for stains
         for (let stain of bloodStains) {
-            ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size, 0, Math.PI); ctx.fill();
+            if (stain.type === 'wall') {
+                // a splat on the wall: full blob with a thin drip running down
+                ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size * 0.7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillRect(stain.x - stain.size * 0.12, stain.y, stain.size * 0.24, stain.size * 1.6);
+            } else {
+                ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size, 0, Math.PI); ctx.fill(); // floor puddle
+            }
         }
     }
 
