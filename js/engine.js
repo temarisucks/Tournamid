@@ -186,15 +186,28 @@ function setMeterBar(id, p) {
     if (fill.parentElement) fill.parentElement.classList.toggle('ready', pct >= 100);
 }
 
+function setHudIcon(id, fighter) {
+    let icon = document.getElementById(id + '-icon');
+    if (!icon || !fighter) return;
+    icon.onerror = function () { this.style.visibility = 'hidden'; };
+    icon.style.visibility = 'visible';
+    icon.src = 'textures/icons/' + (LADDER_ICON_FILE[fighter.charType] || 'x') + '.png';
+}
+
 // Show/hide the 2v2 stacked bars and load each fighter's icon (called at match start).
 function setupTeamHud(on) {
     for (let tm = 0; tm < 2; tm++) {
         let pfx = tm === 0 ? 'p1' : 'p2';
-        let single = document.getElementById(pfx + '-single-hp');
+        let hud = document.getElementById(pfx + '-hud');
+        let single = document.getElementById(pfx + '-single-row');
         let team = document.getElementById(pfx + '-team');
+        if (hud) hud.classList.toggle('team-mode', on);
         if (single) single.classList.toggle('hidden', on);
         if (team) team.classList.toggle('hidden', !on);
-        if (!on) continue;
+        if (!on) {
+            setHudIcon(pfx, players[tm]);
+            continue;
+        }
         for (let i = 0; i < 2; i++) {
             let f = teams[tm][i];
             let icon = document.getElementById(pfx + '-team-icon-' + i);
@@ -226,12 +239,14 @@ function updateTeamHud() {
 function updateHUD() {
     if (teamBattle) { updateTeamHud(); return; }
     if (players.length >= 1) {
+        setHudIcon('p1', players[0]);
         document.getElementById('p1-hp').style.width = Math.max(0, (players[0].hp / players[0].maxHp) * 100) + '%';
         setMeterBar('p1', players[0]);
     }
     if (currentMode !== 'PVE' && players.length >= 2) setMeterBar('p2', players[1]);
 
     if (currentMode === 'PVE') {
+        if (players.length >= 2) setHudIcon('p2', players[1]);
         // Find total HP of enemies
         let totalMax = 0, totalCur = 0;
         for (let i = 1; i < players.length; i++) {
@@ -244,6 +259,7 @@ function updateHUD() {
             document.getElementById('p2-hp').style.width = '0%';
         }
     } else if (players.length >= 2) {
+        setHudIcon('p2', players[1]);
         document.getElementById('p2-hp').style.width = Math.max(0, (players[1].hp / players[1].maxHp) * 100) + '%';
     }
 }

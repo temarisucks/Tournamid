@@ -12,24 +12,26 @@
 
 <div id="game-container">
     <!-- Settings gear (top-right) -->
-    <button id="settings-btn" title="Settings" onclick="openSettings()">&#9881;</button>
+    <button id="settings-btn" title="Settings" onclick="toggleSettingsMenu()">&#9881;</button>
 
     <!-- Settings -->
     <div id="settings-screen" class="screen hidden">
         <h2 class="menu-sub-title">Settings</h2>
         <div class="settings-cols">
-            <div class="settings-block settings-audio">
-                <h3>Audio</h3>
-                <div id="volume-sliders"></div>
+            <div class="settings-left">
+                <div class="settings-block settings-audio">
+                    <h3>Audio</h3>
+                    <div id="volume-sliders"></div>
+                </div>
+                <div class="settings-block settings-gameplay">
+                    <h3>Gameplay</h3>
+                    <div id="gameplay-settings"></div>
+                </div>
             </div>
             <div class="settings-block settings-controls">
                 <h3>Controls <small>(click a key to rebind)</small></h3>
                 <div id="bindings-list"></div>
                 <button class="btn menu-btn ghost" onclick="resetBindings()">Reset Controls</button>
-            </div>
-            <div class="settings-block settings-gameplay">
-                <h3>Gameplay</h3>
-                <div id="gameplay-settings"></div>
             </div>
         </div>
         <button class="btn menu-btn" onclick="closeSettings()">Back</button>
@@ -52,15 +54,20 @@
     <div id="mode-screen" class="screen menu-screen hidden">
         <div class="menu-bg-streak"></div>
         <h2 class="menu-sub-title">Choose Your Battle</h2>
-        <div class="menu-buttons">
-            <button class="btn menu-btn mode-cpu" onclick="goToCharSelect('CPU')"><span>Player vs CPU</span><small>Best of 3 vs the AI</small></button>
-            <button class="btn menu-btn mode-2v2" onclick="goToCharSelect('VS2')"><span>2v2</span><small>Tag-team — pick two, swap with Tag</small></button>
-            <button class="btn menu-btn mode-ladder" onclick="goToCharSelect('LADDER')"><span>Ladder</span><small>Climb the gauntlet of every fighter</small></button>
-            <button class="btn menu-btn mode-ladder2" onclick="goToCharSelect('LADDER2')"><span>2v2 Ladder</span><small>Climb the gauntlet, tag-team style</small></button>
-            <button class="btn menu-btn mode-pvp" onclick="goToCharSelect('PVP')"><span>Player vs Player</span><small>Best of 3, local 2P</small></button>
-            <button class="btn menu-btn mode-online" onclick="showOnlineScreen()"><span>Online Friend Room</span><small>Host or join with a room code</small></button>
-            <button class="btn menu-btn mode-pve" onclick="goToCharSelect('PVE')"><span>PvE Wave Match</span><small>Survive the endless horde</small></button>
-            <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
+        <div class="play-menu-panels">
+            <div class="menu-buttons play-choice-panel">
+                <button class="btn menu-btn primary" onclick="showOnlineScreen()"><span>Online</span><small>Host or join a friend room</small></button>
+                <button class="btn menu-btn" onclick="showOfflineModes()"><span>Offline</span><small>Local battles, ladder, and PvE</small></button>
+                <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
+            </div>
+            <div class="menu-buttons offline-panel">
+                <button class="btn menu-btn mode-pvp offline-choice" onclick="goToCharSelect('PVP')"><span>1v1</span><small>Local player versus player</small></button>
+                <button class="btn menu-btn mode-2v2 offline-choice" onclick="goToCharSelect('VS2')"><span>2v2</span><small>Tag-team, pick two, swap with Tag</small></button>
+                <button class="btn menu-btn mode-ladder offline-choice" onclick="goToCharSelect('LADDER')"><span>Ladder</span><small>Climb the gauntlet of every fighter</small></button>
+                <button class="btn menu-btn mode-ladder2 offline-choice" onclick="goToCharSelect('LADDER2')"><span>Tag Ladder</span><small>Climb the gauntlet, tag-team style</small></button>
+                <button class="btn menu-btn mode-pve offline-choice" onclick="goToCharSelect('PVE')"><span>PvE Wave</span><small>Survive the endless horde</small></button>
+                <button class="btn menu-btn ghost offline-choice" onclick="hideOfflineModes()">Back</button>
+            </div>
         </div>
     </div>
 
@@ -178,7 +185,7 @@
     <!-- Heads Up Display -->
     <div id="hud" class="hidden">
         <div class="player-hud" id="p1-hud">
-            <div class="health-bar-bg" id="p1-single-hp"><div class="health-bar-fill" id="p1-hp"></div></div>
+            <div class="solo-row" id="p1-single-row"><img class="hud-icon" id="p1-icon" alt=""><div class="health-bar-bg" id="p1-single-hp"><div class="health-bar-fill" id="p1-hp"></div></div></div>
             <div class="team-hp hidden" id="p1-team">
                 <div class="team-row" id="p1-team-row-0"><img class="team-icon" id="p1-team-icon-0" alt=""><div class="health-bar-bg sm"><div class="health-bar-fill" id="p1-team-hp-0"></div></div></div>
                 <div class="team-row" id="p1-team-row-1"><img class="team-icon" id="p1-team-icon-1" alt=""><div class="health-bar-bg sm"><div class="health-bar-fill" id="p1-team-hp-1"></div></div></div>
@@ -191,7 +198,7 @@
             <div id="wave-counter" class="hidden">WAVE 1</div>
         </div>
         <div class="player-hud" id="p2-hud">
-            <div class="health-bar-bg" id="p2-single-hp"><div class="health-bar-fill" id="p2-hp"></div></div>
+            <div class="solo-row solo-row-right" id="p2-single-row"><img class="hud-icon" id="p2-icon" alt=""><div class="health-bar-bg" id="p2-single-hp"><div class="health-bar-fill" id="p2-hp"></div></div></div>
             <div class="team-hp team-hp-right hidden" id="p2-team">
                 <div class="team-row" id="p2-team-row-0"><img class="team-icon" id="p2-team-icon-0" alt=""><div class="health-bar-bg sm"><div class="health-bar-fill" id="p2-team-hp-0"></div></div></div>
                 <div class="team-row" id="p2-team-row-1"><img class="team-icon" id="p2-team-icon-1" alt=""><div class="health-bar-bg sm"><div class="health-bar-fill" id="p2-team-hp-1"></div></div></div>

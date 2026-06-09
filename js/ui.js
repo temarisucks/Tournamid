@@ -100,20 +100,33 @@ function closeCharInfo() {
 }
 
 // --- MENU NAVIGATION ---
-function showModeSelect() {
+const OFFLINE_MODES = new Set(['PVP', 'VS2', 'LADDER', 'LADDER2', 'PVE', 'CPU']);
+function setOfflineModesOpen(open) {
+    let screen = document.getElementById('mode-screen');
+    if (screen) screen.classList.toggle('offline-open', !!open);
+}
+function showModeSelect(openOffline = false) {
     sfx.init();
     gameState = 'MODE_SELECT';
     showScreen('mode-screen');
+    setOfflineModesOpen(openOffline);
+}
+function showOfflineModes() {
+    setOfflineModesOpen(true);
+}
+function hideOfflineModes() {
+    setOfflineModesOpen(false);
 }
 function backToMainMenu() {
     if (currentMode === 'ONLINE') onlineDisconnect();
+    setOfflineModesOpen(false);
     gameState = 'MENU';
     showScreen('menu-screen');
 }
 // Backing all the way out of character select returns to the right screen
 function returnFromSelect() {
     if (currentMode === 'TRAINING') { backToMainMenu(); }
-    else { showModeSelect(); }
+    else { showModeSelect(OFFLINE_MODES.has(currentMode)); }
 }
 
 const HOWTO = [
@@ -156,6 +169,10 @@ function closeSettings() {
     if (rebind) { rebind.btn && rebind.btn.classList.remove('listening'); rebind = null; }
     gameState = settingsReturn;
     showScreen(STATE_SCREEN[settingsReturn] || 'menu-screen');
+}
+function toggleSettingsMenu() {
+    if (gameState === 'SETTINGS') closeSettings();
+    else openSettings();
 }
 function setVolume(cat, val) {
     settings[cat] = Math.max(0, Math.min(1, val / 100));
@@ -294,7 +311,9 @@ function handleEscape() {
     } else if (gameState === 'HOWTO') {
         closeHowTo();
     } else if (gameState === 'MODE_SELECT') {
-        backToMainMenu();
+        let modeScreen = document.getElementById('mode-screen');
+        if (modeScreen && modeScreen.classList.contains('offline-open')) hideOfflineModes();
+        else backToMainMenu();
     } else if (gameState === 'ONLINE_LOBBY') {
         backToMainMenu();
     } else if (gameState === 'SETTINGS') {

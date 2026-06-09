@@ -640,6 +640,21 @@ function onlineApplyInputToSlot(slot, input) {
     ONLINE_ACTIONS.forEach(action => { keys[bindings[action]] = !!input[action]; });
 }
 
+// The sim drives fighters by writing the networked inputs into the shared `keys`
+// object — but those same key codes are the LOCAL player's real keyboard. With input
+// delay the value written is an OLD input, and since a held key never re-fires
+// keydown, that stale value would stick (e.g. movement locked on). So we snapshot the
+// local keyboard before the sim overwrites it and restore it the moment the sim ends.
+function onlineSaveLocalKeys() {
+    let c = onlineLocalControls();
+    let saved = {};
+    ONLINE_ACTIONS.forEach(a => { let code = c[a]; if (code) saved[code] = keys[code]; });
+    return saved;
+}
+function onlineRestoreLocalKeys(saved) {
+    for (let code in saved) keys[code] = saved[code];
+}
+
 function onlineSimulateFrame(frame, replaying) {
     // Pin onlineState.frame to the frame actually being simulated. onlineDeterministicRandom
     // keys off onlineState.frame, but during a rollback replay the loop leaves it at
@@ -650,6 +665,7 @@ function onlineSimulateFrame(frame, replaying) {
     onlineState.frame = frame;
     onlineState.stateBuffer.set(frame, onlineCaptureState());
     onlineTrimRollbackBuffers(frame);
+    let savedLocalKeys = onlineSaveLocalKeys(); // preserve the real keyboard across the sim
     onlineApplyFrameInputs(frame);
     let oldSuppress = suppressRollbackEffects;
     let oldRandom = Math.random;
@@ -661,6 +677,7 @@ function onlineSimulateFrame(frame, replaying) {
     } finally {
         Math.random = oldRandom;
         onlineState.frame = oldFrame;
+        onlineRestoreLocalKeys(savedLocalKeys); // restore so held keys aren't overwritten
     }
     suppressRollbackEffects = oldSuppress;
 }
