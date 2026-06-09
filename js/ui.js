@@ -824,7 +824,8 @@ function startLadderBattle(index) {
     // start clean: no lingering ult slow-mo / zoom from the previous fight
     ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
     camNow.x = WIDTH / 2; camNow.y = HEIGHT / 2; camNow.zoom = 1;
-    selectedStage = ['dojo', 'moonBridge', 'platform', 'pStreet', 'bloodBall'][Math.floor(Math.random() * 5)];
+    let ladderStages = Object.keys(STAGES);
+    selectedStage = ladderStages[Math.floor(Math.random() * ladderStages.length)] || 'dojo';
     initStageActors();
     trainingMode = false; infiniteMeter = false;
     document.getElementById('training-panel').classList.add('hidden');

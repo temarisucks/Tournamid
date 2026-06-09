@@ -90,7 +90,9 @@ const music = {
         dojo: makeMusic('audio/music/Tournamid - Basic Arena.wav'),
         moonBridge: makeMusic('audio/music/Tournamid - Moon Bridge.wav'),
         bloodBall: makeMusic('audio/music/Tournamid - Blood Ball.wav'),
-        pStreet: makeMusic('audio/music/Tournamid - P Street.wav')
+        pStreet: makeMusic('audio/music/Tournamid - P Street.wav'),
+        livingGraveyard: makeMusic('audio/music/Tournamid - Living Graveyard.wav'),
+        darkCastle: makeMusic('audio/music/Tournamid - Dark Castle.wav')
     },
     fallbackStages: ['dojo', 'moonBridge', 'bloodBall', 'pStreet'],
     fallbackPick: null,
@@ -266,7 +268,9 @@ const STAGES = {
     moonBridge: { name: 'Moon Bridge' },
     platform: { name: 'Sky Platform' },
     pStreet: { name: 'P Street' },
-    bloodBall: { name: 'Blood Ball' }
+    bloodBall: { name: 'Blood Ball' },
+    livingGraveyard: { name: 'Living Graveyard' },
+    darkCastle: { name: "Dark King's Castle" }
 };
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)

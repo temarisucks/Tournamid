@@ -1033,7 +1033,7 @@ class Fighter {
                 if (u.t > 1.7) {
                     u.phase = 'smash'; u.t = 0;
                     // crash them down into a DIFFERENT stage
-                    let stages = ['dojo', 'moonBridge', 'platform', 'pStreet', 'bloodBall'].filter(s => s !== selectedStage);
+                    let stages = Object.keys(STAGES).filter(s => s !== selectedStage);
                     selectedStage = stages[Math.floor(Math.random() * stages.length)] || 'dojo';
                     if (typeof initStageActors === 'function') initStageActors();
                     if (typeof music !== 'undefined' && music.resetFightPick) { music.resetFightPick(); music.play('fight'); }
@@ -3427,6 +3427,17 @@ class Fighter {
             }
         }
 
+        if (this.stageSeat && this.charType === 'DARK_RULER') {
+            let breathe = Math.sin(t * 1.4) * 0.025;
+            headY = -80 + Math.sin(t * 1.8) * 1.2;
+            crouchDrop = 15;
+            torsoLean = -0.03 + breathe;
+            leftArmAngle = 1.1; leftArmBend = 0.3;       // hand resting on throne arm
+            rightArmAngle = 2.05; rightArmBend = -0.55;  // forearm draped down to the planted sword
+            leftLegAngle = -1.72; rightLegAngle = 1.72;  // legs spread wide, seated on the throne
+            leftLegBend = 0.28; rightLegBend = 0.28;
+        }
+
         // --- ARM CARRIAGE & SWING (natural fighter's guard) ---
         // Like the legs, the hand position is set by the angle and the elbow is
         // bowed by the bend. Hands ride up and forward with the elbows hanging
@@ -3434,7 +3445,7 @@ class Fighter {
         // read as a ready guard instead of a T-pose. The Mage (casting) and
         // Zombie (reaching) keep their own characterful arm poses.
         const meleeGuard = this.charType === 'BRAWLER' || this.charType === 'SWORDSMAN' || this.charType === 'RANGER' || this.charType === 'DARK_RULER' || this.charType === 'BEAST_TAMER';
-        if (meleeGuard && (this.state === 'IDLE' || this.state === 'WALK')) {
+        if (meleeGuard && !this.stageSeat && (this.state === 'IDLE' || this.state === 'WALK')) {
             // Each fighter carries their arms differently. Hands ride up/forward
             // with elbows bowing below (consistent direction), but the height,
             // symmetry and rhythm are unique per character.
@@ -3832,7 +3843,11 @@ class Fighter {
             }
             ctx.restore();
         } else if (this.charType === 'DARK_RULER') {
-            drawBigSword(rHandX, rHandY, rForeAng);
+            if (this.stageSeat) {
+                drawBigSword(rHandX + 9, rHandY + 54, -Math.PI / 2);
+            } else {
+                drawBigSword(rHandX, rHandY, rForeAng);
+            }
         } else if (this.charType === 'SWORDSMAN') {
             drawSword(rHandX, rHandY, rForeAng);
             // Rising Crescent: trace the vertical half-circle the blade sweeps

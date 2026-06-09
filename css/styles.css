@@ -149,10 +149,10 @@
         .char-card.no-icon::before { content: "?"; display: flex; align-items: center; justify-content: center; width: 90px; height: 90px; border: 2px dashed #555; color: #666; font-size: 2rem; }
         #stage-select-screen { justify-content: flex-start; padding: 36px; background: radial-gradient(circle at 50% 14%, rgba(180,180,180,0.12), rgba(0,0,0,0.94) 46%); }
         #stage-select-title { letter-spacing: 4px; text-transform: uppercase; margin-bottom: 30px; }
-        .stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; width: 100%; max-width: 900px; }
-        .stage-card { border: 1px solid #444; background: #070707; color: #fff; font-family: inherit; cursor: pointer; padding: 10px; transition: 0.2s; text-transform: uppercase; letter-spacing: 2px; }
+        .stage-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; max-width: 960px; }
+        .stage-card { border: 1px solid #444; background: #070707; color: #fff; font-family: inherit; cursor: pointer; padding: 8px; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; font-size: 0.82rem; }
         .stage-card:hover, .stage-card.selected { border-color: #fff; transform: translateY(-4px); box-shadow: 0 0 22px rgba(255,255,255,0.12); }
-        .stage-thumb { width: 100%; height: auto; border: 1px solid #222; margin-bottom: 10px; background: #000; }
+        .stage-thumb { width: 100%; height: auto; border: 1px solid #222; margin-bottom: 7px; background: #000; }
         .random-stage-thumb { display: flex; align-items: center; justify-content: center; aspect-ratio: 2 / 1; font-size: 3rem; font-weight: bold; color: #888; background: repeating-linear-gradient(45deg, #0a0a0a, #0a0a0a 10px, #141414 10px, #141414 20px); }
         .random-stage-card:hover .random-stage-thumb { color: #fff; }
         

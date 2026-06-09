@@ -665,6 +665,80 @@ function updateGameplay(dt) {
     Object.assign(previousKeys, keys);
 }
 
+function isDarkRulerInFight() {
+    let pool = [];
+    if (Array.isArray(players)) pool = pool.concat(players);
+    if (teamBattle && Array.isArray(teams)) teams.forEach(team => { if (Array.isArray(team)) pool = pool.concat(team); });
+    return pool.some(p => p && p.charType === 'DARK_RULER');
+}
+
+function drawGhostShape(c, x, y, s, phase) {
+    c.save();
+    c.translate(x, y + Math.sin(phase) * 5 * s);
+    c.globalAlpha = 0.28 + Math.sin(phase * 1.7) * 0.08;
+    c.strokeStyle = '#eee';
+    c.fillStyle = 'rgba(255,255,255,0.08)';
+    c.lineWidth = Math.max(1.5, 2.5 * s);
+    c.shadowBlur = 14 * s;
+    c.shadowColor = '#fff';
+    c.beginPath();
+    c.arc(0, -16 * s, 14 * s, Math.PI, 0);
+    c.lineTo(14 * s, 18 * s);
+    c.quadraticCurveTo(7 * s, 10 * s, 0, 18 * s);
+    c.quadraticCurveTo(-7 * s, 10 * s, -14 * s, 18 * s);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#050505';
+    c.shadowBlur = 0;
+    c.beginPath(); c.arc(-5 * s, -16 * s, 2 * s, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(5 * s, -16 * s, 2 * s, 0, Math.PI * 2); c.fill();
+    c.restore();
+}
+
+function drawStabbedWeapon(c, x, y, s, kind, lean = 0) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(lean);
+    c.strokeStyle = '#bbb';
+    c.fillStyle = '#111';
+    c.lineWidth = Math.max(2, 3 * s);
+    c.shadowBlur = 6 * s;
+    c.shadowColor = '#777';
+    if (kind === 'axe') {
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -42 * s); c.stroke();
+        c.beginPath(); c.moveTo(0, -42 * s); c.quadraticCurveTo(18 * s, -38 * s, 13 * s, -20 * s); c.quadraticCurveTo(4 * s, -27 * s, 0, -30 * s); c.fill(); c.stroke();
+    } else if (kind === 'spear') {
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -58 * s); c.stroke();
+        c.beginPath(); c.moveTo(0, -70 * s); c.lineTo(7 * s, -55 * s); c.lineTo(0, -48 * s); c.lineTo(-7 * s, -55 * s); c.closePath(); c.fill(); c.stroke();
+    } else {
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -62 * s); c.stroke();
+        c.beginPath(); c.moveTo(-13 * s, -44 * s); c.lineTo(13 * s, -44 * s); c.stroke();
+        c.beginPath(); c.moveTo(0, -76 * s); c.lineTo(7 * s, -62 * s); c.lineTo(0, -48 * s); c.lineTo(-7 * s, -62 * s); c.closePath(); c.fill(); c.stroke();
+    }
+    c.restore();
+}
+
+function drawThroneDarkRuler(c, x, y, scale) {
+    let ruler = new Fighter('THRONE_DARK_RULER', 0, 'DARK_RULER', true, 1);
+    ruler.x = 0;
+    ruler.y = 0;
+    ruler.dir = 1;
+    ruler.state = 'IDLE';
+    ruler.animTimer = performance.now() / 1000;
+    ruler.stageSeat = true;
+    ruler.pose = {
+        la: 1.28, ra: 2.42, lab: 0.25, rab: -0.2,
+        ll: -1.18, rl: 1.18, llb: 0.9, rlb: 0.9,
+        hy: -76, tl: -0.03, cd: 11
+    };
+    c.save();
+    c.translate(x, y);
+    c.scale(scale, scale);
+    ruler.draw(c);
+    c.restore();
+}
+
 function drawStage(targetCtx, stageId, width, height, groundY) {
     targetCtx.fillStyle = '#050505';
     targetCtx.fillRect(0, 0, width, height);
@@ -756,6 +830,196 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         // main island (deep) then the floating platforms
         slab(lay.main.left, lay.main.right, lay.main.top, Math.max(34, height * 0.13), '#e8e8e8');
         lay.platforms.forEach(p => slab(p.left, p.right, p.top, Math.max(14, height * 0.05), '#9ad8ff'));
+    } else if (stageId === 'livingGraveyard') {
+        let t = performance.now() / 1000;
+        let sky = targetCtx.createRadialGradient(width * 0.52, height * 0.16, 10, width * 0.52, height * 0.28, height * 0.9);
+        sky.addColorStop(0, '#303030');
+        sky.addColorStop(0.34, '#101010');
+        sky.addColorStop(1, '#030303');
+        targetCtx.fillStyle = sky;
+        targetCtx.fillRect(0, 0, width, height);
+
+        // huge moon and its clean white wash across the arena
+        targetCtx.save();
+        targetCtx.shadowBlur = 58;
+        targetCtx.shadowColor = '#fff';
+        targetCtx.fillStyle = '#e5e5e5';
+        targetCtx.beginPath();
+        targetCtx.arc(width * 0.52, height * 0.18, height * 0.17, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.shadowBlur = 0;
+        targetCtx.fillStyle = 'rgba(5,5,5,0.55)';
+        targetCtx.beginPath();
+        targetCtx.arc(width * 0.57, height * 0.14, height * 0.145, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.restore();
+        let beam = targetCtx.createLinearGradient(0, height * 0.25, 0, groundY);
+        beam.addColorStop(0, 'rgba(255,255,255,0.16)');
+        beam.addColorStop(1, 'rgba(255,255,255,0.03)');
+        targetCtx.fillStyle = beam;
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.42, height * 0.26);
+        targetCtx.lineTo(width * 0.62, height * 0.26);
+        targetCtx.lineTo(width * 0.78, groundY);
+        targetCtx.lineTo(width * 0.18, groundY);
+        targetCtx.closePath();
+        targetCtx.fill();
+
+        // fog bands drifting just above the graves
+        for (let i = 0; i < 5; i++) {
+            targetCtx.fillStyle = `rgba(255,255,255,${0.035 + i * 0.008})`;
+            let y = groundY - height * (0.22 - i * 0.035);
+            let off = (t * (18 + i * 7) + i * 90) % (width + 220) - 110;
+            targetCtx.beginPath();
+            targetCtx.ellipse(off, y, width * 0.22, height * 0.025, 0, 0, Math.PI * 2);
+            targetCtx.ellipse(off + width * 0.55, y + 7, width * 0.26, height * 0.022, 0, 0, Math.PI * 2);
+            targetCtx.fill();
+        }
+
+        // crooked grave markers and iron fence silhouettes
+        targetCtx.strokeStyle = '#242424';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY - height * 0.20); targetCtx.lineTo(width, groundY - height * 0.20); targetCtx.stroke();
+        for (let x = -20; x < width + 30; x += width * 0.065) {
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, groundY - height * 0.20);
+            targetCtx.lineTo(x, groundY - height * 0.30);
+            targetCtx.stroke();
+        }
+        for (let i = 0; i < 16; i++) {
+            let x = width * ((i * 0.073 + 0.05) % 1);
+            let y = groundY - height * (0.04 + (i % 3) * 0.035);
+            let w = width * (0.025 + (i % 2) * 0.012);
+            let h = height * (0.07 + (i % 4) * 0.012);
+            targetCtx.save();
+            targetCtx.translate(x, y);
+            targetCtx.rotate(((i % 5) - 2) * 0.055);
+            targetCtx.fillStyle = i % 4 === 0 ? '#1d1d1d' : '#141414';
+            targetCtx.strokeStyle = '#4a4a4a';
+            targetCtx.lineWidth = 1.5;
+            targetCtx.beginPath();
+            targetCtx.moveTo(-w / 2, 0);
+            targetCtx.lineTo(-w / 2, -h * 0.68);
+            targetCtx.quadraticCurveTo(0, -h, w / 2, -h * 0.68);
+            targetCtx.lineTo(w / 2, 0);
+            targetCtx.closePath();
+            targetCtx.fill(); targetCtx.stroke();
+            if (i % 3 === 0) {
+                targetCtx.beginPath(); targetCtx.moveTo(0, -h * 0.72); targetCtx.lineTo(0, -h * 0.38); targetCtx.moveTo(-w * 0.22, -h * 0.55); targetCtx.lineTo(w * 0.22, -h * 0.55); targetCtx.stroke();
+            }
+            targetCtx.restore();
+        }
+        // animated ghosts in the background
+        for (let i = 0; i < 6; i++) {
+            let x = ((t * (22 + i * 6) + i * width * 0.18) % (width + 120)) - 60;
+            let y = height * (0.30 + (i % 3) * 0.09) + Math.sin(t * 0.7 + i) * height * 0.035;
+            drawGhostShape(targetCtx, x, y, height / 520 * (0.75 + (i % 2) * 0.35), t * 1.5 + i);
+        }
+        targetCtx.fillStyle = '#090909';
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        targetCtx.strokeStyle = '#777'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
+    } else if (stageId === 'darkCastle') {
+        let t = performance.now() / 1000;
+        let flash = Math.max(0, Math.sin(t * 1.7 + 1.5));
+        flash = flash > 0.94 ? (flash - 0.94) / 0.06 : 0;
+        let room = targetCtx.createLinearGradient(0, 0, 0, height);
+        room.addColorStop(0, flash > 0 ? '#2b2b2b' : '#121212');
+        room.addColorStop(0.5, '#070707');
+        room.addColorStop(1, '#020202');
+        targetCtx.fillStyle = room;
+        targetCtx.fillRect(0, 0, width, height);
+
+        // tall castle windows with rain and occasional lightning outside
+        let windowXs = [0.16, 0.34, 0.66, 0.84];
+        for (let i = 0; i < windowXs.length; i++) {
+            let x = width * windowXs[i], ww = width * 0.105, wy = height * 0.08, wh = height * 0.42;
+            targetCtx.fillStyle = flash > 0 ? `rgba(220,220,220,${0.35 + flash * 0.5})` : '#0a0a0a';
+            targetCtx.strokeStyle = '#454545';
+            targetCtx.lineWidth = 3;
+            targetCtx.beginPath();
+            targetCtx.moveTo(x - ww / 2, wy + wh);
+            targetCtx.lineTo(x - ww / 2, wy + ww * 0.5);
+            targetCtx.quadraticCurveTo(x, wy - ww * 0.25, x + ww / 2, wy + ww * 0.5);
+            targetCtx.lineTo(x + ww / 2, wy + wh);
+            targetCtx.closePath();
+            targetCtx.fill(); targetCtx.stroke();
+            targetCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+            targetCtx.lineWidth = 1;
+            for (let r = 0; r < 9; r++) {
+                let rx = x - ww * 0.38 + ((r * 17 + t * 120) % (ww * 0.76));
+                targetCtx.beginPath(); targetCtx.moveTo(rx, wy + 12); targetCtx.lineTo(rx - ww * 0.16, wy + wh - 10); targetCtx.stroke();
+            }
+            targetCtx.strokeStyle = '#333';
+            targetCtx.beginPath(); targetCtx.moveTo(x, wy + 6); targetCtx.lineTo(x, wy + wh); targetCtx.moveTo(x - ww / 2, wy + wh * 0.55); targetCtx.lineTo(x + ww / 2, wy + wh * 0.55); targetCtx.stroke();
+        }
+        if (flash > 0) {
+            targetCtx.save();
+            targetCtx.globalAlpha = flash;
+            targetCtx.strokeStyle = '#fff';
+            targetCtx.shadowBlur = 18;
+            targetCtx.shadowColor = '#fff';
+            targetCtx.lineWidth = 3;
+            let bx = width * 0.78;
+            targetCtx.beginPath();
+            targetCtx.moveTo(bx, 0);
+            targetCtx.lineTo(bx - width * 0.04, height * 0.13);
+            targetCtx.lineTo(bx + width * 0.015, height * 0.22);
+            targetCtx.lineTo(bx - width * 0.055, height * 0.36);
+            targetCtx.stroke();
+            targetCtx.restore();
+        }
+
+        // distant throne dais, stone floor, and the central throne
+        targetCtx.fillStyle = '#101010';
+        targetCtx.fillRect(0, groundY - height * 0.12, width, height * 0.12);
+        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 1.5;
+        for (let i = 0; i < 8; i++) {
+            let y = groundY - height * 0.12 + i * height * 0.024;
+            targetCtx.beginPath(); targetCtx.moveTo(0, y); targetCtx.lineTo(width, y); targetCtx.stroke();
+        }
+        targetCtx.fillStyle = '#0a0a0a';
+        targetCtx.fillRect(width * 0.34, groundY - height * 0.15, width * 0.32, height * 0.065);
+        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 2;
+        targetCtx.strokeRect(width * 0.34, groundY - height * 0.15, width * 0.32, height * 0.065);
+
+        let tx = width * 0.5, ty = groundY - height * 0.15;
+        targetCtx.save();
+        targetCtx.translate(tx, ty);
+        targetCtx.fillStyle = '#080808';
+        targetCtx.strokeStyle = '#686868';
+        targetCtx.lineWidth = 2.3;
+        targetCtx.beginPath();
+        targetCtx.moveTo(-width * 0.058, 0);
+        targetCtx.lineTo(-width * 0.05, -height * 0.21);
+        targetCtx.lineTo(-width * 0.027, -height * 0.17);
+        targetCtx.lineTo(0, -height * 0.26);
+        targetCtx.lineTo(width * 0.027, -height * 0.17);
+        targetCtx.lineTo(width * 0.05, -height * 0.21);
+        targetCtx.lineTo(width * 0.058, 0);
+        targetCtx.closePath();
+        targetCtx.fill(); targetCtx.stroke();
+        targetCtx.fillStyle = '#161616';
+        targetCtx.fillRect(-width * 0.065, -height * 0.012, width * 0.13, height * 0.045);
+        targetCtx.strokeRect(-width * 0.065, -height * 0.012, width * 0.13, height * 0.045);
+        targetCtx.restore();
+
+        let occupied = targetCtx !== ctx ? true : !isDarkRulerInFight();
+        if (occupied) {
+            drawThroneDarkRuler(targetCtx, tx, ty + height * 0.018, height / 740);
+            drawStabbedWeapon(targetCtx, tx + width * 0.065, ty + height * 0.035, height / 650, 'sword', -0.04);
+        }
+
+        // stabbed weapons littering the throne room floor
+        let weapons = [
+            [0.13, 'spear', -0.18], [0.22, 'sword', 0.12], [0.32, 'axe', -0.1],
+            [0.68, 'sword', -0.12], [0.78, 'spear', 0.16], [0.89, 'axe', 0.09]
+        ];
+        weapons.forEach((w, i) => drawStabbedWeapon(targetCtx, width * w[0], groundY - height * (0.01 + (i % 2) * 0.015), height / 520, w[1], w[2]));
+        targetCtx.fillStyle = '#070707';
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        targetCtx.strokeStyle = '#777'; targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
     } else if (stageId === 'pStreet') {
         // ---- P STREET: greyscale downtown at night. The sidewalk recedes into a back
         // road with traffic, so the spectators stand on real ground, not mid-air. ----
