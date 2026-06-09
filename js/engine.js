@@ -163,6 +163,9 @@ function checkCollisions() {
                         p.beastMarkedTimer = 9999;
                         spawnParticles(p.x, p.y - 70, 12, '#ff0033');
                     }
+                    if (proj.subtype === 'mistChain' && landed && p.startYank) {
+                        p.startYank(proj.owner); // reel the foe all the way to the Phantom
+                    }
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby
                         let bx = proj.x + proj.w/2, by = proj.y + proj.h/2;
@@ -1048,7 +1051,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];
@@ -1201,6 +1204,7 @@ function draw() {
 
     // Entities
     players.forEach(p => p.draw(ctx));
+    drawYankChains(ctx); // Grave Drag chains, world space, on top of the fighters
     projectiles.forEach(p => p.draw(ctx));
     hitboxes.forEach(h => h.draw(ctx));
     particles.forEach(p => p.draw(ctx));
@@ -1209,9 +1213,115 @@ function draw() {
 
     ctx.restore();
 
+    drawSoulTrain(ctx); // Phantom ult: border-shatter + void-drag full-screen cinematic
     drawUltBanner(ctx);
     drawRoundAnnounce(ctx);
     drawIntroText(ctx);
+}
+
+// Grave Drag: a spectral chain from the Phantom's hand to the foe being reeled in.
+function drawYankChains(c) {
+    for (let p of players) {
+        if (!p || !(p.yankTimer > 0) || !p.yankSource) continue;
+        let src = p.yankSource;
+        let x1 = src.x + src.dir * 18, y1 = src.y - 56; // the Phantom's outstretched hand
+        let x2 = p.x - src.dir * 14, y2 = p.y - 50;      // the caught foe
+        c.save();
+        c.strokeStyle = '#dfe4f2'; c.lineWidth = 3; c.shadowBlur = 10; c.shadowColor = '#aab4d0'; c.lineCap = 'round';
+        c.beginPath();
+        let segs = 14, ph = performance.now() / 60;
+        for (let i = 0; i <= segs; i++) {
+            let u = i / segs, x = x1 + (x2 - x1) * u;
+            let y = y1 + (y2 - y1) * u + Math.sin(u * 9 + ph) * 5 * Math.sin(u * Math.PI);
+            i ? c.lineTo(x, y) : c.moveTo(x, y);
+        }
+        c.stroke();
+        c.lineWidth = 2.5;
+        c.beginPath();
+        c.moveTo(x2, y2 - 6); c.lineTo(x2 - src.dir * 7, y2);
+        c.moveTo(x2, y2); c.lineTo(x2 - src.dir * 8, y2);
+        c.moveTo(x2, y2 + 6); c.lineTo(x2 - src.dir * 7, y2);
+        c.stroke();
+        c.restore();
+    }
+}
+
+// The Phantom's SOUL TRAIN: shatter the play-box like glass, drag the soul through
+// space, then smash them into a new stage. Drawn in screen space over everything.
+function drawSoulTrain(c) {
+    let u = (ultActive && ultActive.ult && ultActive.ult.kind === 'soultrain') ? ultActive.ult : null;
+    if (!u) return;
+    let phase = u.phase, t = u.t || 0;
+
+    if (phase === 'shatter') {
+        let p = Math.min(1, t / 0.9);
+        let ox = u.wallDir > 0 ? WIDTH - 26 : 26, oy = HEIGHT * 0.42;
+        c.save();
+        c.fillStyle = `rgba(0,0,0,${0.32 * p})`; c.fillRect(0, 0, WIDTH, HEIGHT);
+        c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = 2; c.lineCap = 'round';
+        for (let i = 0; i < 18; i++) {
+            let ang = (i / 18) * Math.PI * 2 + i * 0.31;
+            let len = (130 + (i % 4) * 95) * p;
+            c.beginPath(); c.moveTo(ox, oy);
+            for (let s = 1; s <= 4; s++) {
+                let r = len * (s / 4);
+                c.lineTo(ox + Math.cos(ang) * r + Math.sin(s * 9 + i) * 13, oy + Math.sin(ang) * r + Math.cos(s * 7 + i) * 13);
+            }
+            c.stroke();
+        }
+        c.strokeStyle = 'rgba(255,255,255,0.45)';
+        for (let r = 1; r <= 3; r++) { c.beginPath(); c.arc(ox, oy, 42 * r * p, 0, Math.PI * 2); c.stroke(); }
+        // a few falling shards
+        c.fillStyle = 'rgba(230,235,245,0.85)';
+        for (let i = 0; i < 10; i++) {
+            let sx = ox + Math.cos(i) * 90 * p, sy = oy + Math.sin(i * 2) * 70 * p + p * p * 120;
+            c.beginPath(); c.moveTo(sx, sy); c.lineTo(sx + 8, sy + 4); c.lineTo(sx + 3, sy + 14); c.closePath(); c.fill();
+        }
+        c.restore();
+        return;
+    }
+
+    // void drag (and the very start of the smash, fading back out into the new stage)
+    let fade = phase === 'void' ? Math.min(1, t / 0.28) : phase === 'smash' ? Math.max(0, 1 - t / 0.3) : 0;
+    if (fade <= 0) return;
+    let vt = (phase === 'void') ? t : 1.7 + t; // keep the warp moving into the smash
+    c.save();
+    c.globalAlpha = fade;
+    c.fillStyle = '#000'; c.fillRect(0, 0, WIDTH, HEIGHT);
+    // warp streaks dragging past (greyscale)
+    for (let i = 0; i < 80; i++) {
+        let speed = 240 + (i % 7) * 150;
+        let y = (i * 53.7) % HEIGHT;
+        let x = WIDTH - ((vt * speed + i * 137) % (WIDTH + 240));
+        let len = 26 + (i % 5) * 44, shade = 55 + (i % 4) * 45;
+        c.strokeStyle = `rgba(${shade},${shade},${shade},0.55)`; c.lineWidth = 1 + (i % 3);
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + len, y); c.stroke();
+    }
+    let cx = WIDTH / 2, cy = HEIGHT / 2;
+    // spectral chain dragging them from the leading edge
+    c.strokeStyle = 'rgba(200,210,235,0.75)'; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(WIDTH + 10, cy - 60);
+    c.quadraticCurveTo(cx + 120, cy - 30 + Math.sin(vt * 8) * 16, cx + 12, cy - 6);
+    c.stroke();
+    // the tumbling soul — the actual opponent, spinning through the void
+    let tgt = u.target;
+    if (tgt && tgt.draw) {
+        c.save();
+        c.translate(cx + Math.sin(vt * 2) * 26, cy + Math.cos(vt * 1.7) * 18);
+        c.rotate(vt * 4.2);
+        let sx = tgt.x, sy = tgt.y, sh = tgt._hover, stb = tgt.tumbleTimer;
+        tgt.x = 0; tgt.y = 45; tgt._hover = 0; tgt.tumbleTimer = 0; // feet at +45 → mid-body on the pivot
+        tgt.draw(c);
+        tgt.x = sx; tgt.y = sy; tgt._hover = sh; tgt.tumbleTimer = stb;
+        c.restore();
+    }
+    // soul wisps trailing
+    c.fillStyle = 'rgba(180,190,215,0.5)';
+    for (let i = 0; i < 6; i++) {
+        let wx = cx + 30 + i * 36, wy = cy + Math.sin(vt * 5 + i) * 22;
+        c.beginPath(); c.arc(wx, wy, 4 - i * 0.4, 0, Math.PI * 2); c.fill();
+    }
+    c.restore();
 }
 
 function drawOverkillBackground(ctx) {

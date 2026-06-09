@@ -289,6 +289,17 @@ class Projectile {
             ctx.strokeStyle = '#9be3ff'; ctx.shadowBlur = 16; ctx.shadowColor = '#6fd0ff'; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.moveTo(-r * 2, 0); ctx.lineTo(r, 0); ctx.stroke();           // trailing line
             ctx.beginPath(); ctx.arc(r, 0, r, -2.2, 2.2); ctx.stroke();                        // grasping claw
+        } else if (this.subtype === 'mistChain') {
+            // Grave Drag: a reaching spectral chain ending in a clawed hand
+            ctx.translate(cx, cy); ctx.rotate(Math.atan2(this.vy, this.vx));
+            ctx.strokeStyle = '#dfe4f2'; ctx.shadowBlur = 12; ctx.shadowColor = '#aab4d0'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i <= 8; i++) { let u = i / 8; let x = -r * 3 + (r * 3.7) * u; let y = Math.sin(now * 18 + u * 8) * 4 * (1 - u); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+            ctx.stroke();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(r, -6); ctx.lineTo(r + 7, 0); ctx.moveTo(r, 0); ctx.lineTo(r + 8, 0); ctx.moveTo(r, 6); ctx.lineTo(r + 7, 0);
+            ctx.stroke();
         } else if (this.subtype === 'dark') {
             // Dark Bolt: black void orb wreathed in dark wisps with a red core
             ctx.translate(cx, cy);
@@ -360,6 +371,10 @@ class Fighter {
         this.aiBlockTimer = 0;   // how long the current committed block holds
         this.aiLevel = 0.5;      // 0..1 difficulty scalar; Ladder raises this per rung
         this.switchCooldown = 0; // 2v2 tag cooldown
+        // Phantom — Fading Veil passive (intangible when standing still)
+        this.fadeCharge = 0; this.fadeActive = 0; this.fadeCooldown = 0; this._fadeIntangible = false;
+        this.tumbleTimer = 0; this._tumbleAngle = 0; this._tumbleDir = 1; // post-ult floor tumble
+        this.yankTimer = 0; this.yankSource = null; this.yankFromX = 0;   // Grave Drag reel-in
 
         // Combat state
         this.attacks = stats.attacks;
@@ -470,6 +485,9 @@ class Fighter {
         if (this.beastRavenDiveTimer > 0) this.beastRavenDiveTimer -= dt;
         if (this.beastSnakeSwingTimer > 0) this.beastSnakeSwingTimer -= dt;
         if (this.regrabTimer > 0) this.regrabTimer -= dt;
+        if (this.charType === 'PHANTOM') this.updateFadingVeil(dt);
+        if (this.tumbleTimer > 0) { this.tumbleTimer -= dt; this._tumbleAngle += Math.abs(this.vx) * dt * 0.04 * (this._tumbleDir || 1); }
+        if (this.yankTimer > 0) this.updateYank(dt);
 
         // Guard slowly regenerates while not actively blocking
         if (this.state !== 'BLOCK' && this.blockHealth < this.blockMax) {
@@ -762,7 +780,7 @@ class Fighter {
     }
 
     startUltimate() {
-        let kind = { BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb', DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm' }[this.charType];
+        let kind = { BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb', DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm', PHANTOM: 'soultrain' }[this.charType];
         if (!kind) return; // Zombie has no ultimate
         this.state = 'ULT';
         this.stateTimer = 0;
@@ -772,6 +790,7 @@ class Fighter {
         ultBanner = { owner: this, line: ULT_LINES[this.charType] || '', t: 0, dur: 1.4 };
         timeScale = 0.18; // dramatic hush while the line drops
         sfx.playDeath();
+        if (this.charType === 'PHANTOM') playAudio(attackSfx.soulTrain);
         playUltVoice(this.charType);
         onlineSendUltSync(this, 'start');
     }
@@ -799,6 +818,7 @@ class Fighter {
         else if (this.ult.kind === 'bomb') this.ult.phase = 'blast';
         else if (this.ult.kind === 'mindbreak') this.ult.phase = 'vice';
         else if (this.ult.kind === 'beaststorm') this.ult.phase = 'alphaBind';
+        else if (this.ult.kind === 'soultrain') this.ult.phase = 'seize';
         if (this.ult.kind === 'orb') playAudio(attackSfx.magic);
         else sfx.playHit();
         onlineSendUltSync(this, 'connect');
@@ -828,6 +848,11 @@ class Fighter {
             let hb = new Hitbox(this.x + (this.dir > 0 ? 0 : -110), this.y - 92, 110, 92, 4, { x: 120 * this.dir, y: -80 }, 0.25, this, 0.45);
             hb.ultActivator = this; hb.unblockableUlt = true; hitboxes.push(hb);
             playAudio(attackSfx.magic);
+        } else if (u.kind === 'soultrain') {
+            // Long unblockable claw out front — the Phantom rushes across with it extended.
+            let hb = new Hitbox(this.x + (this.dir > 0 ? 10 : -120), this.y - 96, 120, 96, 4, { x: 0, y: 0 }, 0.2, this, 0.6);
+            hb.ultActivator = this; hb.unblockableUlt = true; hitboxes.push(hb);
+            playAudio(attackSfx.magic);
         }
     }
 
@@ -838,7 +863,7 @@ class Fighter {
         // u.target is re-linked by index. If that link fails (trimmed projectile,
         // length mismatch) the payoff phases would deref a null target and crash.
         // Any connected payoff phase without a live target simply ends the ult.
-        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice', 'alphaBind', 'alphaBrute', 'alphaRaven', 'alphaWhip'];
+        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice', 'alphaBind', 'alphaBrute', 'alphaRaven', 'alphaWhip', 'seize', 'shatter', 'void', 'smash'];
         if (PAYOFF_PHASES.includes(u.phase) && (!u.target || u.target.state === 'DEAD')) {
             this.endUlt();
             return;
@@ -859,6 +884,7 @@ class Fighter {
                 else if (u.kind === 'darkslash') { u.phase = 'swing'; }
                 else if (u.kind === 'mindbreak') { u.phase = 'snare'; this.spawnUltActivation(); }
                 else if (u.kind === 'beaststorm') { u.phase = 'snare'; this.spawnUltActivation(); }
+                else if (u.kind === 'soultrain') { u.phase = 'rush'; }
             }
             return;
         }
@@ -934,6 +960,100 @@ class Fighter {
                     sfx.playDeath();
                 }
                 if (u.t > 0.48) this.endUlt();
+            }
+            return;
+        }
+
+        // ---- PHANTOM Soul Train ----
+        if (u.kind === 'soultrain') {
+            let tg = u.target;
+            if (u.phase === 'rush') {
+                // arm extended, streak across the screen looking for a soul to seize
+                timeScale = 0.9;
+                this.x += 1550 * this.dir * dt;
+                this.x = Math.max(38, Math.min(WIDTH - 38, this.x));
+                this.y = GROUND_Y;
+                spawnParticles(this.x - this.dir * 30, this.y - 50, 2, '#9aa6c8');
+                let foe = this.getClosestEnemy();
+                if (foe && foe.state !== 'DEAD' && Math.abs(foe.x - this.x) < 74) {
+                    this.onUltConnect(foe);
+                } else if (u.t > 0.95 || (this.dir > 0 && this.x >= WIDTH - 39) || (this.dir < 0 && this.x <= 39)) {
+                    this.endUlt(); // whiffed clean across the arena
+                }
+                return;
+            }
+            if (!tg) { this.endUlt(); return; }
+            if (u.phase === 'seize') {
+                // hauled up by the throat — he keeps facing the way he rushed (no turn-around)
+                timeScale = 0.42;
+                tg.state = 'HITSTUN'; tg.stateTimer = 4; tg.vx = 0; tg.vy = 0;
+                tg.x = this.x + this.dir * 42; tg.y = GROUND_Y; this.y = GROUND_Y;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 72, zoom: 1.95 };
+                if (!u.seizeHit) { u.seizeHit = true; tg.takeDamage(5, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true }); spawnParticles(tg.x, tg.y - 60, 14, '#cfd8ff'); }
+                if (u.t > 0.6) {
+                    u.phase = 'shatter'; u.t = 0;
+                    u.wallDir = this.dir; // keep driving them forward into the wall ahead
+                    u.shatterX = u.wallDir > 0 ? WIDTH - 8 : 8;
+                    u.shatterY = GROUND_Y - 96;
+                }
+                return;
+            }
+            if (u.phase === 'shatter') {
+                // ram them through the border — it cracks like glass (drawn in engine)
+                timeScale = 0.5;
+                let p = Math.min(1, u.t / 0.45);
+                tg.state = 'HITSTUN'; tg.stateTimer = 4; tg.vx = 0; tg.vy = 0;
+                tg.x = (this.x + this.dir * 42) + (u.shatterX - (this.x + this.dir * 42)) * p;
+                tg.y = u.shatterY;
+                this.x = tg.x - u.wallDir * 46; this.dir = u.wallDir; this.y = GROUND_Y;
+                ultCamera = { fx: u.shatterX - u.wallDir * 64, fy: u.shatterY, zoom: 2.05 };
+                if (!u.cracked && u.t > 0.42) { u.cracked = true; sfx.playDeath(); spawnParticles(u.shatterX, u.shatterY, 34, '#fff'); }
+                if (u.t > 1.0) { u.phase = 'void'; u.t = 0; u.voidHits = 0; }
+                return;
+            }
+            if (u.phase === 'void') {
+                // dragged through space — the full-screen soul-train overlay takes over
+                timeScale = 0.9;
+                tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0;
+                ultCamera = { fx: WIDTH / 2, fy: HEIGHT / 2, zoom: 1 };
+                if (u.voidHits < 4 && u.t > 0.35 + u.voidHits * 0.32) {
+                    u.voidHits++;
+                    tg.takeDamage(4, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true });
+                    playAudio(attackSfx.magic);
+                }
+                if (u.t > 1.7) {
+                    u.phase = 'smash'; u.t = 0;
+                    // crash them down into a DIFFERENT stage
+                    let stages = ['dojo', 'moonBridge', 'platform', 'pStreet', 'bloodBall'].filter(s => s !== selectedStage);
+                    selectedStage = stages[Math.floor(Math.random() * stages.length)] || 'dojo';
+                    if (typeof initStageActors === 'function') initStageActors();
+                    if (typeof music !== 'undefined' && music.resetFightPick) { music.resetFightPick(); music.play('fight'); }
+                    tg.x = WIDTH / 2; tg.y = GROUND_Y - 260; tg.vy = 0;
+                    this.x = Math.max(60, Math.min(WIDTH - 60, WIDTH / 2 + (tg.x > WIDTH / 2 ? -130 : 130))); this.y = GROUND_Y;
+                    this.dir = tg.x >= this.x ? 1 : -1;
+                }
+                return;
+            }
+            if (u.phase === 'smash') {
+                // they plummet into the new arena
+                timeScale = 0.55;
+                let p = Math.min(1, u.t / 0.32);
+                tg.state = 'HITSTUN'; tg.stateTimer = 3; tg.vx = 0;
+                tg.x = WIDTH / 2;
+                tg.y = (GROUND_Y - 260) + 260 * (p * p);
+                ultCamera = { fx: WIDTH / 2, fy: GROUND_Y - 80, zoom: 1.5 };
+                if (!u.smashed && p >= 1) {
+                    u.smashed = true;
+                    tg.y = GROUND_Y;
+                    let away = (tg.x >= this.x) ? 1 : -1;
+                    tg.takeDamage(38, { x: 520 * away, y: -220 }, 0.95, this, { isUlt: true, unblockable: true });
+                    tg.tumbleTimer = 0.85; tg._tumbleAngle = 0; tg._tumbleDir = away; // skid + roll across the floor
+                    spawnParticles(tg.x, GROUND_Y - 28, 52, '#fff');
+                    spawnParticles(tg.x, GROUND_Y - 28, 30, '#ff0033');
+                    sfx.playDeath();
+                }
+                if (u.t > 0.9) this.endUlt();
+                return;
             }
             return;
         }
@@ -1286,6 +1406,7 @@ class Fighter {
                      : this.charType === 'DARK_RULER' ? dist < 130      // grab range
                      : this.charType === 'TELEPATH' ? dist < 120        // psychic snare range
                      : this.charType === 'BEAST_TAMER' ? dist < 170
+                     : this.charType === 'PHANTOM' ? dist < 240        // soul-train rush has reach
                      : dist < 460;                                      // mage/ranger ranged
             if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
@@ -1299,6 +1420,7 @@ class Fighter {
             DARK_RULER:{ range: 64,  kite: false, jumpy: 0.06 },
             TELEPATH:  { range: 120, kite: false, jumpy: 0.30 },
             BEAST_TAMER:{ range: 150, kite: false, jumpy: 0.16 },
+            PHANTOM:   { range: 88,  kite: false, jumpy: 0.08 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -1369,6 +1491,7 @@ class Fighter {
             if (this.charType === 'SWORDSMAN' && r < 0.40) { this.startAttack('specSide'); return; }
             if (this.charType === 'RANGER' && r < 0.25) { this.startAttack('specSide'); return; }
             if (this.charType === 'BEAST_TAMER' && r < 0.35) { this.startAttack('specSide'); return; }
+            if (this.charType === 'PHANTOM' && r < 0.45) { this.startAttack('specSide'); return; } // Grave Drag yank
         }
 
         // Jump to chase an airborne target up close, or hop the gap when far
@@ -1415,6 +1538,11 @@ class Fighter {
                     else if (r < 0.60) this.startAttack('specDown');
                     else if (r < 0.74) this.startAttack('specUp');
                     else this.startPlayerAttack(r < 0.88 ? 'L' : 'H');
+                } else if (this.charType === 'PHANTOM') {
+                    if (r < 0.42) this.startPlayerAttack(r < 0.24 ? 'L' : 'H'); // mist claws
+                    else if (r < 0.62) this.startAttack('specNeutral');         // Soul Siphon drain
+                    else if (r < 0.80) this.startAttack('specDown');            // Grave Grasp root
+                    else this.startAttack('specSide');                         // Grave Drag yank
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -1485,6 +1613,7 @@ class Fighter {
         if (t === 'abyssalGrab') this.vx = 520 * this.dir;           // Dark Ruler lunging grab
         if (t === 'risingEdge') { this.vy = -560; this.vx = 90 * this.dir; }
         if (t === 'psiLift') { this.vy = -560; this.vx = 60 * this.dir; }                 // Telepath rise
+        if (t === 'wraithRise') { this.vy = -600; this.vx = 70 * this.dir; this.invulnTimer = Math.max(this.invulnTimer, 0.14); } // Phantom rise (anti-air grab)
         if (t === 'teleCrash') { this._diving = this.y < GROUND_Y; if (this._diving) { this.vy = 1050; this.vx = 0; } } // air dive-bomb
         if (t === 'uppercut') { this.vy = -700; this.vx = 200 * this.dir; }
         if (t === 'risingSlash') { this.vy = -560; this.vx = 110 * this.dir; }
@@ -1502,6 +1631,12 @@ class Fighter {
     }
 
     playAttackSound(atk) {
+        if (this.charType === 'PHANTOM') {
+            // his special claws/grabs land with the spectral hit; light/heavy still punch
+            if (atk.type === 'soulSiphon' || atk.type === 'graveGrasp' || atk.type === 'wraithRise' || atk.type === 'graveDrag') playAudio(attackSfx.phantomHit);
+            else playAudio(attackSfx.punch);
+            return;
+        }
         if (this.charType === 'TELEPATH') {
             playAudio(attackSfx.tele);
             return;
@@ -1800,9 +1935,13 @@ class Fighter {
         } else if (atk.type === 'beastRavenDive') {
             subtype = 'ravenDive';
             vy = 170;
+        } else if (atk.type === 'graveDrag') {
+            subtype = 'mistChain';
         }
 
-        if (this.charType === 'MAGE') {
+        if (this.charType === 'PHANTOM') {
+            playAudio(attackSfx.magic);
+        } else if (this.charType === 'MAGE') {
             if (subtype === 'fire') playAudio(attackSfx.fire);
             else if (subtype === 'frost') playAudio(attackSfx.ice);
             else if (subtype === 'spark' || subtype === 'beam') playAudio(attackSfx.lightning);
@@ -1828,6 +1967,7 @@ class Fighter {
             proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
         }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
+        if (subtype === 'mistChain') proj.unblockable = true; // Grave Drag yanks through guard
         projectiles.push(proj);
     }
 
@@ -1862,6 +2002,12 @@ class Fighter {
         // Dodge i-frames (Combat Roll / Blink) — true unblockables still connect
         if (this.invulnTimer > 0 && !opts.unblockable) {
             spawnParticles(this.x, this.y - 40, 6, '#fff');
+            return false;
+        }
+
+        // Phantom Fading Veil — faded out; attacks pass through (true unblockables still land)
+        if (this.charType === 'PHANTOM' && this._fadeIntangible && !opts.unblockable) {
+            spawnParticles(this.x, this.y - 45, 6, '#9aa6c8');
             return false;
         }
 
@@ -1932,6 +2078,12 @@ class Fighter {
         if (attacker && attacker.charType === 'DARK_RULER' && !blocked && attacker.hp > 0) {
             attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 0.2);
         }
+        // Phantom — Soul Siphon special drains the souls of whoever it claws
+        if (attacker && attacker.charType === 'PHANTOM' && attacker.currentAttack &&
+            attacker.currentAttack.type === 'soulSiphon' && !blocked && attacker.hp > 0) {
+            attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 0.6);
+            spawnParticles(this.x, this.y - 45, 8, '#cfd8ff');
+        }
         if (this.beastMarkedTimer > 0 && !blocked) {
             if (attacker && attacker.charType === 'BEAST_TAMER') amount += 3;
             this.beastMarkedTimer = 0;
@@ -1984,6 +2136,57 @@ class Fighter {
         this.vx = 820 * this.dir; // burst forward into the foe
         let col = { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', SWORDSMAN: '#cfe8ff', RANGER: '#ffd27f' }[this.charType] || '#fff';
         spawnParticles(this.x + this.dir * 18, this.y - 50, 16, col);
+    }
+
+    // Grave Drag: the chain caught us — stunned and reeled all the way to the Phantom.
+    startYank(source) {
+        if (!source || this.state === 'DEAD') return;
+        this.yankSource = source;
+        this.yankTimer = 0.3;
+        this.yankFromX = this.x;
+        this.changeState('HITSTUN');
+        this.stateTimer = 0.65; // stays stunned a beat after arriving
+        this.vx = 0; this.vy = 0;
+        spawnParticles(this.x, this.y - 50, 12, '#cfd8ff');
+    }
+    updateYank(dt) {
+        let src = this.yankSource;
+        if (!src || src.state === 'DEAD') { this.yankTimer = 0; this.yankSource = null; return; }
+        this.yankTimer -= dt;
+        let p = Math.max(0, Math.min(1, 1 - this.yankTimer / 0.3));
+        let e = p * p * (3 - 2 * p);
+        let destX = Math.max(40, Math.min(WIDTH - 40, src.x + src.dir * 52));
+        this.x = this.yankFromX + (destX - this.yankFromX) * e;
+        this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+        if (this.state !== 'HITSTUN') this.changeState('HITSTUN');
+        if (this.stateTimer < 0.2) this.stateTimer = 0.2;
+        if (this.yankTimer <= 0) this.yankSource = null;
+    }
+
+    // Phantom — Fading Veil: hold still and he fades intangible for a window; acting
+    // (or the window ending) snaps him solid and starts a cooldown.
+    updateFadingVeil(dt) {
+        if (this.fadeCooldown > 0) this.fadeCooldown -= dt;
+        let still = this.y >= GROUND_Y && Math.abs(this.vx) < 30 && this.invulnTimer <= 0 &&
+                    (this.state === 'IDLE' || this.state === 'CROUCH');
+        if (this._fadeIntangible) {
+            this.fadeActive -= dt;
+            if (!still || this.fadeActive <= 0) {
+                this._fadeIntangible = false;
+                this.fadeCooldown = 2.4;
+                this.fadeCharge = 0;
+                spawnParticles(this.x, this.y - 45, 8, '#bcc6e0');
+            }
+        } else if (still && this.fadeCooldown <= 0) {
+            this.fadeCharge += dt;
+            if (this.fadeCharge >= 0.4) {
+                this._fadeIntangible = true;
+                this.fadeActive = 1.1;
+                spawnParticles(this.x, this.y - 45, 10, '#9aa6c8');
+            }
+        } else {
+            this.fadeCharge = 0;
+        }
     }
 
     drawBeastCompanion(ctx) {
@@ -2242,16 +2445,30 @@ class Fighter {
                 this.state === 'LEDGE' || this.state === 'DEAD';
             if (!grounded) hoverTarget = 26 + Math.sin(this.animTimer * 2.4) * 3;
         }
+        if (this.charType === 'PHANTOM' && this.y >= GROUND_Y) {
+            // a gentle spectral drift; he settles when crouching / hit / hanging
+            let grounded = this.state === 'CROUCH' || this.state === 'HITSTUN' ||
+                this.state === 'BLOCKBREAK' || this.state === 'LEDGE' || this.state === 'DEAD';
+            if (!grounded) hoverTarget = 11 + Math.sin(this.animTimer * 2.0) * 3;
+        }
         this._hover = (this._hover || 0) + (hoverTarget - (this._hover || 0)) * 0.2;
         ctx.translate(this.x, this.y - this._hover);
         ctx.scale(this.dir, 1); // Flip based on direction
+        if (this.tumbleTimer > 0) { ctx.translate(0, -42); ctx.rotate(this._tumbleAngle); ctx.translate(0, 42); } // post-ult floor tumble
 
         ctx.strokeStyle = '#fff';
         if (this.state === 'HITSTUN') ctx.strokeStyle = '#f55'; // Red flash on hit
         if (this.overkillRed) ctx.strokeStyle = '#ff0033';
-        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : 4; // bigger = thicker
+        ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : (this.charType === 'PHANTOM') ? 3.4 : 4; // bigger = thicker
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+
+        // Phantom — spectral body: translucent and flickering, fainter when faded out.
+        if (this.charType === 'PHANTOM' && this.state !== 'DEAD') {
+            let flicker = 0.74 + Math.sin(this.animTimer * 13) * 0.06 + Math.sin(this.animTimer * 4.3) * 0.05;
+            ctx.globalAlpha = this._fadeIntangible ? 0.3 : flicker;
+            if (!this.overkillRed && this.state !== 'HITSTUN') ctx.strokeStyle = '#dfe4f2';
+        }
 
         if (this.beastMarkedTimer > 0) {
             let pulse = 1 + Math.sin(this.animTimer * 10) * 0.12;
@@ -2381,6 +2598,15 @@ class Fighter {
                 leftLegAngle = 0.34; rightLegAngle = -0.3;
                 leftLegBend = -0.34; rightLegBend = 0.34;
                 torsoLean = -0.04 + command * 0.02;
+            } else if (this.charType === 'PHANTOM') {
+                // Looming and weightless: hunched forward, long claws hanging open, drifting
+                let drift = Math.sin(t * 2.0), reach = Math.sin(t * 1.3 + 0.6);
+                headY += -3 + drift * 2;
+                leftArmAngle = 1.35 + reach * 0.18; leftArmBend = 0.5 + reach * 0.12;   // claws splayed low
+                rightArmAngle = -1.15 + Math.cos(t * 1.7) * 0.16; rightArmBend = -0.5;
+                leftLegAngle = 0.12 + drift * 0.05; rightLegAngle = -0.16 - drift * 0.05; // legs trail, barely planted
+                leftLegBend = 0.3; rightLegBend = -0.22;
+                torsoLean = 0.12 + drift * 0.03;
             } else if (this.charType === 'ZOMBIE') {
                 let sway = Math.sin(t * 1.9);
                 headY += 11 + sway * 3; // Slouched
@@ -2459,6 +2685,15 @@ class Fighter {
                 leftLegAngle = 0.46; rightLegAngle = -0.38;
                 leftLegBend = -0.42; rightLegBend = 0.38;
                 torsoLean = -0.08;
+            } else if (this.charType === 'PHANTOM') {
+                // rises and spreads his claws wide, soul energy pouring off him
+                let rise = Math.sin(t * 2.2);
+                headY += -14 + rise * 4;
+                leftArmAngle = 1.95 + Math.sin(t * 1.8) * 0.2; rightArmAngle = -1.95 - Math.sin(t * 1.8 + 1) * 0.2;
+                leftArmBend = 0.35; rightArmBend = -0.35;
+                leftLegAngle = 0.12 + rise * 0.05; rightLegAngle = -0.16 - rise * 0.05;
+                leftLegBend = 0.2; rightLegBend = -0.18;
+                torsoLean = Math.sin(t * 1.5) * 0.03;
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
@@ -2564,6 +2799,21 @@ class Fighter {
                 let drift = Math.sin(t * 3);
                 rightArmAngle = 2.0 + drift * 0.05; rightArmBend = -0.55; // fingers at the temple
                 leftArmAngle = 0.7 + drift * 0.08; leftArmBend = 0.4;     // off-hand trailing
+            } else if (this.charType === 'PHANTOM') {
+                // glides forward, legs trailing weightlessly, claws leading
+                let gd = Math.sin(t * 4);
+                headY += gd * 2;
+                if (isWalkingForward) {
+                    leftLegAngle = 0.22 + Math.sin(t * 3) * 0.06; rightLegAngle = 0.42 + Math.cos(t * 3) * 0.06;
+                    leftLegBend = 0.5; rightLegBend = 0.42;
+                    leftArmAngle = 1.4 + gd * 0.1; rightArmAngle = -0.9 + gd * 0.1;
+                    leftArmBend = 0.4; rightArmBend = -0.45; torsoLean = 0.16;
+                } else {
+                    leftLegAngle = -0.24 + gd * 0.06; rightLegAngle = -0.4 - gd * 0.06;
+                    leftLegBend = 0.6; rightLegBend = -0.5;
+                    leftArmAngle = 1.2; rightArmAngle = -0.7; leftArmBend = 0.3; rightArmBend = -0.4;
+                    torsoLean = -0.12;
+                }
             } else {
                 headY += Math.abs(Math.sin(t * 12)) * 5;
             }
@@ -2738,6 +2988,26 @@ class Fighter {
                 } else {
                     rightArmAngle = mix(2.4, 1.3, ex); rightArmBend = -0.2; torsoLean = 0.25;
                 }
+            } else if (atk.type === 'soulSiphon' || atk.type === 'mistClaw' || atk.type === 'scytheLash' || atk.type === 'graveDrag') {
+                // Phantom — a long spectral claw whips out forward
+                rightArmAngle = mix(2.5, 1.12, ex); rightArmBend = mix(-0.7, 0.06, ex);
+                leftArmAngle = 1.5; leftArmBend = 0.4;
+                leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.5, ex);
+                leftLegBend = 0.3; rightLegBend = 0.42; torsoLean = mix(0.02, 0.22, ex);
+                headY -= 1;
+            } else if (atk.type === 'graveGrasp') {
+                // hunches low and slams both claws down — hands erupt from the floor
+                rightArmAngle = mix(2.0, 0.45, ex); rightArmBend = -0.3;
+                leftArmAngle = mix(-2.0, -0.45, ex); leftArmBend = 0.3;
+                headY += 6;
+                leftLegAngle = -0.4; rightLegAngle = 0.4; leftLegBend = 0.7; rightLegBend = 0.7;
+                torsoLean = 0.18;
+            } else if (atk.type === 'wraithRise') {
+                // rising spectral grab — claws thrust overhead as he floats up
+                rightArmAngle = mix(1.2, 3.1, ex); rightArmBend = mix(-0.4, -0.05, ex);
+                leftArmAngle = mix(0.8, 2.7, ex); leftArmBend = -0.5;
+                leftLegAngle = -0.15; rightLegAngle = 0.18; leftLegBend = 0.3; rightLegBend = 0.35;
+                headY -= ex * 3; torsoLean = -0.06;
             } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
@@ -3014,6 +3284,24 @@ class Fighter {
                     rightArmAngle = 1.2; rightArmBend = 0.1;
                     torsoLean = 0.12; headY -= 1;
                 }
+            } else if (this.charType === 'PHANTOM') {
+                if (dec) { // claw drawn back, soul energy gathering
+                    rightArmAngle = 2.5; rightArmBend = -0.6; leftArmAngle = 1.6; leftArmBend = -0.3;
+                    torsoLean = -0.12; headY -= 2;
+                } else if (u.phase === 'rush' || u.phase === 'seize' || u.phase === 'shatter') {
+                    // stand upright and thrust ONE arm straight out to grab — held the whole time
+                    rightArmAngle = 1.5; rightArmBend = 0.0;
+                    leftArmAngle = 0.35; leftArmBend = 0.2;
+                    leftLegAngle = -0.28; rightLegAngle = 0.32; leftLegBend = 0.3; rightLegBend = 0.34;
+                    torsoLean = 0.02; headY -= 1;
+                } else if (u.phase === 'smash') { // hurling them down into the new arena
+                    let s = Math.min(1, (u.t || 0) / 0.32);
+                    rightArmAngle = 1.0 + s; rightArmBend = 0.1; leftArmAngle = 2.0 - s * 0.6; leftArmBend = -0.3;
+                    torsoLean = 0.1 + s * 0.3; headY += s * 4;
+                } else { // void — arms outstretched, dragging the soul through space
+                    rightArmAngle = 1.5 + Math.sin(t * 5) * 0.1; rightArmBend = 0.0;
+                    leftArmAngle = 1.3; leftArmBend = -0.2; torsoLean = 0.15;
+                }
             }
         } else if (this.state === 'LEDGE') {
             // Hanging from a stage lip. dir faces into the stage, so +x (local)
@@ -3247,8 +3535,26 @@ class Fighter {
         const lowerArmLen = 17;
         let leftArm = drawBentLimb(0, shoulderY, leftArmAngle, leftArmBend, upperArmLen, lowerArmLen);
 
+        // Phantom — his mist limbs stretch unnaturally: the front claw reaches far on
+        // Soul Siphon (and stays fully extended through the Soul Train grab).
+        let rUp = upperArmLen, rLow = lowerArmLen;
+        if (this.charType === 'PHANTOM') {
+            let stretch = 0;
+            let ca = this.currentAttack;
+            if (this.state === 'ATTACK' && ca) {
+                let prog = Math.max(0, Math.min(1, (this.stateTimer - ca.startup) / Math.max(0.01, ca.active + ca.recovery)));
+                let reach = Math.sin(Math.min(1, prog) * Math.PI); // 0 -> 1 -> 0
+                if (ca.type === 'soulSiphon') stretch = reach * 50;
+                else if (ca.type === 'scytheLash') stretch = reach * 20;
+                else if (ca.type === 'mistClaw') stretch = reach * 12;
+            } else if (this.state === 'ULT' && this.ult && (this.ult.phase === 'rush' || this.ult.phase === 'seize' || this.ult.phase === 'shatter')) {
+                stretch = 44; // long grab arm, held out
+            }
+            rUp += stretch * 0.5; rLow += stretch * 0.5;
+        }
+
         // Draw weapon/effect on right arm (front arm)
-        let rightArm = drawBentLimb(0, shoulderY, rightArmAngle, rightArmBend, upperArmLen, lowerArmLen);
+        let rightArm = drawBentLimb(0, shoulderY, rightArmAngle, rightArmBend, rUp, rLow);
         let rHandX = rightArm.endX;
         let rHandY = rightArm.endY;
         ctx.stroke();
@@ -3276,6 +3582,48 @@ class Fighter {
             ctx.fillStyle = '#ff0033';
             ctx.fillRect(-12, headY - 4, 24, 4);
             ctx.beginPath(); ctx.moveTo(-12, headY-2); ctx.lineTo(-24, headY+4); ctx.lineWidth = 3; ctx.strokeStyle = '#ff0033'; ctx.stroke();
+        } else if (this.charType === 'PHANTOM') {
+            // hollow, glowing eyes
+            ctx.save();
+            ctx.shadowBlur = 8; ctx.shadowColor = '#ff3355'; ctx.fillStyle = '#ff2a44';
+            ctx.beginPath(); ctx.arc(-4, headY - 1, 2.1, 0, Math.PI * 2); ctx.arc(5, headY - 1, 2.1, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            // tattered shroud trailing off the head
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-12, headY + 5); ctx.quadraticCurveTo(-17, headY + 24, -9 + Math.sin(t * 4) * 3, headY + 42);
+            ctx.moveTo(12, headY + 5); ctx.quadraticCurveTo(17, headY + 24, 9 + Math.sin(t * 4 + 1) * 3, headY + 42);
+            ctx.stroke();
+            // ambient soul wisps rising off him
+            let wa = ctx.globalAlpha; ctx.globalAlpha = wa * 0.5; ctx.fillStyle = ctx.strokeStyle;
+            for (let i = 0; i < 3; i++) {
+                let wy = headY + 10 - ((t * 40 + i * 30) % 60);
+                let wx = (i - 1) * 14 + Math.sin(t * 3 + i) * 5;
+                ctx.beginPath(); ctx.arc(wx, wy, 2.2, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = wa;
+            // Grave Grasp — clawed spectral hands erupt from the ground in front of him
+            if (this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'graveGrasp') {
+                let ca = this.currentAttack;
+                let prog = Math.max(0, Math.min(1, (this.stateTimer - ca.startup) / Math.max(0.01, ca.active)));
+                let rise = Math.sin(Math.min(1, prog) * Math.PI); // erupt then sink
+                let gY = (GROUND_Y - this.y) + (this._hover || 0); // local ground line
+                ctx.save();
+                ctx.globalAlpha = wa * 0.95;
+                ctx.strokeStyle = '#cfd8ff'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                ctx.shadowBlur = 8; ctx.shadowColor = '#9aa6c8';
+                [26, 62, 100, 138].forEach((hx, k) => {
+                    let topY = gY - (30 + (k % 2) * 12) * rise;
+                    ctx.beginPath(); ctx.moveTo(hx, gY + 8); ctx.lineTo(hx, topY); ctx.stroke();       // wrist
+                    ctx.beginPath();                                                                    // clawed fingers
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 9, topY - 11);
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 2, topY - 14);
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 5, topY - 13);
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 11, topY - 9);
+                    ctx.stroke();
+                });
+                ctx.restore();
+            }
         } else if (this.charType === 'MAGE') {
             // Wizard hat
             ctx.beginPath(); ctx.moveTo(-16, headY - 8); ctx.lineTo(16, headY - 8); ctx.lineTo(0, headY - 35); ctx.closePath();

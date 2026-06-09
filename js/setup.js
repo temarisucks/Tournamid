@@ -47,7 +47,7 @@ let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
 let suppressRollbackEffects = false;
 
-const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, ZOMBIE: 40 };
+const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, ZOMBIE: 40 };
 const ULT_LINES = {
     BRAWLER: "YOU'RE DEAD",
     SWORDSMAN: "OUTPLAYED.",
@@ -55,7 +55,8 @@ const ULT_LINES = {
     RANGER: "DON'T BLINK",
     DARK_RULER: "KNEEL.",
     TELEPATH: "IDIOT",
-    BEAST_TAMER: "ALPHA COMMAND."
+    BEAST_TAMER: "ALPHA COMMAND.",
+    PHANTOM: "SOUL TRAIN."
 };
 
 // Ultimate voice lines (played when an ultimate is activated)
@@ -66,7 +67,8 @@ const ultVoices = {
     RANGER: new Audio('audio/voicelines/rangerult.wav'),
     DARK_RULER: new Audio('audio/voicelines/darkrulerult.wav'),
     TELEPATH: new Audio('audio/voicelines/telepathult.wav'),
-    BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav')
+    BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav'),
+    PHANTOM: new Audio('audio/voicelines/phantomult.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -87,9 +89,10 @@ const music = {
     stages: {
         dojo: makeMusic('audio/music/Tournamid - Basic Arena.wav'),
         moonBridge: makeMusic('audio/music/Tournamid - Moon Bridge.wav'),
-        bloodBall: makeMusic('audio/music/Tournamid - Blood Ball.wav')
+        bloodBall: makeMusic('audio/music/Tournamid - Blood Ball.wav'),
+        pStreet: makeMusic('audio/music/Tournamid - P Street.wav')
     },
-    fallbackStages: ['dojo', 'moonBridge', 'bloodBall'],
+    fallbackStages: ['dojo', 'moonBridge', 'bloodBall', 'pStreet'],
     fallbackPick: null,
     current: null,
     ready: false,
@@ -172,7 +175,9 @@ const attackSfx = {
     snake: makeAudio('audio/sfx/snake.wav', 0.68, 3),
     raven: makeAudio('audio/sfx/raven.wav', 0.68, 3),
     brute: makeAudioSet(['audio/sfx/brute1.wav', 'audio/sfx/brute2.wav'], 0.72),
-    beastSwitch: makeAudio('audio/sfx/switch.wav', 0.66, 3)
+    beastSwitch: makeAudio('audio/sfx/switch.wav', 0.66, 3),
+    phantomHit: makeAudio('audio/sfx/phantomhit.wav', 0.7, 3), // Phantom special connects
+    soulTrain: makeAudio('audio/sfx/soultrain.wav', 0.85, 2)   // Soul Train ultimate
 };
 const selectVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawler.wav', 0.92),
@@ -181,7 +186,8 @@ const selectVoices = {
     RANGER: makeAudio('audio/voicelines/ranger.wav', 0.92),
     DARK_RULER: makeAudio('audio/voicelines/darkruler.wav', 0.92),
     TELEPATH: makeAudio('audio/voicelines/telepath.wav', 0.92),
-    BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92)
+    BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92),
+    PHANTOM: makeAudio('audio/voicelines/phantom.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -190,7 +196,8 @@ const winVoices = {
     RANGER: makeAudio('audio/voicelines/rangerwin.wav', 0.95),
     DARK_RULER: makeAudio('audio/voicelines/darkrulerwin.wav', 0.95),
     TELEPATH: makeAudio('audio/voicelines/telepathwin.wav', 0.95),
-    BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95)
+    BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95),
+    PHANTOM: makeAudio('audio/voicelines/phantomwin.wav', 0.95)
 };
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
@@ -474,6 +481,17 @@ const CHARACTERS = {
             specSide: { startup: 0.14, active: 0.16, recovery: 0.3, dmg: 8, w: 48, h: 30, ox: 24, oy: -50, kb: {x: 220, y: -100}, stun: 0.35, type: 'beastSide' },
             specUp: { startup: 0.12, active: 0.18, recovery: 0.32, dmg: 8, w: 54, h: 76, ox: 8, oy: -92, kb: {x: 90, y: -520}, stun: 0.38, type: 'beastUp' },
             specDown: { startup: 0.18, active: 0.18, recovery: 0.34, dmg: 9, w: 90, h: 34, ox: 10, oy: -22, kb: {x: 180, y: -180}, stun: 0.4, type: 'beastDown' }
+        }
+    },
+    PHANTOM: {
+        name: "THE PHANTOM", hp: 112, speed: 250, jump: -560, width: 34, height: 92,
+        attacks: {
+            light: { startup: 0.1, active: 0.1, recovery: 0.2, dmg: 6, w: 66, h: 26, ox: 32, oy: -56, kb: {x: 120, y: -60}, stun: 0.26, type: 'mistClaw' },       // reaching mist swipe
+            heavy: { startup: 0.24, active: 0.16, recovery: 0.32, dmg: 12, w: 96, h: 40, ox: 36, oy: -52, kb: {x: 240, y: -150}, stun: 0.45, type: 'scytheLash' },   // wide reaping lash
+            specNeutral: { startup: 0.16, active: 0.18, recovery: 0.34, dmg: 8, w: 108, h: 28, ox: 44, oy: -58, kb: {x: 120, y: -80}, stun: 0.4, type: 'soulSiphon' }, // long claw, drains HP
+            specSide: { startup: 0.16, active: 0.12, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 980, pLife: 0.55, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // mist-chain that reels the foe in (unblockable)
+            specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 96, ox: 8, oy: -104, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
+            specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 30, y: -70}, stun: 0.8, grab: true, type: 'graveGrasp' } // ground hands root the foe (unblockable)
         }
     },
     ZOMBIE: {

@@ -76,6 +76,16 @@ const CHAR_INFO = [
             ["Up", "Command", "Serpent coil recovery, Brute uppercut, or Raven lift"],
             ["Down", "Command", "Venom puddle, Brute stomp, or Raven mark"]
         ]
+    },
+    {
+        name: "THE PHANTOM", role: "Spectral grappler / soul-dragger",
+        passive: "Passive — Fading Veil: hold still and he fades intangible for a moment — attacks and projectiles pass through. Acting snaps him solid (short cooldown).",
+        specials: [
+            ["Neutral", "Soul Siphon", "long reaching spectral claw that drains the foe's HP to heal him"],
+            ["Side", "Grave Drag", "fling a mist-chain that yanks the foe into grab range (unblockable)"],
+            ["Up", "Wraith Rise", "rising spectral anti-air grab that doubles as a ghostly recovery"],
+            ["Down", "Grave Grasp", "spectral hands erupt from the floor to root the foe (unblockable low)"]
+        ]
     }
 ];
 
@@ -383,7 +393,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -785,7 +795,7 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER']);
+    ladder.queue = ladderShuffle(['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM']);
     ladder.index = 0; ladder.active = true;
     showLadderScreen(false); // light up rung 1, then drop into the fight
 }
