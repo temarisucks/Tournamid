@@ -583,7 +583,8 @@ class Fighter {
                 this.x += this.vx * dt;
                 
                 if (!this.isAI) this.handleInput();
-                else if (!this.isDummy) this.handleAI(dt); // dummies just stand
+                else if (this.isDummy) this.updateDummy(dt); // training dummy follows its behavior setting
+                else this.handleAI(dt);
                 break;
                 
             case 'ATTACK':
@@ -2124,6 +2125,12 @@ class Fighter {
         if (this.isDummy) { this.hp = this.maxHp; return !blocked; }
 
         if (this.hp <= 0) {
+            // Training never ends — if the CPU dummy KOs the player, just respawn them.
+            if (trainingMode && !this.isDummy) {
+                this.hp = this.maxHp; this.blockHealth = this.blockMax;
+                this.vx = 0; this.vy = 0; this.changeState('IDLE');
+                return !blocked;
+            }
             this.hp = 0;
             if (opts.isUlt && isMatchWinningUltimateKill(attacker)) triggerOverkill(attacker, this);
             if (!this._ringedOut) {
@@ -2163,6 +2170,57 @@ class Fighter {
     }
 
     // Grave Grasp: spectral hands clamp us in place. Held until it lapses or we're struck.
+    // Training dummy driver — performs the behavior chosen in the training panel.
+    // Only acts from a neutral, grounded state so attacks/jumps/hitstun play out.
+    updateDummy(dt) {
+        let mode = (typeof dummyBehavior !== 'undefined') ? dummyBehavior : 'idle';
+        if (mode === 'cpu') { this.handleAI(dt); return; } // "fight back" — full CPU
+        let foe = this.getClosestEnemy();
+        let neutral = (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'BLOCK');
+        let grounded = this.y === GROUND_Y;
+
+        if (mode === 'idle') {
+            if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
+            if (this.state === 'BLOCK') this.changeState('IDLE');
+            this.vx = 0;
+        } else if (mode === 'center') {
+            let target = WIDTH / 2;
+            if (grounded && neutral && Math.abs(this.x - target) > 10) {
+                let toward = Math.sign(target - this.x);
+                this.vx = this.speed * toward; this.dir = toward; // face the way it's walking
+                this.changeState('WALK');
+            } else if (neutral) {
+                this.vx = 0;
+                if (foe) this.dir = (foe.x > this.x) ? 1 : -1; // settle facing the player
+                this.changeState('IDLE');
+            }
+        } else if (mode === 'forward' && foe) {
+            if (grounded && neutral) {
+                let toward = Math.sign(foe.x - this.x) || 1;
+                this.vx = this.speed * toward; this.dir = toward;
+                this.changeState('WALK');
+            }
+        } else if (mode === 'backward' && foe) {
+            if (grounded && neutral) {
+                let away = -(Math.sign(foe.x - this.x) || 1);
+                this.vx = this.speed * away; this.dir = -away; // retreat but keep facing the player
+                this.changeState('WALK');
+            }
+        } else if (mode === 'jump') {
+            if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
+            if (grounded && neutral) { this.vx = 0; this.vy = this.jumpForce; this.changeState('JUMP'); }
+        } else if (mode === 'light') {
+            if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
+            if (grounded && (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'BLOCK')) { this.vx = 0; this.startAttack('light'); }
+        } else if (mode === 'heavy') {
+            if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
+            if (grounded && (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'BLOCK')) { this.vx = 0; this.startAttack('heavy'); }
+        } else if (mode === 'block') {
+            if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
+            if (grounded && this.state !== 'BLOCK' && (this.state === 'IDLE' || this.state === 'WALK')) { this.vx = 0; this.changeState('BLOCK'); }
+        }
+    }
+
     // Colour of this fighter's guard — used by the block shield, its shatter shards,
     // and the block-break burst so each character's break matches their block.
     guardColor() {

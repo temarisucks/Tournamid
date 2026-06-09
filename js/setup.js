@@ -38,6 +38,7 @@ let bodyParts = [];
 // --- META: ultimates, block-break, training ---
 let infiniteMeter = false; // training toggle: ultimates always ready
 let trainingMode = false;  // dummy opponent
+let dummyBehavior = 'idle'; // training dummy behavior: idle|center|forward|backward|jump|light|heavy|block|cpu
 let timeScale = 1;         // global slow-motion factor (cinematics)
 let ultBanner = null;      // { owner, line, t, dur } cinematic title card
 let ultCamera = null;      // { x, y, zoom, t, dur } cinematic camera focus
@@ -64,14 +65,14 @@ const ULT_LINES = {
 // enemy's value here, that enemy's ultimate will kill them outright.
 // KEEP IN SYNC if an ultimate's damage is ever retuned.
 const ULT_DAMAGE = {
-    BRAWLER: 46,    // grab + wall bounces + launch
-    SWORDSMAN: 55,  // opener + 7 dash slices + finisher
-    MAGE: 50,       // orb + sustained payoff ticks
-    RANGER: 36,     // bomb + blast + execute shot
-    DARK_RULER: 40, // the giant crescent slash
-    TELEPATH: 58,   // snare + vice ticks + crush
-    BEAST_TAMER: 64,// bind + brute + raven + whip
-    PHANTOM: 42     // seize + void chips + smash
+    BRAWLER: 48,    // grab 20 + 2 wall bounces (10+10) + launch 8
+    SWORDSMAN: 57,  // opener 6 + 7 dash slices (35) + finisher 16
+    MAGE: 56,       // orb 6 + 10 payoff ticks (50)
+    RANGER: 36,     // bomb 6 + blast 14 + execute 16
+    DARK_RULER: 40, // the giant crescent slash (single hit)
+    TELEPATH: 65,   // snare 3 + 8 vice ticks (40) + crush 22
+    BEAST_TAMER: 66,// snare 4 + bind 6 + brute 18 + raven 14 + whip 24
+    PHANTOM: 43     // claw 4 + seize 3 + void chips 12 + smash 24
 };
 
 // Ultimate voice lines (played when an ultimate is activated)

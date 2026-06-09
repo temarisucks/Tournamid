@@ -694,10 +694,13 @@ function startGame() {
     trainingMode = (currentMode === 'TRAINING');
     teamBattle = (currentMode === 'VS2' || currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH');
     infiniteMeter = false;
-    document.getElementById('training-panel').classList.toggle('hidden', !trainingMode);
+    document.getElementById('training-ui').classList.toggle('hidden', !trainingMode);
+    document.getElementById('training-panel').classList.add('hidden'); // panel opens via the button
     if (trainingMode) {
         let btn = document.getElementById('train-meter-toggle');
         btn.classList.remove('on'); btn.innerText = 'Infinite Meter: OFF';
+        dummyBehavior = 'idle';
+        document.querySelectorAll('#dummy-settings .dummy-btn').forEach(b => b.classList.toggle('on', b.dataset.dummy === 'idle'));
     }
 
     if (teamBattle) {
@@ -834,7 +837,7 @@ function startLadderBattle(index) {
     selectedStage = ladderStages[Math.floor(Math.random() * ladderStages.length)] || 'dojo';
     initStageActors();
     trainingMode = false; infiniteMeter = false;
-    document.getElementById('training-panel').classList.add('hidden');
+    document.getElementById('training-ui').classList.add('hidden');
 
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
@@ -933,7 +936,7 @@ function returnToMenu() {
     timeScale = 1; ultActive = null; ultBanner = null; ultCamera = null; overkillFx = null; bodyParts = [];
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('pause-screen').classList.add('hidden');
-    document.getElementById('training-panel').classList.add('hidden');
+    document.getElementById('training-ui').classList.add('hidden');
     document.getElementById('settings-btn').classList.remove('hidden');
     showScreen('menu-screen');
     music.play('menu');
@@ -965,7 +968,7 @@ function returnToCharacterSelect() {
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('end-screen').classList.add('hidden');
-    document.getElementById('training-panel').classList.add('hidden');
+    document.getElementById('training-ui').classList.add('hidden');
     goToCharSelect(currentMode);
 }
 
@@ -975,6 +978,20 @@ function toggleInfiniteMeter() {
     btn.classList.toggle('on', infiniteMeter);
     btn.innerText = 'Infinite Meter: ' + (infiniteMeter ? 'ON' : 'OFF');
     if (players[0]) updateHUD();
+}
+
+// Open/close the training settings popup from its dedicated button.
+function toggleDummyPanel() {
+    document.getElementById('training-panel').classList.toggle('hidden');
+}
+
+// Training panel — choose what the dummy does. Highlights the active option.
+function setDummyBehavior(mode, btn) {
+    dummyBehavior = mode;
+    document.querySelectorAll('#dummy-settings .dummy-btn').forEach(b => b.classList.toggle('on', b === btn));
+    // drop the dummy out of any locked state so the new behavior takes over cleanly
+    let dummy = players.find(p => p && p.isDummy);
+    if (dummy && (dummy.state === 'BLOCK')) dummy.changeState('IDLE');
 }
 
 function restartMatch() {
