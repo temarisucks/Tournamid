@@ -9,6 +9,26 @@ const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const GROUND_Y = HEIGHT - 80;
 
+// --- MOBILE SUPPORT: detect touch devices and scale the fixed 1024x576 stage to fit ---
+const isMobileDevice = (() => {
+    const ua = navigator.userAgent || navigator.vendor || '';
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua)
+        || (coarse && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+})();
+// Scale the whole game container (canvas + all DOM overlays live inside it at a fixed
+// 1024x576) so the internal coordinate system is untouched — only the presentation scales.
+function fitGameToScreen() {
+    const gc = document.getElementById('game-container');
+    if (!gc) return;
+    let scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
+    if (!isMobileDevice) scale = Math.min(scale, 1); // desktop keeps native size, only shrinks if the window is small
+    gc.style.transform = 'scale(' + scale + ')';
+}
+window.addEventListener('resize', fitGameToScreen);
+window.addEventListener('orientationchange', () => setTimeout(fitGameToScreen, 120));
+fitGameToScreen();
+
 let lastTime = 0;
 let requestID;
 let gameState = 'MENU'; // MENU, ONLINE_LOBBY, CHAR_SELECT, STAGE_SELECT, PLAYING, PAUSED, END
@@ -243,6 +263,8 @@ const roundVoices = {
 // --- SETTINGS: per-category volume + custom key bindings (persisted) ---
 let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, blood: true };
 try { let s = JSON.parse(localStorage.getItem('massacreSettings')); if (s) Object.assign(settings, s); } catch (e) {}
+// First-time mobile players get on-screen controls turned on by default (still toggleable in Settings)
+if (isMobileDevice && !localStorage.getItem('massacreSettings')) settings.touchControls = true;
 function saveSettings() { try { localStorage.setItem('massacreSettings', JSON.stringify(settings)); } catch (e) {} }
 
 const audioRegistry = [];
