@@ -61,12 +61,24 @@
                 <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
             </div>
             <div class="menu-buttons offline-panel">
-                <button class="btn menu-btn mode-pvp offline-choice" onclick="goToCharSelect('PVP')"><span>1v1</span><small>Local player versus player</small></button>
-                <button class="btn menu-btn mode-2v2 offline-choice" onclick="goToCharSelect('VS2')"><span>2v2</span><small>Tag-team, pick two, swap with Tag</small></button>
+                <button class="btn menu-btn mode-pvp offline-choice" onclick="showOfflineVersusModes('solo')"><span>1v1</span><small>Choose local, CPU, or CPU watch</small></button>
+                <button class="btn menu-btn mode-2v2 offline-choice" onclick="showOfflineVersusModes('team')"><span>2v2</span><small>Choose local, CPU, or CPU watch</small></button>
                 <button class="btn menu-btn mode-ladder offline-choice" onclick="goToCharSelect('LADDER')"><span>Ladder</span><small>Climb the gauntlet of every fighter</small></button>
                 <button class="btn menu-btn mode-ladder2 offline-choice" onclick="goToCharSelect('LADDER2')"><span>Tag Ladder</span><small>Climb the gauntlet, tag-team style</small></button>
                 <button class="btn menu-btn mode-pve offline-choice" onclick="goToCharSelect('PVE')"><span>PvE Wave</span><small>Survive the endless horde</small></button>
                 <button class="btn menu-btn ghost offline-choice" onclick="hideOfflineModes()">Back</button>
+            </div>
+            <div class="menu-buttons versus-panel solo-versus-panel">
+                <button class="btn menu-btn mode-pvp versus-choice" onclick="goToCharSelect('PVP')"><span>Local Player</span><small>Player 1 versus Player 2</small></button>
+                <button class="btn menu-btn mode-cpu versus-choice" onclick="goToCharSelect('CPU')"><span>CPU Opponent</span><small>Player 1 versus CPU</small></button>
+                <button class="btn menu-btn mode-cpu versus-choice" onclick="goToCharSelect('CPU_WATCH')"><span>CPU Watch</span><small>Watch two CPU fighters battle</small></button>
+                <button class="btn menu-btn ghost versus-choice" onclick="hideOfflineVersusModes()">Back</button>
+            </div>
+            <div class="menu-buttons versus-panel team-versus-panel">
+                <button class="btn menu-btn mode-2v2 versus-choice" onclick="goToCharSelect('VS2_PVP')"><span>Local Players</span><small>Two local squads, tag enabled</small></button>
+                <button class="btn menu-btn mode-2v2 versus-choice" onclick="goToCharSelect('VS2')"><span>CPU Opponents</span><small>Your squad versus a CPU squad</small></button>
+                <button class="btn menu-btn mode-2v2 versus-choice" onclick="goToCharSelect('VS2_WATCH')"><span>CPU Watch</span><small>Watch two CPU squads battle</small></button>
+                <button class="btn menu-btn ghost versus-choice" onclick="hideOfflineVersusModes()">Back</button>
             </div>
         </div>
     </div>

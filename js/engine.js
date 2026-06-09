@@ -151,6 +151,10 @@ function checkCollisions() {
                         p.slowTimer = Math.max(p.slowTimer, proj.slow);
                         p.slowFactor = Math.min(p.slowFactor || 1, proj.slowFactor || 0.45);
                     }
+                    if (landed && proj.venom) {
+                        p.venomTimer = Math.max(p.venomTimer || 0, proj.venom);
+                        p.venomTickTimer = Math.min(p.venomTickTimer || 0.45, 0.2);
+                    }
                     if (landed && proj.lightningStun && p.state === 'HITSTUN') {
                         p.stateTimer = Math.max(p.stateTimer, proj.lightningStun);
                         spawnParticles(p.x, p.y - 56, 12, '#fff');
@@ -169,6 +173,7 @@ function checkCollisions() {
                     }
 
                     let col = proj.subtype === 'fire' ? '#ff5a2a' : proj.subtype === 'frost' ? '#7fd8ff'
+                            : proj.subtype === 'venom' ? '#fff'
                             : proj.subtype === 'homing' ? '#c98bff' : '#fff';
                     spawnParticles(proj.x, proj.y, 10, col);
                     if (!proj.pierce) proj.active = false; // beams pierce, everything else pops
@@ -404,7 +409,7 @@ function nextRound() {
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
-        p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
+        p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
         p.overkillRed = false;
         p.pose = null;
     });

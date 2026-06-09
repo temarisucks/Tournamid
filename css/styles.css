@@ -61,10 +61,13 @@
 
         .menu-buttons { display: flex; flex-direction: column; align-items: center; gap: 4px; }
         .play-menu-panels { position: relative; width: 900px; max-width: 100%; min-height: 360px; display: flex; justify-content: center; align-items: flex-start; gap: 28px; }
-        .play-choice-panel, .offline-panel { transition: transform 0.28s ease, opacity 0.24s ease; }
-        .offline-panel { position: absolute; right: 28px; top: 0; opacity: 0; transform: translateX(70px); pointer-events: none; }
+        .play-choice-panel, .offline-panel, .versus-panel { transition: transform 0.28s ease, opacity 0.24s ease; }
+        .offline-panel, .versus-panel { position: absolute; right: 28px; top: 0; opacity: 0; transform: translateX(70px); pointer-events: none; }
         #mode-screen.offline-open .play-choice-panel { transform: translateX(-250px); }
         #mode-screen.offline-open .offline-panel { opacity: 1; transform: translateX(0); pointer-events: auto; }
+        #mode-screen.versus-open .offline-panel { transform: translateX(-250px); opacity: 0.45; pointer-events: none; }
+        #mode-screen.solo-versus-open .solo-versus-panel,
+        #mode-screen.team-versus-open .team-versus-panel { opacity: 1; transform: translateX(0); pointer-events: auto; }
         .offline-panel .menu-btn:not(.offline-choice) { display: none; }
         .menu-btn { position: relative; min-width: 380px; overflow: hidden; transition: transform 0.15s, background 0.2s, border-color 0.2s, box-shadow 0.2s; background: rgba(0,0,0,0.42); backdrop-filter: blur(2px); }
         .menu-btn::before { content: ""; position: absolute; left: -120%; top: 0; width: 60%; height: 100%; transform: skewX(-20deg);

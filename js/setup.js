@@ -273,6 +273,7 @@ let teamBattle = false;
 let teams = [[], []];
 let activeIdx = [0, 0];
 let playerTeam = [];   // the two characters the player picked for their squad
+let opponentTeam = []; // the two characters picked for the opposing local/CPU-watch squad
 let pendingTag = [0, 0]; // brief pause-then-tag-in timer per side after a KO
 
 // --- STAGE GEOMETRY ---

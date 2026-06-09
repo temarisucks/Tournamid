@@ -379,6 +379,8 @@ class Fighter {
         this.slowFactor = 1;
         this.burnTimer = 0;
         this.burnTickTimer = 0;
+        this.venomTimer = 0;
+        this.venomTickTimer = 0;
         this.invulnTimer = 0;   // dodge i-frames (Combat Roll / Blink)
         this.manaFontTimer = 0; // Mage: next spell empowered
         this.specialDone = false; // one-shot trigger guard for blink/roll/etc
@@ -433,6 +435,23 @@ class Fighter {
                 this.burnTickTimer = 0.55;
                 this.hp = Math.max(0, this.hp - 1);
                 spawnParticles(this.x, this.y - 48, 4, '#ff5a2a');
+                updateHUD();
+                if (this.hp <= 0 && !this.isDummy) {
+                    this.changeState('DEAD');
+                    sfx.playDeath();
+                    checkWinCondition();
+                    return;
+                }
+                if (this.isDummy) this.hp = this.maxHp;
+            }
+        }
+        if (this.venomTimer > 0) {
+            this.venomTimer -= dt;
+            this.venomTickTimer -= dt;
+            if (this.venomTickTimer <= 0) {
+                this.venomTickTimer = 0.45;
+                this.hp = Math.max(0, this.hp - 1);
+                spawnParticles(this.x, this.y - 24, 5, '#fff');
                 updateHUD();
                 if (this.hp <= 0 && !this.isDummy) {
                     this.changeState('DEAD');
@@ -1646,9 +1665,11 @@ class Fighter {
     }
 
     spawnBeastVenom(dmgMod) {
-        let p = new Projectile(this.x + this.dir * 110, GROUND_Y - 18, 0, 0, 62, 18, 6 * dmgMod, { x: 70 * this.dir, y: -130 }, 0.3, this, 4.2, null);
-        p.subtype = 'venom'; p.slow = 2.4; p.pierce = true;
+        let px = this.x + this.dir * 72 - (this.dir < 0 ? 132 : 0);
+        let p = new Projectile(px, GROUND_Y - 22, 0, 0, 132, 22, 4 * dmgMod, { x: 35 * this.dir, y: -70 }, 0.2, this, 4.2, null);
+        p.subtype = 'venom'; p.slow = 2.8; p.slowFactor = 0.28; p.venom = 2.2; p.pierce = true; p.unblockable = true;
         projectiles.push(p);
+        spawnParticles(px + p.w / 2, GROUND_Y - 18, 14, '#fff');
         playAudio(attackSfx.snake);
     }
 
@@ -2256,6 +2277,22 @@ class Fighter {
                 ctx.beginPath();
                 ctx.arc(Math.cos(a) * 18, -44 + Math.sin(a * 1.3) * 24, 2.4, 0, Math.PI * 2);
                 ctx.fill();
+            }
+            ctx.restore();
+        }
+        if (this.venomTimer > 0) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+            ctx.fillStyle = 'rgba(255,0,51,0.65)';
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#fff';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 4; i++) {
+                let a = this.animTimer * 4 + i * Math.PI * 0.5;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * 16, -28 + Math.sin(a * 1.4) * 18, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
             }
             ctx.restore();
         }
