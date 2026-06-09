@@ -106,6 +106,7 @@ function checkCollisions() {
                         if (h.atk && h.owner) h.owner.playAttackSound(h.atk);
                         let landed = p.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab || !!h.unblockableUlt });
                         if (landed && h.ultActivator) h.ultActivator.onUltConnect(p);
+                        if (landed && h.atk && h.atk.type === 'graveGrasp' && p.startRoot) p.startRoot(); // hands clamp the foe in place
                     }
                 }
             }
@@ -1205,6 +1206,7 @@ function draw() {
     // Entities
     players.forEach(p => p.draw(ctx));
     drawYankChains(ctx); // Grave Drag chains, world space, on top of the fighters
+    drawRootGrips(ctx);  // Grave Grasp hands clamping a rooted foe
     projectiles.forEach(p => p.draw(ctx));
     hitboxes.forEach(h => h.draw(ctx));
     particles.forEach(p => p.draw(ctx));
@@ -1217,6 +1219,28 @@ function draw() {
     drawUltBanner(ctx);
     drawRoundAnnounce(ctx);
     drawIntroText(ctx);
+}
+
+// Grave Grasp: clawed spectral hands clamped straight up around a rooted foe's legs.
+function drawRootGrips(c) {
+    for (let p of players) {
+        if (!p || !(p.rootTimer > 0)) continue;
+        c.save();
+        c.strokeStyle = '#cfd8ff'; c.lineWidth = 3; c.lineCap = 'round'; c.lineJoin = 'round';
+        c.shadowBlur = 8; c.shadowColor = '#9aa6c8';
+        let wob = Math.sin(performance.now() / 90) * 1.5;
+        [-20, -7, 7, 20].forEach((dx, k) => {
+            let hx = p.x + dx;
+            let topY = GROUND_Y - 34 - (k % 2) * 8 + wob;
+            c.beginPath(); c.moveTo(hx, GROUND_Y + 6); c.lineTo(hx, topY); c.stroke(); // straight forearm
+            c.beginPath();                                                              // symmetric gripping fingers
+            c.moveTo(hx, topY); c.lineTo(hx - 7, topY - 8);
+            c.moveTo(hx, topY); c.lineTo(hx, topY - 11);
+            c.moveTo(hx, topY); c.lineTo(hx + 7, topY - 8);
+            c.stroke();
+        });
+        c.restore();
+    }
 }
 
 // Grave Drag: a spectral chain from the Phantom's hand to the foe being reeled in.

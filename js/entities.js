@@ -375,6 +375,7 @@ class Fighter {
         this.fadeCharge = 0; this.fadeActive = 0; this.fadeCooldown = 0; this._fadeIntangible = false;
         this.tumbleTimer = 0; this._tumbleAngle = 0; this._tumbleDir = 1; // post-ult floor tumble
         this.yankTimer = 0; this.yankSource = null; this.yankFromX = 0;   // Grave Drag reel-in
+        this.rootTimer = 0; // Grave Grasp: held in place by spectral hands until it lapses or you're hit
 
         // Combat state
         this.attacks = stats.attacks;
@@ -488,6 +489,14 @@ class Fighter {
         if (this.charType === 'PHANTOM') this.updateFadingVeil(dt);
         if (this.tumbleTimer > 0) { this.tumbleTimer -= dt; this._tumbleAngle += Math.abs(this.vx) * dt * 0.04 * (this._tumbleDir || 1); }
         if (this.yankTimer > 0) this.updateYank(dt);
+        if (this.rootTimer > 0) {
+            this.rootTimer -= dt;
+            if (this.rootTimer > 0 && this.state !== 'DEAD') {
+                if (this.state !== 'HITSTUN') this.changeState('HITSTUN');
+                if (this.stateTimer < 0.15) this.stateTimer = 0.15; // stay held
+                this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+            }
+        }
 
         // Guard slowly regenerates while not actively blocking
         if (this.state !== 'BLOCK' && this.blockHealth < this.blockMax) {
@@ -2063,6 +2072,7 @@ class Fighter {
             sfx.playDeath(); // shatter stinger
             spawnParticles(this.x, this.y - 50, 24, '#fff');
         } else {
+            this.rootTimer = 0; // being struck breaks the Grave Grasp hold
             this.changeState('HITSTUN');
             this.stateTimer = stun;
             sfx.playHit();
@@ -2136,6 +2146,16 @@ class Fighter {
         this.vx = 820 * this.dir; // burst forward into the foe
         let col = { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', SWORDSMAN: '#cfe8ff', RANGER: '#ffd27f' }[this.charType] || '#fff';
         spawnParticles(this.x + this.dir * 18, this.y - 50, 16, col);
+    }
+
+    // Grave Grasp: spectral hands clamp us in place. Held until it lapses or we're struck.
+    startRoot() {
+        if (this.state === 'DEAD') return;
+        this.rootTimer = 1.4;
+        this.changeState('HITSTUN');
+        this.stateTimer = 1.4;
+        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+        spawnParticles(this.x, GROUND_Y - 10, 16, '#cfd8ff');
     }
 
     // Grave Drag: the chain caught us — stunned and reeled all the way to the Phantom.
@@ -2988,7 +3008,14 @@ class Fighter {
                 } else {
                     rightArmAngle = mix(2.4, 1.3, ex); rightArmBend = -0.2; torsoLean = 0.25;
                 }
-            } else if (atk.type === 'soulSiphon' || atk.type === 'mistClaw' || atk.type === 'scytheLash' || atk.type === 'graveDrag') {
+            } else if (atk.type === 'soulSiphon') {
+                // Soul Siphon — the long claw shoots dead-straight forward (horizontal)
+                rightArmAngle = mix(2.2, 1.57, ex); rightArmBend = mix(-0.5, 0.0, ex);
+                leftArmAngle = 1.5; leftArmBend = 0.4;
+                leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.46, ex);
+                leftLegBend = 0.3; rightLegBend = 0.42; torsoLean = mix(0.02, 0.1, ex);
+                headY -= 1;
+            } else if (atk.type === 'mistClaw' || atk.type === 'scytheLash' || atk.type === 'graveDrag') {
                 // Phantom — a long spectral claw whips out forward
                 rightArmAngle = mix(2.5, 1.12, ex); rightArmBend = mix(-0.7, 0.06, ex);
                 leftArmAngle = 1.5; leftArmBend = 0.4;
@@ -3614,12 +3641,11 @@ class Fighter {
                 ctx.shadowBlur = 8; ctx.shadowColor = '#9aa6c8';
                 [26, 62, 100, 138].forEach((hx, k) => {
                     let topY = gY - (30 + (k % 2) * 12) * rise;
-                    ctx.beginPath(); ctx.moveTo(hx, gY + 8); ctx.lineTo(hx, topY); ctx.stroke();       // wrist
-                    ctx.beginPath();                                                                    // clawed fingers
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 9, topY - 11);
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 2, topY - 14);
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 5, topY - 13);
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 11, topY - 9);
+                    ctx.beginPath(); ctx.moveTo(hx, gY + 8); ctx.lineTo(hx, topY); ctx.stroke();       // straight forearm
+                    ctx.beginPath();                                                                    // symmetric gripping fingers
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 8, topY - 9);
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx, topY - 12);
+                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 8, topY - 9);
                     ctx.stroke();
                 });
                 ctx.restore();

@@ -491,7 +491,7 @@ const CHARACTERS = {
             specNeutral: { startup: 0.16, active: 0.18, recovery: 0.34, dmg: 8, w: 108, h: 28, ox: 44, oy: -58, kb: {x: 120, y: -80}, stun: 0.4, type: 'soulSiphon' }, // long claw, drains HP
             specSide: { startup: 0.16, active: 0.12, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 980, pLife: 0.55, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // mist-chain that reels the foe in (unblockable)
             specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 96, ox: 8, oy: -104, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
-            specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 30, y: -70}, stun: 0.8, grab: true, type: 'graveGrasp' } // ground hands root the foe (unblockable)
+            specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 0, y: 0}, stun: 0.3, grab: true, type: 'graveGrasp' } // ground hands ROOT the foe in place (unblockable)
         }
     },
     ZOMBIE: {
