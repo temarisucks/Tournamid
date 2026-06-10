@@ -767,7 +767,7 @@ function nextRound() {
         if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
         if ('devotion' in p) p.devotion = 0;
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
-        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
+        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;

@@ -226,6 +226,18 @@
         .touch-actions { right: 20px; bottom: 22px; width: 292px; display: grid; grid-template-columns: repeat(3, 92px); gap: 8px; align-items: center; }
         .touch-btn { border: 2px solid rgba(255,255,255,0.68); background: rgba(0,0,0,0.48); color: #fff; font-family: inherit; font-size: 0.68rem; letter-spacing: 1px; min-height: 54px; border-radius: 8px; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; box-shadow: 0 0 14px rgba(0,0,0,0.5); }
         .touch-btn:active, .touch-btn.held { background: rgba(255,0,51,0.72); border-color: #fff; transform: scale(0.96); }
+        /* Touch devices: the whole container is scaled down to fit the phone, which shrinks the
+           buttons with it — so render them much larger inside the container to compensate. */
+        @media (pointer: coarse) {
+            .touch-dpad { left: 16px; bottom: 16px; width: 246px; height: 246px; grid-template-columns: repeat(3, 82px); grid-template-rows: repeat(3, 82px); }
+            .touch-actions { right: 14px; bottom: 16px; width: 396px; grid-template-columns: repeat(3, 126px); gap: 10px; }
+            .touch-btn { min-height: 76px; font-size: 0.95rem; border-radius: 12px; }
+            /* HUD reads larger on small screens too */
+            .health-bar-bg { height: 32px; }
+            .char-name { font-size: 1.5rem; }
+            .meter-bar-bg { height: 14px; }
+            #timer { font-size: 3.1rem; }
+        }
         .touch-up { grid-column: 2; grid-row: 1; }
         .touch-left { grid-column: 1; grid-row: 2; }
         .touch-down { grid-column: 2; grid-row: 3; }

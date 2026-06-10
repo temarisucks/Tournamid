@@ -1060,6 +1060,11 @@ class Fighter {
             p.vx *= p.y < GROUND_Y ? 0.99 : 0.9;
             p.stateTimer -= dt;
             if (p.stateTimer <= 0 && p.y >= GROUND_Y) { p.changeState('IDLE'); this.twinOffset = p.x - this.x; } // re-lock the gap
+        } else if (this._twinLeaping > 0) {
+            // Converge leap — the partner flies its own arc; once it lands the pair re-locks
+            this._twinLeaping -= dt;
+            p.state = p.y < GROUND_Y ? 'JUMP' : 'IDLE';
+            if (p.y >= GROUND_Y && this._twinLeaping <= 0.4) { this._twinLeaping = 0; p.vx = 0; this.twinOffset = p.x - this.x; }
         } else {
             p.vx *= 0.8;
             if (p.y >= GROUND_Y) { p.state = 'IDLE'; this.twinOffset = p.x - this.x; }
@@ -1147,7 +1152,7 @@ class Fighter {
         let mid = (this.x + p.x) / 2;
         this.vy = -480; this.vx = (mid >= this.x ? 1 : -1) * 380;
         p.vy = -480; p.vx = (mid >= p.x ? 1 : -1) * 380; p.state = 'JUMP'; p.currentAttack = null;
-        this.twinOffset = 60; // they reunite — fall back into the tight pair on landing
+        this._twinLeaping = 0.7; // the partner flies its own arc, then re-locks beside the lead
         this.invulnTimer = Math.max(this.invulnTimer, 0.2);
         let hb = new Hitbox(mid - 75, GROUND_Y - 150, 150, 150, 9, { x: 0, y: -440 }, 0.5, this, 0.45);
         hb.atk = { type: 'twinConverge', name: 'specUp' };

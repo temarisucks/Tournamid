@@ -22,7 +22,7 @@ function fitGameToScreen() {
     const gc = document.getElementById('game-container');
     if (!gc) return;
     let scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
-    if (!isMobileDevice) scale = Math.min(scale, 1); // desktop keeps native size, only shrinks if the window is small
+    if (!isMobileDevice) scale *= 0.96; // desktop: fill the window (small margin so the border/glow isn't clipped)
     gc.style.transform = 'scale(' + scale + ')';
 }
 window.addEventListener('resize', fitGameToScreen);
