@@ -21,12 +21,25 @@ const isMobileDevice = (() => {
 function fitGameToScreen() {
     const gc = document.getElementById('game-container');
     if (!gc) return;
-    let scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
-    if (!isMobileDevice) scale *= 0.96; // desktop: fill the window (small margin so the border/glow isn't clipped)
-    gc.style.transform = 'scale(' + scale + ')';
+    // visualViewport gives the TRUE visible area on iOS Safari (innerHeight lies while the
+    // dynamic toolbar is showing, which mis-centred the game and cut off the bottom).
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth;
+    const vh = vv ? vv.height : window.innerHeight;
+    const fit = Math.min(vw / WIDTH, vh / HEIGHT);
+    if (isMobileDevice) {
+        // Phones are wider than 16:9, which left big black pillarbox bars. Fill the screen:
+        // fit the height exactly, then stretch sideways (capped) to swallow the bars.
+        const sx = Math.min(vw / WIDTH, fit * 1.5);
+        gc.style.transform = 'scale(' + sx + ', ' + fit + ')';
+    } else {
+        const s = fit * 0.96; // desktop: fill the window, small margin so the border/glow isn't clipped
+        gc.style.transform = 'scale(' + s + ', ' + s + ')';
+    }
 }
 window.addEventListener('resize', fitGameToScreen);
 window.addEventListener('orientationchange', () => setTimeout(fitGameToScreen, 120));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitGameToScreen);
 fitGameToScreen();
 
 let lastTime = 0;
