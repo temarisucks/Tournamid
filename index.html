@@ -48,7 +48,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.17.0</span>
+        <span class="menu-version">v0.18.3</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -173,6 +173,10 @@
             </div>
             <div class="char-card" data-char="TWINS" onclick="selectCharacter('TWINS', this)">
                 <img class="char-icon" src="textures/icons/twins.png" alt="The Twins"
+                     onerror="this.parentElement.classList.add('no-icon'); this.remove();">
+            </div>
+            <div class="char-card" data-char="TRAVELER" onclick="selectCharacter('TRAVELER', this)">
+                <img class="char-icon" src="textures/icons/traveler.png" alt="The Traveler"
                      onerror="this.parentElement.classList.add('no-icon'); this.remove();">
             </div>
         </div>

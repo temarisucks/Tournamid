@@ -118,6 +118,17 @@ const CHAR_INFO = [
             ["Down", "Tether", "string a taut wire between the two bodies — whoever crosses it is tripped"]
         ],
         ult: "Ultimate — Eclipse: both twins blink to opposite walls and rocket inward, crushing whoever's caught in the middle as they collide."
+    },
+    {
+        name: "THE TRAVELER", role: "Glass-cannon chrono tactician",
+        passive: "Passive — Temporal Slip: every ~6s he auto-phases through the first hit that would land (watch the recharge ring over his head). Everything he does leaves afterimages.",
+        specials: [
+            ["Neutral", "Time Vortex", "a drifting singularity with a violent pull — get dragged to its core and you're churned in hitstun"],
+            ["Side", "Tachyon Echo", "a hard-light bolt whose hit repeats itself one second later"],
+            ["Up", "Time Skip", "fast-forward out of the timeline — vanish and reappear at the jump's apex (i-frames)"],
+            ["Down", "Rewind", "snap back to where you stood 3 seconds ago and undo 60% of the damage taken since (cooldown)"]
+        ],
+        ult: "Ultimate — SAW THAT COMING: a counter stance. Swing at him and he dodges five strikes in a row, stops time, flurries you from every angle while the world is frozen, slides past, waves his hand — and every stored hit lands at once."
     }
 ];
 
@@ -359,6 +370,7 @@ function initTouchControls() {
         let sid = null;
         const setDir = (action, on) => { let code = touchCodeForAction(action); if (code) keys[code] = !!on; };
         touchStickReset = () => {
+            if (sid === null) return; // stick not engaged — never clobber keyboard input
             sid = null;
             ['l', 'r', 'u', 'd'].forEach(a => setDir(a, false));
             knob.style.transform = 'translate(0px, 0px)';
@@ -470,7 +482,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -510,7 +522,8 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
             RANGER: 'specNeutral',
             DARK_RULER: 'heavy',
             TELEPATH: 'heavy',
-            BEAST_TAMER: 'specNeutral'
+            BEAST_TAMER: 'specNeutral',
+            TRAVELER: 'heavy'
         };
         let move = moveByCharacter[charType] || 'light';
         fighter.state = 'ATTACK';
@@ -887,7 +900,7 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS'];
+    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
     // Don't put the player's own pick(s) on the ladder, and cap the gauntlet at 9 rungs.
     let picked = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam.slice() : [p1Selection];
     ladder.queue = ladderShuffle(FULL_ROSTER.filter(c => !picked.includes(c))).slice(0, 9);

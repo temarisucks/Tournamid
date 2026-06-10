@@ -297,6 +297,59 @@ function drawCultPuppets(c) {
     }
 }
 
+// The Traveler — afterimage ghost trail + the Rewind after-echo. Ghosts re-draw the fighter's
+// current pose at recent positions with fading alpha, so everything he does smears through time.
+function drawTravelerFx(c) {
+    for (let p of players) {
+        if (!p || p.charType !== 'TRAVELER' || p.state === 'DEAD') continue;
+        // the faint after-echo marking where Rewind would take him
+        if (p.posHistory.length && p.rewindCd <= 0 && gameState === 'PLAYING') {
+            let past = p.posHistory[0];
+            if (Math.abs(past.x - p.x) > 30) {
+                let sx = p.x, sy = p.y, sd = p.dir;
+                p.x = past.x; p.y = Math.min(GROUND_Y, past.y);
+                c.save(); c.globalAlpha = 0.13; p.draw(c); c.restore();
+                p.x = sx; p.y = sy; p.dir = sd;
+            }
+        }
+        // motion afterimages
+        if (p._trail && p._trail.length) {
+            let sx = p.x, sy = p.y, sd = p.dir;
+            for (let g of p._trail) {
+                if (Math.abs(g.x - sx) < 6 && Math.abs(g.y - sy) < 6) continue;
+                p.x = g.x; p.y = g.y; p.dir = g.dir;
+                c.save();
+                c.globalAlpha = Math.max(0.04, 0.2 * (1 - g.age / 0.24));
+                p.draw(c);
+                c.restore();
+            }
+            p.x = sx; p.y = sy; p.dir = sd;
+        }
+    }
+}
+
+// The Traveler's TIME STOP — the world drains of colour while he works
+function drawChronoStop(c) {
+    if (!ultActive || !ultActive.ult || ultActive.ult.kind !== 'chronostop') return;
+    let ph = ultActive.ult.phase;
+    if (ph !== 'freeze' && ph !== 'slide') return;
+    c.save();
+    c.fillStyle = 'rgba(190, 215, 235, 0.16)'; c.fillRect(0, 0, WIDTH, HEIGHT); // drained, cold wash
+    // a giant faint clock face hanging over the arena, hands locked
+    c.strokeStyle = 'rgba(111,208,255,0.28)'; c.lineWidth = 3;
+    c.beginPath(); c.arc(WIDTH / 2, HEIGHT / 2, 195, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = 1.6;
+    for (let i = 0; i < 12; i++) {
+        let a = i / 12 * Math.PI * 2;
+        c.beginPath(); c.moveTo(WIDTH / 2 + Math.cos(a) * 178, HEIGHT / 2 + Math.sin(a) * 178);
+        c.lineTo(WIDTH / 2 + Math.cos(a) * 195, HEIGHT / 2 + Math.sin(a) * 195); c.stroke();
+    }
+    c.lineWidth = 4;
+    c.beginPath(); c.moveTo(WIDTH / 2, HEIGHT / 2); c.lineTo(WIDTH / 2, HEIGHT / 2 - 130); c.stroke(); // frozen at midnight
+    c.beginPath(); c.moveTo(WIDTH / 2, HEIGHT / 2); c.lineTo(WIDTH / 2 + 64, HEIGHT / 2); c.stroke();
+    c.restore();
+}
+
 // The Twins — the wire strung between the two bodies (Down special)
 function drawTwinFx(c) {
     for (let p of players) {
@@ -367,6 +420,28 @@ function triggerOverkill(attacker, victim) {
     }
     spawnParticles(victim.x, victim.y - 48, 35, '#fff');
     stageActorsFlee(); // background spectators/dancers scatter
+}
+
+// The Traveler's Time Vortex: a slow-drifting singularity with a STRONG pull for its short
+// life — anyone dragged into the core is hitstunned while it churns. Never strikes on contact.
+function vortexLogic(self, dt) {
+    let cx = self.x + self.w / 2, cy = self.y + self.h / 2;
+    self._coreTick = (self._coreTick || 0) - dt;
+    for (let p of players) {
+        if (!p || !self.owner || p.team === self.owner.team || p.state === 'DEAD' || p.state === 'ULT') continue;
+        let dx = cx - p.x, dy = cy - (p.y - 45);
+        let dist = Math.hypot(dx, dy);
+        if (dist > 240) continue;
+        // strong pull, scaling up as they get closer
+        let pull = 320 + (1 - dist / 240) * 420;
+        p.x += Math.sign(dx) * pull * dt;
+        if (p.y >= GROUND_Y && dy < -30) p.vy = Math.min(p.vy, -120); // lifts grounded foes slightly toward an airborne core
+        if (dist < 46 && self._coreTick <= 0) { // churned in the core
+            self._coreTick = 0.38;
+            p.takeDamage(2, { x: 0, y: 0 }, 0.34, self.owner, { unblockable: true });
+            spawnParticles(p.x, p.y - 45, 8, '#6fd0ff');
+        }
+    }
 }
 
 // Chaos Bolt "split" element: shatters into three fragments shortly after firing
@@ -475,6 +550,10 @@ function checkCollisions() {
                         p.startYank(proj.owner); // reel the foe all the way to the Phantom
                     }
                     if (proj.subtype === 'piano') playAudio(attackSfx.piano); // Piano Drop crunch on contact
+                    if (proj.subtype === 'echoBolt' && landed) { // Tachyon Echo — the hit repeats 1s later
+                        p._echoHit = { t: 1.0, dmg: proj.damage, owner: proj.owner };
+                        spawnParticles(p.x, p.y - 50, 6, '#6fd0ff');
+                    }
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby
                         let bx = proj.x + proj.w/2, by = proj.y + proj.h/2;
@@ -768,6 +847,7 @@ function nextRound() {
         if ('devotion' in p) p.devotion = 0;
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
         if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
+        if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p._skipHide = 0; } // fresh timeline each round
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
@@ -1785,7 +1865,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', CULT: 'cult', LUMATROSSIA: 'lumatrossia', TWINS: 'twins', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', CULT: 'cult', LUMATROSSIA: 'lumatrossia', TWINS: 'twins', TRAVELER: 'traveler', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];
@@ -1955,6 +2035,7 @@ function draw() {
     drawCultTraps(ctx);       // Procession snare-traps on the floor
 
     // Entities
+    drawTravelerFx(ctx); // afterimage ghosts + the Rewind after-echo, behind the live body
     players.forEach(p => p.draw(ctx));
     players.forEach(p => { if (p.partner && p.state !== 'DEAD') p.partner.draw(ctx); }); // The Twins' second body
     drawTwinFx(ctx); // tethers + fastball trails
@@ -1971,6 +2052,7 @@ function draw() {
 
     ctx.restore();
 
+    drawChronoStop(ctx); // Traveler ult: the world drained of colour under a frozen clock
     drawSoulTrain(ctx); // Phantom ult: border-shatter + void-drag full-screen cinematic
     drawUltBanner(ctx);
     drawRoundAnnounce(ctx);

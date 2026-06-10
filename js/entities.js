@@ -369,6 +369,25 @@ class Projectile {
             ctx.beginPath(); ctx.moveTo(-9, 4); ctx.lineTo(9, 4); ctx.stroke();    // arms tucked
             ctx.beginPath(); ctx.moveTo(0, 12); ctx.lineTo(-7, 20); ctx.moveTo(0, 12); ctx.lineTo(7, 20); ctx.stroke(); // legs
             ctx.restore();
+        } else if (this.subtype === 'vortex') {
+            // The Traveler's time vortex — a churning spiral singularity
+            ctx.translate(cx, cy);
+            ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 2; ctx.shadowBlur = 16; ctx.shadowColor = '#6fd0ff';
+            for (let k = 0; k < 3; k++) {
+                ctx.save(); ctx.rotate(now * (4 + k) + k * 2.1);
+                ctx.beginPath();
+                for (let a = 0; a < 4.7; a += 0.25) { let rr = 4 + a * (8 + k * 3); ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+                ctx.stroke(); ctx.restore();
+            }
+            ctx.fillStyle = '#04141c'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.stroke();
+        } else if (this.subtype === 'echoBolt') {
+            // hard-light bolt with a phantom copy trailing one beat behind
+            ctx.fillStyle = '#6fd0ff'; ctx.shadowBlur = 12; ctx.shadowColor = '#6fd0ff';
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.globalAlpha = 0.4;
+            ctx.fillRect(this.x - Math.sign(this.vx || 1) * 16, this.y, this.w, this.h); // the echo
+            ctx.globalAlpha = 1;
         } else if (this.subtype === 'doomgaze') {
             // Lumatrossia's eye beam — a searing horizontal lance
             ctx.fillStyle = 'rgba(255,0,51,0.85)'; ctx.shadowBlur = 18; ctx.shadowColor = '#ff0033';
@@ -462,6 +481,14 @@ class Fighter {
         this.partner = null;          // the other twin (full Fighter, synced + drawn, hurtbox + hitbox source)
         this.tether = null;           // Down — wire strung between the twins { t, life }
         this.fastball = null;         // Up — the hurled twin as a missile { t, x, y, vx, vy }
+
+        // The Traveler — chrono kit
+        this.slipCd = 0;              // Temporal Slip passive: auto-phase one hit, then recharge
+        this.rewindCd = 0;            // Down — Rewind cooldown
+        this.posHistory = [];         // rolling 3s record of {x, y, hp} for Rewind + the after-echo
+        this._echoHit = null;         // Tachyon Echo re-hit pending on this fighter { t, dmg, owner }
+        this._skipHide = 0;           // Time Skip: brief edit-out-of-the-timeline invisibility
+        this._trail = [];             // afterimage ghosts {x, y, dir, age}
 
         // Combat state
         this.attacks = stats.attacks;
@@ -588,6 +615,30 @@ class Fighter {
         if (this.puppet) this.updatePuppet(dt);             // Cult mimic puppet records the leader
         if (this.tether) { this.tether.t += dt; this.updateTether(dt); if (this.tether.t >= this.tether.life) this.tether = null; }
         if (this.fastball) this.updateFastball(dt); // the thrown twin sails across the map
+        if (this.slipCd > 0) this.slipCd -= dt;     // Temporal Slip recharging
+        if (this.rewindCd > 0) this.rewindCd -= dt;
+        if (this._skipHide > 0) this._skipHide -= dt;
+        if (this.charType === 'TRAVELER') {
+            // rolling 3s record for Rewind (and its on-stage after-echo)
+            this.posHistory.push({ x: this.x, y: this.y, hp: this.hp });
+            if (this.posHistory.length > 185) this.posHistory.shift();
+            // afterimages — everything he does leaves a ghost trail
+            this._trailTick = (this._trailTick || 0) - dt;
+            let moving = Math.abs(this.vx) > 60 || this.y < GROUND_Y || this.state === 'ATTACK' || this.state === 'ULT';
+            if (moving && this._trailTick <= 0) { this._trailTick = 0.05; this._trail.push({ x: this.x, y: this.y, dir: this.dir, age: 0 }); }
+            for (let g of this._trail) g.age += dt;
+            this._trail = this._trail.filter(g => g.age < 0.24);
+        }
+        if (this._echoHit) { // Tachyon Echo — the same hit lands AGAIN out of the past
+            this._echoHit.t -= dt;
+            if (this._echoHit.t <= 0) {
+                let eh = this._echoHit; this._echoHit = null;
+                if (this.state !== 'DEAD') {
+                    this.takeDamage(eh.dmg, { x: 120 * (this.x >= (eh.owner ? eh.owner.x : this.x) ? 1 : -1), y: -70 }, 0.26, eh.owner);
+                    spawnParticles(this.x, this.y - 45, 12, '#6fd0ff');
+                }
+            }
+        }
         if (this._portalSlam && this.y >= GROUND_Y) {       // foe slams down out of a drop-portal
             let ps = this._portalSlam; this._portalSlam = null;
             this.takeDamage(ps.dmg, { x: 0, y: 0 }, 0.5, ps.owner, { unblockable: true });
@@ -1027,6 +1078,30 @@ class Fighter {
         playAudio(attackSfx.fire);
     }
 
+    // ---------------- THE TRAVELER: Rewind ----------------
+    // Snap back to where he stood ~3 seconds ago and undo 60% of the HP lost since.
+    doRewind() {
+        if (this.rewindCd > 0 || !this.posHistory.length) return;
+        let past = this.posHistory[0];
+        this.rewindCd = 9;
+        spawnParticles(this.x, this.y - 45, 18, '#6fd0ff'); // departure flash
+        // a ghost streak between here and the echo
+        for (let i = 0; i < 6; i++) {
+            let fx = this.x + (past.x - this.x) * (i / 6);
+            spawnParticles(fx, this.y - 45, 2, '#6fd0ff');
+        }
+        this.x = Math.max(28, Math.min(WIDTH - 28, past.x));
+        this.y = Math.min(GROUND_Y, past.y);
+        this.vx = 0; this.vy = 0;
+        let lost = past.hp - this.hp;
+        if (lost > 0) this.hp = Math.min(this.maxHp, this.hp + lost * 0.6);
+        this._echoHit = null; // an incoming echo re-hit is undone too
+        this.invulnTimer = Math.max(this.invulnTimer, 0.25);
+        spawnParticles(this.x, this.y - 45, 22, '#6fd0ff'); // arrival flash
+        playAudio(attackSfx.magic);
+        updateHUD();
+    }
+
     // ---------------- THE TWINS: a two-body pair you steer together ----------------
     // Both twins always mirror your actions at their own positions (the partner follows at the
     // current gap). A twin only breaks off if IT was individually stunned/knocked — then it plays
@@ -1374,7 +1449,7 @@ class Fighter {
         // u.target is re-linked by index. If that link fails (trimmed projectile,
         // length mismatch) the payoff phases would deref a null target and crash.
         // Any connected payoff phase without a live target simply ends the ult.
-        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice', 'alphaBind', 'alphaBrute', 'alphaRaven', 'alphaWhip', 'seize', 'shatter', 'void', 'smash'];
+        const PAYOFF_PHASES = ['grab', 'slam', 'dashes', 'finish', 'payoff', 'blast', 'execute', 'vice', 'alphaBind', 'alphaBrute', 'alphaRaven', 'alphaWhip', 'seize', 'shatter', 'void', 'smash', 'dodges', 'freeze', 'slide', 'wave'];
         if (PAYOFF_PHASES.includes(u.phase) && (!u.target || u.target.state === 'DEAD')) {
             this.endUlt();
             return;
@@ -1398,6 +1473,7 @@ class Fighter {
                 else if (u.kind === 'soultrain') { u.phase = 'rush'; }
                 else if (u.kind === 'install') { u.phase = 'summon'; this._lumFx = 1.4; }
                 else if (u.kind === 'eclipse') { u.phase = 'split'; u.target = this.getClosestEnemy(); }
+                else if (u.kind === 'chronostop') { u.phase = 'stance'; }
             }
             return;
         }
@@ -1439,6 +1515,87 @@ class Fighter {
                     sfx.playDeath();
                 }
                 if (u.t > 0.6) { this.anchorX = WIDTH / 2; this.endUlt(); }
+                return;
+            }
+            return;
+        }
+
+        // THE TRAVELER — chronostop: counter stance → 5-dodge montage → TIME STOP flurry →
+        // slide past → wave, and every stored hit detonates at once.
+        if (u.kind === 'chronostop') {
+            if (u.phase === 'stance') {
+                if (u.t > 0.9) this.endUlt(); // nobody swung — the future he saw never happened
+                return;
+            }
+            let tg = u.target;
+            if (!tg) { this.endUlt(); return; }
+            if (u.phase === 'dodges') {
+                // the foe swings over and over; each swing meets a different dodge
+                timeScale = 0.42;
+                this.y = GROUND_Y; this.vx = 0;
+                this.dir = tg.x >= this.x ? 1 : -1;
+                tg.x = this.x + this.dir * 58; tg.y = GROUND_Y;
+                tg.dir = -this.dir;
+                // puppet the foe through repeated light swings
+                tg.state = 'ATTACK';
+                tg.currentAttack = tg.currentAttack && tg.currentAttack.name === 'light' ? tg.currentAttack : { ...tg.attacks.light, name: 'light' };
+                let swingTotal = tg.currentAttack.startup + tg.currentAttack.active + tg.currentAttack.recovery;
+                tg.stateTimer = (u.t % 0.42) / 0.42 * swingTotal;
+                tg.animTimer += dt;
+                u.dodgeIdx = Math.min(4, Math.floor(u.t / 0.42)); // 5 dodges, ~0.42s apiece
+                if (u.dodgeIdx !== u._lastDodge) {
+                    u._lastDodge = u.dodgeIdx;
+                    spawnParticles(this.x - this.dir * 10, this.y - 50, 8, '#6fd0ff'); // whiff blur
+                }
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 70, zoom: 1.8 };
+                if (u.t > 2.1) { u.phase = 'freeze'; u.t = 0; u.hits = 0; u.stored = 0; tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0; sfx.playDeath(); }
+                return;
+            }
+            if (u.phase === 'freeze') {
+                // TIME STOP — the world drains of colour (overlay in engine); he flurries from every angle
+                timeScale = 0.06; // the world is frozen; he acts in real time (frameRealDt)
+                tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0;
+                ultCamera = { fx: tg.x, fy: GROUND_Y - 75, zoom: 1.7 };
+                if (u.hits < 6 && u.t > 0.25 + u.hits * 0.24) {
+                    u.hits++;
+                    u.stored += 4; // damage is STORED, not dealt — it all lands at the wave
+                    // teleport to a new angle around the foe for each frozen strike
+                    let ang = [1, -1, 1, -1, 1, -1][u.hits - 1];
+                    this.x = Math.max(40, Math.min(WIDTH - 40, tg.x + ang * (44 + (u.hits % 3) * 18)));
+                    this.dir = tg.x >= this.x ? 1 : -1;
+                    u.strikeAlt = u.hits % 2; // alternate punch/kick pose
+                    spawnParticles(tg.x + (Math.random() - 0.5) * 30, tg.y - 30 - Math.random() * 40, 6, '#fff');
+                    spawnParticles(tg.x, tg.y - 45, 4, '#6fd0ff');
+                    playAudio(attackSfx.punch);
+                }
+                if (u.t > 1.9) { u.phase = 'slide'; u.t = 0; u.slideFrom = this.x; u.slideTo = Math.max(50, Math.min(WIDTH - 50, tg.x + (tg.x >= this.x ? -1 : 1) * -120)); }
+                return;
+            }
+            if (u.phase === 'slide') {
+                // he slides right past them, low and smooth
+                timeScale = 0.06;
+                tg.state = 'HITSTUN'; tg.stateTimer = 5;
+                let s = Math.min(1, u.t / 0.4);
+                this.x = u.slideFrom + (u.slideTo - u.slideFrom) * (1 - Math.pow(1 - s, 2));
+                this.dir = tg.x >= this.x ? 1 : -1;
+                spawnParticles(this.x, GROUND_Y - 8, 2, '#6fd0ff');
+                if (u.t > 0.55) { u.phase = 'wave'; u.t = 0; }
+                return;
+            }
+            if (u.phase === 'wave') {
+                // a flick of the hand — time resumes, and every stored hit lands at once
+                tg.state = 'HITSTUN'; tg.stateTimer = 3;
+                if (!u.waved && u.t > 0.3) {
+                    u.waved = true;
+                    timeScale = 0.5;
+                    let away = tg.x >= this.x ? 1 : -1;
+                    tg.takeDamage((u.stored || 24) + 10, { x: 460 * away, y: -340 }, 0.9, this, { isUlt: true, unblockable: true });
+                    tg.tumbleTimer = 0.7; tg._tumbleAngle = 0; tg._tumbleDir = away;
+                    spawnParticles(tg.x, tg.y - 45, 44, '#fff');
+                    spawnParticles(tg.x, tg.y - 45, 26, '#6fd0ff');
+                    sfx.playDeath();
+                }
+                if (u.t > 1.0) this.endUlt();
                 return;
             }
             return;
@@ -1985,6 +2142,7 @@ class Fighter {
                      : this.charType === 'PHANTOM' ? dist < 240        // soul-train rush has reach
                      : this.charType === 'CULT' ? true                  // the install needs no target
                      : this.charType === 'TWINS' ? dist < 220           // Eclipse must catch the foe in range
+                     : this.charType === 'TRAVELER' ? dist < 130        // the counter wants them swinging at him
                      : dist < 460;                                      // mage/ranger ranged
             if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
@@ -2003,6 +2161,7 @@ class Fighter {
             CULT:      { range: 240, kite: true,  jumpy: 0.06 },
             LUMATROSSIA:{ range: 120, kite: false, jumpy: 0.04 },
             TWINS:     { range: 70,  kite: false, jumpy: 0.10 },
+            TRAVELER:  { range: 105, kite: false, jumpy: 0.16 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -2152,6 +2311,12 @@ class Fighter {
                     else if (r < 0.70) this.startAttack('specDown');            // Tether trap
                     else if (target.y < GROUND_Y - 30 ? r < 0.85 : r < 0.78) this.startAttack('specUp'); // Fastball
                     else this.startAttack('specSide');                          // Crossover
+                } else if (this.charType === 'TRAVELER') {
+                    if (this.hp < this.maxHp * 0.45 && this.rewindCd <= 0 && r < 0.3) this.startAttack('specDown'); // undo the damage
+                    else if (r < 0.46) this.startPlayerAttack(r < 0.26 ? 'L' : 'H'); // jab / flash kick
+                    else if (r < 0.64) this.startAttack('specNeutral');             // vortex at their feet
+                    else if (r < 0.82) this.startAttack('specSide');                // tachyon echo
+                    else this.startAttack('specUp');                                // time skip out
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -2268,6 +2433,15 @@ class Fighter {
             else this.twinConverge();                                   // apart: leap at each other
         }
         if (t === 'twinTether') this.twinTether();                              // string a wire between them
+        // The Traveler specials
+        if (t === 'timeSkip') { // fast-forward out of the timeline: vanish, reappear at jump apex
+            this.vy = -640; this.vx = 110 * this.dir;
+            this._skipHide = 0.2;
+            this.invulnTimer = Math.max(this.invulnTimer, 0.3);
+            spawnParticles(this.x, this.y - 45, 16, '#6fd0ff');
+            playAudio(attackSfx.magic);
+        }
+        if (t === 'rewind') this.doRewind();                                    // snap back to the after-echo
 
         // Cult — every action summons 1-3 cultists for the ritual (cosmetic flair)
         if (this.charType === 'CULT' && typeof spawnCultists === 'function') {
@@ -2322,6 +2496,12 @@ class Fighter {
         }
         if (this.charType === 'TWINS') {                                                 // crisp synchronized strikes
             if (atk.type === 'crossover' || atk.type === 'fastball') playAudio(attackSfx.knife);
+            else playAudio(attackSfx.punch);
+            return;
+        }
+        if (this.charType === 'TRAVELER') {                                              // sharp tech strikes
+            if (atk.name === 'heavy' || atk.type === 'flashKick') playAudio(attackSfx.kick);
+            else if (atk.isProj || atk.type === 'timeVortex') playAudio(attackSfx.magic);
             else playAudio(attackSfx.punch);
             return;
         }
@@ -2400,7 +2580,7 @@ class Fighter {
                 hitboxes.push(new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, {x: 60 * this.dir, y: 200}, atk.stun, this, atk.active));
                 playAudio(attackSfx.shot);
                 for (let i = 0; i < 8; i++) particles.push(new Particle(this.x, this.y - 6, (Math.random()-0.5)*240, 160+Math.random()*220, 0.4, '#fff', 2));
-            } else if (atk.type === 'combatRoll' || atk.type === 'blink' || atk.type === 'beastSwitch') {
+            } else if (atk.type === 'combatRoll' || atk.type === 'blink' || atk.type === 'beastSwitch' || atk.type === 'timeSkip' || atk.type === 'rewind') {
                 // movement-only specials, no hitbox spawned here
             } else if (atk.type === 'beastSerpentSwing') {
                 this.spawnBeastSerpentSwing(dmgMod, atk);
@@ -2621,6 +2801,10 @@ class Fighter {
             subtype = 'mistChain';
         } else if (atk.type === 'doomgaze') {
             subtype = 'doomgaze'; pierce = true;
+        } else if (atk.type === 'timeVortex') {
+            subtype = 'vortex'; logic = vortexLogic; // drags foes in; the core hitstuns (no contact damage)
+        } else if (atk.type === 'tachyonEcho') {
+            subtype = 'echoBolt'; // the hit repeats itself one second later
         }
 
         if (this.charType === 'PHANTOM') {
@@ -2651,6 +2835,7 @@ class Fighter {
             proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
         }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
+        if (subtype === 'vortex') proj.benign = true;      // the singularity never strikes on contact — its pull/core does the work
         // Grave Drag (mistChain) is blockable — a guarded hit returns false from takeDamage, so the yank won't fire
         projectiles.push(proj);
     }
@@ -2668,6 +2853,16 @@ class Fighter {
             if (attacker && attacker.state === 'ULT') attacker.endUlt(); // cancel their ult too
             spawnParticles(this.x, this.y - 40, 24, '#fff');
             return false; // the incoming attack is fully negated
+        }
+
+        // TRAVELER ultimate — they swung at him; the dodge montage begins
+        if (this.state === 'ULT' && this.ult && this.ult.kind === 'chronostop' && this.ult.phase === 'stance') {
+            this.ult.connected = true;
+            this.ult.target = attacker || this.getClosestEnemy();
+            this.ult.phase = 'dodges'; this.ult.t = 0; this.ult.dodgeIdx = 0; this.ult.stored = 0;
+            if (attacker && attacker.state === 'ULT') attacker.endUlt();
+            spawnParticles(this.x, this.y - 40, 20, '#6fd0ff');
+            return false;
         }
 
         // Other ultimate performers are invulnerable during their cinematic
@@ -2705,6 +2900,15 @@ class Fighter {
         // Phantom Fading Veil — faded out; attacks pass through (true unblockables still land)
         if (this.charType === 'PHANTOM' && this._fadeIntangible && !opts.unblockable) {
             spawnParticles(this.x, this.y - 45, 6, '#9aa6c8');
+            return false;
+        }
+
+        // Traveler — Temporal Slip passive: auto-phase through one hit, then recharge
+        if (this.charType === 'TRAVELER' && this.slipCd <= 0 && !opts.unblockable && this.state !== 'BLOCK' && attacker !== this) {
+            this.slipCd = 6;
+            this._trail.push({ x: this.x, y: this.y, dir: this.dir, age: 0 }); // he blurs out of the hit
+            spawnParticles(this.x, this.y - 45, 14, '#6fd0ff');
+            playAudio(attackSfx.magic);
             return false;
         }
 
@@ -2931,7 +3135,7 @@ class Fighter {
     // Colour of this fighter's guard — used by the block shield, its shatter shards,
     // and the block-break burst so each character's break matches their block.
     guardColor() {
-        return { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', PHANTOM: '#dfe4f2' }[this.charType] || '#ffffff';
+        return { MAGE: '#c98bff', TELEPATH: '#9be3ff', DARK_RULER: '#ff0033', PHANTOM: '#dfe4f2', TRAVELER: '#6fd0ff' }[this.charType] || '#ffffff';
     }
 
     startRoot() {
@@ -3236,7 +3440,15 @@ class Fighter {
 
     draw(ctx) {
         if (this.state === 'DEAD' && this._overkilled) return;
-        
+        // Time Skip — edited out of the timeline for a beat: just a streak, no body
+        if (this._skipHide > 0) {
+            ctx.save();
+            ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 3; ctx.globalAlpha = 0.6; ctx.shadowBlur = 12; ctx.shadowColor = '#6fd0ff';
+            ctx.beginPath(); ctx.moveTo(this.x, this.y - 14); ctx.lineTo(this.x - this.dir * 26, this.y - 78); ctx.stroke();
+            ctx.restore();
+            return;
+        }
+
         ctx.save();
         // The Telepath never touches the floor — she hovers while grounded, including
         // through her attacks. Only crouching / being hit / hanging keeps her down.
@@ -3475,6 +3687,25 @@ class Fighter {
                     rightArmAngle = 0.9 - bounce * 0.06; rightArmBend = -1.0;
                     torsoLean = 0.02;
                 }
+            } else if (this.charType === 'TRAVELER') {
+                if (this.isPreview) {
+                    // character-select pose: checking the holo-watch, utterly unbothered — he's
+                    // already seen you pick him
+                    let glance = Math.sin(t * 1.4);
+                    headY += 2 + glance * 1;
+                    rightArmAngle = 1.05; rightArmBend = 1.35;   // wrist raised to eye level, reading the time
+                    leftArmAngle = -0.2; leftArmBend = 0.15;     // off-hand slack in a pocket-slouch
+                    leftLegAngle = -0.38; rightLegAngle = 0.2;   // weight kicked back on the rear leg
+                    leftLegBend = 0.2; rightLegBend = 0.55;
+                    torsoLean = -0.06 + glance * 0.02;
+                } else {
+                    // relaxed future-cool idle — loose sway, one hand idly flicking the holo-watch
+                    let sway = Math.sin(t * 2.2), flick = Math.sin(t * 1.1);
+                    headY += sway * 1.5;
+                    rightArmAngle = 0.85 + flick * 0.12; rightArmBend = 0.95;  // wrist drifting up toward a glance
+                    leftArmAngle = -0.45 + sway * 0.05; leftArmBend = 0.35;    // off-arm loose at his side
+                    torsoLean = -0.02 + sway * 0.02;
+                }
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -3576,6 +3807,21 @@ class Fighter {
                 leftArmAngle = 0.6; leftArmBend = 1.2;                              // outer hand on hip
                 leftLegAngle = 0.4; rightLegAngle = -0.4; leftLegBend = -0.3; rightLegBend = 0.3;
                 torsoLean = 0.04;
+            } else if (this.charType === 'TRAVELER') {
+                // taps the holo-watch, then leans back smug with arms spread — "right on schedule"
+                let wt2 = this.stateTimer;
+                if (wt2 < 1.0) { // checking the time on the win
+                    rightArmAngle = 1.05; rightArmBend = 1.35;  // wrist up to the visor
+                    leftArmAngle = -0.3; leftArmBend = 0.2;
+                    leftLegAngle = -0.36; rightLegAngle = 0.2; leftLegBend = 0.2; rightLegBend = 0.5;
+                    torsoLean = -0.05; headY += 2;
+                } else { // ...then the lean-back flourish
+                    let st2 = Math.min(1, (wt2 - 1.0) / 0.4), drift = Math.sin(t * 2.4);
+                    rightArmAngle = 1.05 + (-1.4 - 1.05) * st2 + drift * 0.05; rightArmBend = 1.35 + (0.3 - 1.35) * st2;
+                    leftArmAngle = -0.3 + (1.4 + 0.3) * st2 - drift * 0.05; leftArmBend = 0.2 + (-0.3 - 0.2) * st2;
+                    leftLegAngle = -0.42; rightLegAngle = 0.3; leftLegBend = 0.18; rightLegBend = 0.5;
+                    torsoLean = -0.05 + (-0.2 + 0.05) * st2; headY += 2 + (-3 - 2) * st2;
+                }
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
@@ -3726,6 +3972,11 @@ class Fighter {
                 // a low coiled crouch, fists up and ready to spring
                 leftArmAngle = 1.7; leftArmBend = -0.95; rightArmAngle = 1.85; rightArmBend = -0.95;
                 torsoLean = 0.1;
+            } else if (this.charType === 'TRAVELER') {
+                // a sprinter's set position — one hand planted to the floor, visor up and scanning
+                rightArmAngle = 1.45 + Math.sin(t * 3) * 0.03; rightArmBend = -0.15; // fingertips to the ground
+                leftArmAngle = -0.85; leftArmBend = 0.65;                            // rear arm cocked behind
+                headY -= 1; torsoLean = 0.24;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -3826,6 +4077,20 @@ class Fighter {
                     torsoLean = -0.04;
                 }
                 headY += rise ? -2 : 2;
+            } else if (this.charType === 'TRAVELER') {
+                // a smooth, almost lazy glide — like he's skipping the boring frames of the jump.
+                // Rising: body straight, one arm trailing. Falling: settles upright, hands pocketed low.
+                if (rise) {
+                    leftLegAngle = -0.42; rightLegAngle = 0.3; leftLegBend = 0.25; rightLegBend = 0.85; // one leg trailing straight, one stepping
+                    rightArmAngle = 1.35; rightArmBend = 0.3;   // lead hand reaching the apex he already knows
+                    leftArmAngle = -1.1; leftArmBend = -0.25;   // trailing arm swept back
+                    torsoLean = 0.14; headY -= 2;
+                } else {
+                    leftLegAngle = -0.18; rightLegAngle = 0.2; leftLegBend = 0.3; rightLegBend = 0.34;  // upright, unhurried descent
+                    rightArmAngle = 0.5; rightArmBend = 0.5;
+                    leftArmAngle = -0.5; leftArmBend = -0.5;    // both hands relaxed at his sides
+                    torsoLean = 0.0; headY += 1;
+                }
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -3888,6 +4153,12 @@ class Fighter {
                 leftArmAngle = 1.9 + brace; leftArmBend = -1.15;
                 rightArmAngle = 1.5 - brace; rightArmBend = -0.7;
                 torsoLean = -0.06;
+            } else if (this.charType === 'TRAVELER') {
+                // one wrist held out projecting a clock-face barrier — body turned casually
+                // side-on behind it, off-hand still slack (he barely respects the attack)
+                rightArmAngle = 1.5; rightArmBend = 0.05 + brace;  // bracer arm extended, palm out
+                leftArmAngle = -0.35; leftArmBend = 0.25;          // off-arm staying loose
+                headY -= 1; torsoLean = -0.1;
             } else {
                 // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
@@ -4057,6 +4328,49 @@ class Fighter {
                 leftArmAngle = mix(1.5, 1.1, ex); leftArmBend = 0.3;
                 leftLegAngle = -0.34; rightLegAngle = 0.34; leftLegBend = 0.7; rightLegBend = 0.66;
                 headY += 5; torsoLean = 0.14;
+            } else if (atk.type === 'phaseJab') {
+                // TWO jabs in one press — the arm teleports from a high strike to a low one
+                // with the travel between them edited out; the body shunts forward on the snap
+                let ph = ex < 0.12 ? -1 : ex < 0.55 ? 0 : 1; // windup keyframe → jab A → jab B
+                if (ph === -1) {
+                    rightArmAngle = 1.95; rightArmBend = -0.4;           // cocked
+                    rightLegAngle = 0.16; torsoLean = 0.0;
+                } else if (ph === 0) {
+                    rightArmAngle = 1.7; rightArmBend = 0.02;            // high jab, at the chin
+                    rightLegAngle = 0.32; torsoLean = 0.1; headY -= 1;
+                } else {
+                    rightArmAngle = 1.4; rightArmBend = 0.02;            // snapped to the low jab, at the ribs
+                    rightLegAngle = 0.46; torsoLean = 0.16; headY += 1;
+                }
+                leftArmAngle = -0.4 + (ph > -1 ? 0.18 : 0); leftArmBend = 0.3; // off-hand slack — pure economy
+                leftLegAngle = -0.32; leftLegBend = 0.26; rightLegBend = 0.36;
+            } else if (atk.type === 'flashKick') {
+                // the kick exists in exactly THREE frames — chamber, impact, follow-through —
+                // a flipbook with the travel cut out
+                let f = ex < 0.38 ? 0 : ex < 0.82 ? 1 : 2;
+                rightLegAngle = [-0.3, 1.5, 1.95][f]; rightLegBend = [1.05, 0.08, 0.28][f];
+                leftLegAngle = [-0.3, -0.36, -0.46][f]; leftLegBend = [0.34, 0.3, 0.42][f];
+                rightArmAngle = [0.9, 0.32, 0.06][f]; rightArmBend = 0.4;
+                leftArmAngle = [-0.9, -0.58, -0.36][f]; leftArmBend = -0.4;
+                torsoLean = [-0.02, -0.2, -0.32][f]; headY += [0, 2, 4][f];
+            } else if (atk.type === 'timeVortex') {
+                // two hands wind a sphere of churning time, then shove it loose
+                rightArmAngle = mix(1.1, 1.55, ex); rightArmBend = mix(0.6, 0.1, ex);
+                leftArmAngle = mix(0.8, 1.4, ex); leftArmBend = mix(0.7, 0.15, ex);
+                leftLegAngle = -0.34; rightLegAngle = 0.3; leftLegBend = 0.3; rightLegBend = 0.36;
+                torsoLean = mix(-0.06, 0.1, ex); headY -= 1;
+            } else if (atk.type === 'tachyonEcho') {
+                // a wrist-cannon shot — arm levelled dead straight off the bracer
+                rightArmAngle = mix(1.2, 1.57, ex); rightArmBend = 0.0;
+                leftArmAngle = 1.05; leftArmBend = 1.3; // off-hand steadying the bracer wrist
+                leftLegAngle = -0.4; rightLegAngle = 0.22; leftLegBend = 0.22; rightLegBend = 0.45;
+                torsoLean = -0.04; headY -= 1;
+            } else if (atk.type === 'rewind') {
+                // a backwards hand-sweep, like wiping the last three seconds off a screen
+                rightArmAngle = mix(1.6, 2.5, ex); rightArmBend = mix(0.1, -0.5, ex);
+                leftArmAngle = -0.3; leftArmBend = 0.2;
+                leftLegAngle = -0.3; rightLegAngle = 0.26; leftLegBend = 0.3; rightLegBend = 0.32;
+                torsoLean = mix(0.02, -0.12, ex); headY -= 1;
             } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
@@ -4360,6 +4674,68 @@ class Fighter {
                     leftLegAngle = -0.3; rightLegAngle = 0.34; leftLegBend = 0.34; rightLegBend = 0.36;
                     torsoLean = 0.1; headY -= 1;
                 }
+            } else if (this.charType === 'TRAVELER') {
+                if (dec || u.phase === 'stance') {
+                    // the come-on: weight back, one hand beckoning — swing at me, I dare you
+                    let beck = Math.sin(t * 5);
+                    rightArmAngle = 1.45; rightArmBend = 0.45 + beck * 0.18; // fingers curling "come here"
+                    leftArmAngle = -0.4; leftArmBend = 0.2;
+                    leftLegAngle = -0.46; rightLegAngle = 0.18; leftLegBend = 0.2; rightLegBend = 0.5;
+                    torsoLean = -0.12; headY += 1;
+                } else if (u.phase === 'dodges') {
+                    // five distinct dodges, one per incoming swing
+                    let d = u.dodgeIdx || 0;
+                    if (d === 0) {        // duck low under it
+                        headY += 16; torsoLean = 0.3;
+                        leftLegAngle = -0.4; rightLegAngle = 0.4; leftLegBend = 0.95; rightLegBend = 0.9;
+                        leftArmAngle = 1.8; leftArmBend = -0.8; rightArmAngle = 1.6; rightArmBend = -0.6;
+                    } else if (d === 1) { // lean back, hands staying lazily down
+                        headY += 2; torsoLean = -0.42;
+                        leftLegAngle = -0.55; rightLegAngle = 0.4; leftLegBend = 0.2; rightLegBend = 0.6;
+                        leftArmAngle = -0.5; leftArmBend = -0.2; rightArmAngle = 0.5; rightArmBend = 0.2;
+                    } else if (d === 2) { // twist aside, arm sweeping the blow past
+                        torsoLean = 0.18; headY += 3;
+                        leftLegAngle = -0.2; rightLegAngle = 0.5; leftLegBend = 0.4; rightLegBend = 0.5;
+                        rightArmAngle = 2.2; rightArmBend = -0.6; leftArmAngle = -0.7; leftArmBend = 0.3;
+                    } else if (d === 3) { // the deep matrix-bend
+                        headY += 6; torsoLean = -0.6;
+                        leftLegAngle = -0.7; rightLegAngle = 0.5; leftLegBend = 0.35; rightLegBend = 0.75;
+                        leftArmAngle = -1.3; leftArmBend = -0.3; rightArmAngle = -1.0; rightArmBend = 0.3;
+                    } else {              // a neat little hop over the low swing
+                        headY -= 6;
+                        leftLegAngle = -0.2; rightLegAngle = 0.3; leftLegBend = 1.0; rightLegBend = 0.95;
+                        leftArmAngle = -0.8; leftArmBend = 0.4; rightArmAngle = 0.8; rightArmBend = -0.4;
+                        torsoLean = 0.05;
+                    }
+                } else if (u.phase === 'freeze') {
+                    if ((u.hits || 0) === 0) { // the outstretched hand — TIME, STOP
+                        rightArmAngle = 1.57; rightArmBend = 0.0;
+                        leftArmAngle = -0.3; leftArmBend = 0.2;
+                        leftLegAngle = -0.36; rightLegAngle = 0.24; leftLegBend = 0.26; rightLegBend = 0.4;
+                        torsoLean = 0.06; headY -= 1;
+                    } else if (u.strikeAlt) { // frozen flurry — alternating straight punch...
+                        rightArmAngle = 1.5; rightArmBend = 0.05;
+                        leftArmAngle = 1.9; leftArmBend = -0.8;
+                        leftLegAngle = -0.4; rightLegAngle = 0.45; leftLegBend = 0.3; rightLegBend = 0.45;
+                        torsoLean = 0.2;
+                    } else {                  // ...and snapped side-kick
+                        rightLegAngle = 1.45; rightLegBend = 0.1; leftLegAngle = -0.3; leftLegBend = 0.4;
+                        rightArmAngle = 0.5; rightArmBend = 0.4; leftArmAngle = -1.0; leftArmBend = -0.3;
+                        torsoLean = -0.16; headY += 2;
+                    }
+                } else if (u.phase === 'slide') {
+                    // the low slide past — heel out front, fingertips skimming the floor
+                    headY += 14; torsoLean = -0.34;
+                    leftLegAngle = 1.2; leftLegBend = 0.08; rightLegAngle = -0.4; rightLegBend = 1.0;
+                    rightArmAngle = 1.5; rightArmBend = -0.2; leftArmAngle = -1.2; leftArmBend = -0.2;
+                } else if (u.phase === 'wave') {
+                    // the dismissive hand-wave that lets all of it finally land
+                    let wv = Math.min(1, u.t / 0.3);
+                    rightArmAngle = 2.0 + Math.sin(wv * Math.PI) * 0.6; rightArmBend = -0.3;
+                    leftArmAngle = -0.4; leftArmBend = 0.2;
+                    leftLegAngle = -0.4; rightLegAngle = 0.2; leftLegBend = 0.22; rightLegBend = 0.45;
+                    torsoLean = -0.08; headY += 1;
+                }
             }
         } else if (this.state === 'LEDGE') {
             // Hanging from a stage lip. dir faces into the stage, so +x (local)
@@ -4489,6 +4865,18 @@ class Fighter {
                 leftArmAngle = -0.85 + step * 0.1; rightArmAngle = 0.85 - step * 0.1;
                 leftArmBend = 0.9; rightArmBend = -0.9;
                 torsoLean = 0.03;
+            } else if (this.charType === 'TRAVELER') {
+                // STOP-MOTION stride — the legs animate in discrete time-sliced keyframes (no
+                // smooth travel between them) while the body glides forward, like a man
+                // rendered at five frames a second. One hand keeps the holo-watch raised
+                // mid-stroll: he's pacing himself against a schedule only he can see.
+                let stride = Math.round(Math.sin(t * 9) * 2) / 2; // quantised: snaps between 5 leg keyframes
+                leftLegAngle = -0.05 + stride * 0.5; rightLegAngle = -0.05 - stride * 0.5;
+                leftLegBend = 0.26 + Math.max(0, stride) * 0.48; rightLegBend = 0.26 + Math.max(0, -stride) * 0.48;
+                // zero bob — the upper body floats dead level over the flickbook legs
+                rightArmAngle = 1.05 + stride * 0.04; rightArmBend = 1.35;   // watch held up at eye level
+                leftArmAngle = -0.5 + stride * 0.3; leftArmBend = -0.4;      // off arm swings in the same chopped frames
+                torsoLean = isWalkingForward ? 0.08 : -0.05;
             } else {
                 // Alternating gait: the two legs swing in OPPOSITE phase around a
                 // near-vertical centre, and each knee bends as that foot lifts/swings.
@@ -4932,6 +5320,56 @@ class Fighter {
                 ctx.beginPath(); ctx.arc(0, headY + 6, 26, 0, Math.PI * 2); ctx.stroke();
             }
             ctx.restore();
+        } else if (this.charType === 'TRAVELER') {
+            ctx.save();
+            // VISOR — an actual angular lens wrapping the front of the face, not a band:
+            // dark glass with a glowing cyan rim and a sliding glint
+            ctx.fillStyle = 'rgba(8, 26, 36, 0.92)';
+            ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
+            ctx.shadowBlur = 9; ctx.shadowColor = '#6fd0ff';
+            ctx.beginPath();
+            ctx.moveTo(-9, headY - 7);
+            ctx.lineTo(10, headY - 7);
+            ctx.lineTo(14, headY - 3);   // pointed leading edge over the eyes
+            ctx.lineTo(10, headY + 3);
+            ctx.lineTo(-9, headY + 3);
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.2; // the glint sweeping across the glass
+            let gl = (Math.sin(t * 1.6) * 0.5 + 0.5) * 14 - 7;
+            ctx.beginPath(); ctx.moveTo(gl - 2, headY - 5); ctx.lineTo(gl + 2, headY + 1); ctx.stroke();
+            // glowing tech seams down the torso
+            ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.7;
+            ctx.beginPath(); ctx.moveTo(-2, -56); ctx.lineTo(-2, -36); ctx.moveTo(2, -52); ctx.lineTo(2, -40); ctx.stroke();
+            ctx.globalAlpha = 1;
+            // holo-watch — a small cyan ring at the right wrist
+            if (typeof rHandX === 'number') {
+                ctx.lineWidth = 2; ctx.shadowBlur = 8; ctx.shadowColor = '#6fd0ff';
+                ctx.beginPath(); ctx.arc(rHandX, rHandY, 4.4, 0, Math.PI * 2); ctx.stroke();
+            }
+            // TEMPORAL SLIP CLOCK — a big halo ring encircling the head, its hands always
+            // turning; the rim fills with the recharge and blazes when the slip is ready
+            let slipFrac = 1 - Math.max(0, this.slipCd) / 6;
+            let ringR = 19;
+            ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(111,208,255,0.3)';
+            ctx.beginPath(); ctx.arc(0, headY, ringR, 0, Math.PI * 2); ctx.stroke(); // faint full dial
+            for (let i = 0; i < 12; i++) { // tick marks
+                let a = i / 12 * Math.PI * 2;
+                ctx.beginPath(); ctx.moveTo(Math.cos(a) * (ringR - 2.5), headY + Math.sin(a) * (ringR - 2.5));
+                ctx.lineTo(Math.cos(a) * ringR, headY + Math.sin(a) * ringR); ctx.stroke();
+            }
+            ctx.lineWidth = 2.4;
+            ctx.strokeStyle = slipFrac >= 1 ? '#6fd0ff' : 'rgba(111,208,255,0.55)';
+            ctx.shadowBlur = slipFrac >= 1 ? 12 : 0; ctx.shadowColor = '#6fd0ff';
+            ctx.beginPath(); ctx.arc(0, headY, ringR, -Math.PI / 2, -Math.PI / 2 + slipFrac * Math.PI * 2); ctx.stroke(); // recharge rim
+            ctx.shadowBlur = 0;
+            // the hands, always turning — a quick minute hand and a slow hour hand
+            ctx.lineWidth = 1.8; ctx.strokeStyle = 'rgba(111,208,255,0.8)'; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(0, headY); ctx.lineTo(Math.cos(t * 2.6) * (ringR - 5), headY + Math.sin(t * 2.6) * (ringR - 5)); ctx.stroke();
+            ctx.lineWidth = 2.2;
+            ctx.beginPath(); ctx.moveTo(0, headY); ctx.lineTo(Math.cos(t * 0.4) * (ringR - 10), headY + Math.sin(t * 0.4) * (ringR - 10)); ctx.stroke();
+            // Rewind's after-echo is drawn in world space (engine) at the 3s-old position
+            ctx.restore();
         } else if (this.charType === 'ZOMBIE') {
             // Missing eye / exposed skull detail
             ctx.fillStyle = '#ff0033';
@@ -5098,6 +5536,80 @@ class Fighter {
             // the gun during gun attacks; otherwise the lead hand slashes the knife.
             drawKnife(rHandX, rHandY, rForeAng);
             drawGun(lHandX, lHandY, lForeAng);
+        } else if (this.charType === 'TRAVELER' && this.state === 'ATTACK' && this.currentAttack &&
+                   (this.currentAttack.type === 'phaseJab' || this.currentAttack.type === 'flashKick')) {
+            // Skipped-frame ghosts: the strike positions he edited out, hanging in the air
+            let caG = this.currentAttack;
+            let prG = (this.stateTimer - caG.startup) / Math.max(0.01, caG.active + caG.recovery * 0.4);
+            if (prG > 0 && prG < 1) {
+                ctx.save();
+                ctx.strokeStyle = '#6fd0ff'; ctx.lineCap = 'round'; ctx.shadowBlur = 10; ctx.shadowColor = '#6fd0ff';
+                if (caG.type === 'phaseJab') {
+                    // both jab positions linger as ghost fists with speed dashes between
+                    ctx.globalAlpha = 0.55;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.arc(34, -56, 3.4, 0, Math.PI * 2); ctx.stroke(); // the high jab
+                    ctx.beginPath(); ctx.arc(36, -44, 3.4, 0, Math.PI * 2); ctx.stroke(); // the low jab
+                    ctx.globalAlpha = 0.35; ctx.lineWidth = 1.6;
+                    ctx.beginPath();
+                    ctx.moveTo(14, -55); ctx.lineTo(26, -56);
+                    ctx.moveTo(15, -47); ctx.lineTo(28, -45);
+                    ctx.stroke();
+                } else {
+                    // the three kick frames traced as ghost shins fanning through the arc
+                    [[0.45, 0.3], [0.95, 0.45], [1.5, 0.6]].forEach(([a, al], i) => {
+                        ctx.globalAlpha = al;
+                        ctx.lineWidth = 2.4;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -36);
+                        ctx.lineTo(Math.sin(a) * 40, -36 + Math.cos(a) * 40);
+                        ctx.stroke();
+                    });
+                }
+                ctx.restore();
+            }
+        } else if (this.charType === 'TRAVELER' && this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'tachyonEcho') {
+            // Tachyon Echo is fired from a high-tech blaster that materialises in his hand
+            ctx.save();
+            let dx = Math.cos(rForeAng), dy = Math.sin(rForeAng);
+            let ux = dy, uy = -dx;
+            if (uy > 0) { ux = -ux; uy = -uy; } // keep the grip hanging downward
+            // angular alloy body
+            ctx.strokeStyle = '#cfd8de'; ctx.lineWidth = 6; ctx.lineCap = 'butt';
+            ctx.beginPath();
+            ctx.moveTo(rHandX - dx * 4 + ux * 2, rHandY - dy * 4 + uy * 2);
+            ctx.lineTo(rHandX + dx * 19 + ux * 2, rHandY + dy * 19 + uy * 2);
+            ctx.stroke();
+            // glowing tachyon core running the barrel
+            ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 2; ctx.shadowBlur = 12; ctx.shadowColor = '#6fd0ff';
+            ctx.beginPath();
+            ctx.moveTo(rHandX + dx * 1 + ux * 2, rHandY + dy * 1 + uy * 2);
+            ctx.lineTo(rHandX + dx * 18 + ux * 2, rHandY + dy * 18 + uy * 2);
+            ctx.stroke();
+            // muzzle emitter ring
+            ctx.beginPath(); ctx.arc(rHandX + dx * 22 + ux * 2, rHandY + dy * 22 + uy * 2, 3.6, 0, Math.PI * 2); ctx.stroke();
+            ctx.shadowBlur = 0;
+            // top fin + grip
+            ctx.strokeStyle = '#9aa6ad'; ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(rHandX + dx * 8 + ux * 5, rHandY + dy * 8 + uy * 5);
+            ctx.lineTo(rHandX + dx * 14 + ux * 5, rHandY + dy * 14 + uy * 5);
+            ctx.stroke();
+            ctx.strokeStyle = '#5a666c'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(rHandX + ux * 1, rHandY + uy * 1);
+            ctx.lineTo(rHandX - dx * 3 - ux * 9, rHandY - dy * 3 - uy * 9);
+            ctx.stroke();
+            // muzzle flash during the active frames
+            let ca2 = this.currentAttack;
+            let pr2 = (this.stateTimer - ca2.startup) / Math.max(0.01, ca2.active);
+            if (pr2 > 0 && pr2 < 1) {
+                ctx.fillStyle = '#6fd0ff'; ctx.shadowBlur = 16; ctx.shadowColor = '#6fd0ff'; ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                let mx2 = rHandX + dx * 26 + ux * 2, my2 = rHandY + dy * 26 + uy * 2;
+                ctx.moveTo(mx2, my2 - 5); ctx.lineTo(mx2 + dx * 12, my2); ctx.lineTo(mx2, my2 + 5); ctx.closePath(); ctx.fill();
+            }
+            ctx.restore();
         } else if (this.charType === 'BEAST_TAMER') {
             drawWhip(rHandX, rHandY, rForeAng);
             ctx.strokeStyle = '#888'; ctx.lineWidth = 4;
@@ -5150,6 +5662,18 @@ class Fighter {
                 ctx.strokeStyle = 'rgba(223,228,242,0.7)'; ctx.lineWidth = 2; ctx.shadowBlur = 10; ctx.shadowColor = '#dfe4f2';
                 for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.6 - k * 0.15; ctx.beginPath(); ctx.arc(16, -46, 22 + k * 5, -1.0 + Math.sin(t * 4 + k) * 0.1, 1.0 + Math.sin(t * 4 + k) * 0.1); ctx.stroke(); }
                 ctx.globalAlpha = 1; ctx.restore();
+            } else if (this.charType === 'TRAVELER') {
+                // a projected clock-face barrier — ring, tick marks, and a fast-spinning hand
+                ctx.save();
+                ctx.translate(26, -50);
+                ctx.strokeStyle = '#6fd0ff'; ctx.lineWidth = 2.4; ctx.shadowBlur = 14; ctx.shadowColor = '#6fd0ff';
+                ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.stroke();
+                ctx.lineWidth = 1.4;
+                for (let i = 0; i < 12; i++) { let a = i / 12 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 15.5, Math.sin(a) * 15.5); ctx.lineTo(Math.cos(a) * 19, Math.sin(a) * 19); ctx.stroke(); }
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t * 9) * 13, Math.sin(t * 9) * 13); ctx.stroke(); // the hand, spinning wildly
+                ctx.globalAlpha = 0.14; ctx.fillStyle = '#6fd0ff'; ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
             } else if (this.charType === 'CULT') {
                 // a warding sigil — a glowing ritual rune conjured in front of the cowl
                 ctx.save();
