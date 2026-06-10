@@ -1137,10 +1137,16 @@ class Fighter {
             p.stateTimer -= dt;
             if (p.stateTimer <= 0 && p.y >= GROUND_Y) { p.changeState('IDLE'); this.twinOffset = p.x - this.x; } // re-lock the gap
         } else if (this._twinLeaping > 0) {
-            // Converge leap — the partner flies its own arc; once it lands the pair re-locks
+            // Converge leap — the partner flies its own arc. Don't re-lock until BOTH twins
+            // are back on the ground: locking while the lead was still mid-leap captured a
+            // garbage offset, which read as a random teleport when the animation ended.
             this._twinLeaping -= dt;
             p.state = p.y < GROUND_Y ? 'JUMP' : 'IDLE';
-            if (p.y >= GROUND_Y && this._twinLeaping <= 0.4) { this._twinLeaping = 0; p.vx = 0; this.twinOffset = p.x - this.x; }
+            if (p.y >= GROUND_Y) p.vx *= 0.78; // skid to a stop while waiting for the lead
+            if (p.y >= GROUND_Y && this.y >= GROUND_Y && this._twinLeaping <= 0.4) {
+                this._twinLeaping = 0; p.vx = 0;
+                this.twinOffset = (p.x >= this.x ? 1 : -1) * 60; // reunited — settle cleanly beside the lead
+            }
         } else {
             p.vx *= 0.8;
             if (p.y >= GROUND_Y) { p.state = 'IDLE'; this.twinOffset = p.x - this.x; }
@@ -2435,8 +2441,8 @@ class Fighter {
         }
         if (t === 'twinTether') this.twinTether();                              // string a wire between them
         // The Traveler specials
-        if (t === 'timeSkip') { // fast-forward out of the timeline: vanish, reappear at jump apex
-            this.vy = -640; this.vx = 110 * this.dir;
+        if (t === 'timeSkip') { // fast-forward out of the timeline: vanish, reappear well ahead at jump apex
+            this.vy = -640; this.vx = 360 * this.dir;
             this._skipHide = 0.2;
             this.invulnTimer = Math.max(this.invulnTimer, 0.3);
             spawnParticles(this.x, this.y - 45, 16, '#6fd0ff');
