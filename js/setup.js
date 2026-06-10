@@ -236,12 +236,23 @@ function makeAudioSet(paths, volume = 0.9) {
 function playAudio(a) {
     if (suppressRollbackEffects) return;
     if (!a) return;
+    // Pitch wobble: marked sounds play at a slightly different rate every time so no
+    // two hits sound identical (preservesPitch off so the rate change shifts the pitch).
+    const applyPitch = el => {
+        try {
+            if (!a.pitchVar) { el.playbackRate = 1; return; }
+            el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false;
+            el.playbackRate = 1 - a.pitchVar / 2 + Math.random() * a.pitchVar;
+        } catch (e) {}
+    };
     if (a.pool) {
         let voice = a.pool[a.cursor];
         a.cursor = (a.cursor + 1) % a.pool.length;
+        applyPitch(voice);
         try { voice.currentTime = 0; voice.play(); } catch (e) {}
         return;
     }
+    applyPitch(a);
     try { a.currentTime = 0; a.play(); } catch (e) {}
 }
 const attackSfx = {
@@ -262,8 +273,11 @@ const attackSfx = {
     beastSwitch: makeAudio('audio/sfx/switch.wav', 0.66, 3),
     phantomHit: makeAudio('audio/sfx/phantomhit.wav', 0.7, 3), // Phantom special connects
     soulTrain: makeAudio('audio/sfx/soultrain.wav', 0.85, 2),  // Soul Train ultimate
-    piano: makeAudio('audio/sfx/Piano.wav', 0.8, 2)            // Copy Cat's Piano Drop impact
+    piano: makeAudio('audio/sfx/Piano.wav', 0.8, 2),           // Copy Cat's Piano Drop impact
+    timeHit: makeAudio('audio/sfx/timehit.wav', 0.72, 3)       // Traveler's specials connecting
 };
+// Every attack SFX gets a little random pitch wobble per play so repeats never sound identical
+Object.values(attackSfx).forEach(a => { a.pitchVar = 0.18; });
 // Copy Cat's Piano Drop sprite
 const pianoImg = new Image();
 pianoImg.src = 'textures/piano.png';

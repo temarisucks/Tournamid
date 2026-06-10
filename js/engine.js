@@ -440,6 +440,7 @@ function vortexLogic(self, dt) {
             self._coreTick = 0.38;
             p.takeDamage(2, { x: 0, y: 0 }, 0.34, self.owner, { unblockable: true });
             spawnParticles(p.x, p.y - 45, 8, '#6fd0ff');
+            playAudio(attackSfx.timeHit);
         }
     }
 }
@@ -553,6 +554,7 @@ function checkCollisions() {
                     if (proj.subtype === 'echoBolt' && landed) { // Tachyon Echo — the hit repeats 1s later
                         p._echoHit = { t: 1.0, dmg: proj.damage, owner: proj.owner };
                         spawnParticles(p.x, p.y - 50, 6, '#6fd0ff');
+                        playAudio(attackSfx.timeHit);
                     }
                     if (proj.explode) {
                         // AoE burst that catches everyone nearby

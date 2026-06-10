@@ -636,6 +636,7 @@ class Fighter {
                 if (this.state !== 'DEAD') {
                     this.takeDamage(eh.dmg, { x: 120 * (this.x >= (eh.owner ? eh.owner.x : this.x) ? 1 : -1), y: -70 }, 0.26, eh.owner);
                     spawnParticles(this.x, this.y - 45, 12, '#6fd0ff');
+                    playAudio(attackSfx.timeHit);
                 }
             }
         }
