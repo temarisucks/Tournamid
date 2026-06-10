@@ -647,7 +647,7 @@ const CHARACTERS = {
         attacks: {
             light: { startup: 0.08, active: 0.1, recovery: 0.15, dmg: 4, w: 50, h: 22, ox: 24, oy: -55, kb: {x: 110, y: -60}, stun: 0.24, type: 'phaseJab' },     // blurred double-tap jab
             heavy: { startup: 0.14, active: 0.12, recovery: 0.26, dmg: 8, w: 62, h: 34, ox: 28, oy: -50, kb: {x: 240, y: -140}, stun: 0.4, type: 'flashKick' },    // frame-skipping kick
-            specNeutral: { startup: 0.22, active: 0.1, recovery: 0.36, dmg: 0, isProj: true, pSpeed: 120, pLife: 2.5, w: 30, h: 30, oy: -56, kb: {x: 0, y: 0}, stun: 0, type: 'timeVortex' }, // dragging singularity
+            specNeutral: { startup: 0.22, active: 0.1, recovery: 0.36, dmg: 0, isProj: true, pSpeed: 120, pLife: 1.4, w: 30, h: 30, oy: -56, kb: {x: 0, y: 0}, stun: 0, type: 'timeVortex' }, // dragging singularity (short-lived)
             specSide: { startup: 0.16, active: 0.1, recovery: 0.3, dmg: 6, isProj: true, pSpeed: 720, pLife: 0.9, w: 18, h: 12, oy: -56, kb: {x: 150, y: -80}, stun: 0.3, type: 'tachyonEcho' }, // bolt that hits AGAIN 1s later
             specUp: { startup: 0.1, active: 0.12, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'timeSkip' },                  // fast-forward out of the timeline
             specDown: { startup: 0.12, active: 0.1, recovery: 0.34, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'rewind' }                  // snap back to your echo, undo damage
