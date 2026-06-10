@@ -77,7 +77,7 @@ let frameRealDt = 0; // unscaled delta — ultimate performer acts in real time
 let overkillFx = null;     // { t, dur, x, y } final-round ultimate kill banner
 let suppressRollbackEffects = false;
 
-const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, COPYCAT: 60, CULT: 96, LUMATROSSIA: 999, ZOMBIE: 40 };
+const BLOCK_DUR = { BRAWLER: 110, SWORDSMAN: 65, MAGE: 45, RANGER: 78, DARK_RULER: 130, TELEPATH: 58, BEAST_TAMER: 72, PHANTOM: 118, COPYCAT: 60, CULT: 96, LUMATROSSIA: 999, TWINS: 84, ZOMBIE: 40 };
 const ULT_LINES = {
     BRAWLER: "YOU'RE DEAD",
     SWORDSMAN: "OUTPLAYED.",
@@ -88,7 +88,8 @@ const ULT_LINES = {
     BEAST_TAMER: "ALPHA COMMAND.",
     PHANTOM: "SOUL TRAIN.",
     COPYCAT: "I can do anything better than you!",
-    CULT: "RISE, LUMATROSSIA!"
+    CULT: "RISE, LUMATROSSIA!",
+    TWINS: "CAUGHT IN THE MIDDLE."
 };
 
 // Which ultimate "kind" each character runs. The Copy Cat has none of its own —
@@ -110,7 +111,8 @@ const ULT_DAMAGE = {
     DARK_RULER: 40, // the giant crescent slash (single hit)
     TELEPATH: 65,   // snare 3 + 8 vice ticks (40) + crush 22
     BEAST_TAMER: 66,// snare 4 + bind 6 + brute 18 + raven 14 + whip 24
-    PHANTOM: 43     // claw 4 + seize 3 + void chips 12 + smash 24
+    PHANTOM: 43,    // claw 4 + seize 3 + void chips 12 + smash 24
+    TWINS: 28       // Eclipse — both twins collide on the centered foe
 };
 
 // Ultimate voice lines (played when an ultimate is activated)
@@ -124,7 +126,8 @@ const ultVoices = {
     BEAST_TAMER: new Audio('audio/voicelines/beasttamerult.wav'),
     PHANTOM: new Audio('audio/voicelines/phantomult.wav'),
     COPYCAT: new Audio('audio/voicelines/copycatult.wav'),
-    CULT: new Audio('audio/voicelines/cultult.wav')
+    CULT: new Audio('audio/voicelines/cultult.wav'),
+    TWINS: new Audio('audio/voicelines/twinsult.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -252,7 +255,8 @@ const selectVoices = {
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamer.wav', 0.92),
     PHANTOM: makeAudio('audio/voicelines/phantom.wav', 0.92),
     COPYCAT: makeAudio('audio/voicelines/copycat.wav', 0.92),
-    CULT: makeAudio('audio/sfx/cult.wav', 0.92)
+    CULT: makeAudio('audio/sfx/cult.wav', 0.92),
+    TWINS: makeAudio('audio/voicelines/twins.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -264,7 +268,8 @@ const winVoices = {
     BEAST_TAMER: makeAudio('audio/voicelines/beasttamerwin.wav', 0.95),
     PHANTOM: makeAudio('audio/voicelines/phantomwin.wav', 0.95),
     COPYCAT: makeAudio('audio/voicelines/copycatwin.wav', 0.95),
-    CULT: makeAudio('audio/sfx/cultwin.wav', 0.95)
+    CULT: makeAudio('audio/sfx/cultwin.wav', 0.95),
+    TWINS: makeAudio('audio/voicelines/twinswin.wav', 0.95)
 };
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
@@ -448,7 +453,7 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 function createAttackVariant(fighter, variant) {
     const baseLight = fighter.attacks.light;
     const baseHeavy = fighter.attacks.heavy || baseLight;
-    const comboScale = fighter.charType === 'SWORDSMAN' ? 1.12 : fighter.charType === 'MAGE' ? 0.92 : fighter.charType === 'RANGER' ? 1.0 : 1.18;
+    const comboScale = fighter.charType === 'SWORDSMAN' ? 1.12 : fighter.charType === 'MAGE' ? 0.92 : fighter.charType === 'RANGER' ? 1.0 : fighter.charType === 'TWINS' ? 0.62 : 1.18; // Twins land twice, so each combo hit is smaller
     const melee = (source, overrides) => ({ ...source, isProj: false, pSpeed: undefined, pLife: undefined, ...overrides });
 
     const variants = {
@@ -600,6 +605,17 @@ const CHARACTERS = {
             specSide: { startup: 0.08, active: 0.06, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumTeleport' },  // blink behind the foe
             specUp: { startup: 0.2, active: 0.18, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumBeast' },        // beast rains mage-fire from above
             specDown: { startup: 0.26, active: 0.1, recovery: 0.42, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'lumPortal' }      // portal: drop the foe from the sky (cooldown)
+        }
+    },
+    TWINS: {
+        name: "THE TWINS", hp: 110, speed: 280, jump: -560, width: 30, height: 86,
+        attacks: {
+            light: { startup: 0.09, active: 0.1, recovery: 0.16, dmg: 3, w: 48, h: 22, ox: 22, oy: -54, kb: {x: 110, y: -60}, stun: 0.24, type: 'twinJab' },   // both twins jab inward (each does little; together adds up)
+            heavy: { startup: 0.2, active: 0.14, recovery: 0.28, dmg: 6, w: 58, h: 30, ox: 26, oy: -52, kb: {x: 230, y: -130}, stun: 0.4, type: 'twinClap' },   // both swing a committed clap
+            specNeutral: { startup: 0.18, active: 0.1, recovery: 0.3, dmg: 4, isProj: true, pSpeed: 560, pLife: 1.3, w: 18, h: 18, oy: -56, kb: {x: 120, y: -80}, stun: 0.3, type: 'mirrorVolley' }, // both fire inward
+            specSide: { startup: 0.14, active: 0.22, recovery: 0.3, dmg: 5, w: 54, h: 48, ox: 18, oy: -52, kb: {x: 210, y: -120}, stun: 0.4, type: 'crossover' }, // dash through, scissoring strike
+            specUp: { startup: 0.14, active: 0.16, recovery: 0.4, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'fastball' },   // hurl the OTHER twin bodily across the map
+            specDown: { startup: 0.2, active: 0.1, recovery: 0.36, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'twinTether' }              // wire strung between the twins
         }
     },
     ZOMBIE: {

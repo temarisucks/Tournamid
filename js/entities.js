@@ -355,6 +355,20 @@ class Projectile {
             ctx.beginPath(); ctx.arc(0, 0, this.w / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
             ctx.rotate(now * 5);
             ctx.beginPath(); for (let i = 0; i < 3; i++) { let a = i * Math.PI * 2 / 3; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * this.w * 0.5, Math.sin(a) * this.w * 0.5); } ctx.stroke();
+        } else if (this.subtype === 'twinBolt') {
+            // The Twins' mirror-volley bolt — a paired blue spark
+            ctx.fillStyle = 'rgba(155,227,255,0.9)'; ctx.shadowBlur = 12; ctx.shadowColor = '#9be3ff';
+            ctx.beginPath(); ctx.arc(cx, cy, this.w / 2, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, this.w / 4, 0, Math.PI * 2); ctx.fill();
+        } else if (this.subtype === 'twinMissile') {
+            // the hurled twin, tumbling forward as a living missile
+            ctx.save(); ctx.translate(cx, cy); ctx.rotate(now * 14);
+            ctx.strokeStyle = '#9be3ff'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.shadowBlur = 12; ctx.shadowColor = '#9be3ff';
+            ctx.beginPath(); ctx.arc(0, -8, 6, 0, Math.PI * 2); ctx.stroke();      // head
+            ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(0, 12); ctx.stroke();   // body
+            ctx.beginPath(); ctx.moveTo(-9, 4); ctx.lineTo(9, 4); ctx.stroke();    // arms tucked
+            ctx.beginPath(); ctx.moveTo(0, 12); ctx.lineTo(-7, 20); ctx.moveTo(0, 12); ctx.lineTo(7, 20); ctx.stroke(); // legs
+            ctx.restore();
         } else if (this.subtype === 'doomgaze') {
             // Lumatrossia's eye beam — a searing horizontal lance
             ctx.fillStyle = 'rgba(255,0,51,0.85)'; ctx.shadowBlur = 18; ctx.shadowColor = '#ff0033';
@@ -390,7 +404,7 @@ class Projectile {
 }
 
 class Fighter {
-    constructor(id, x, typeName, isAI = false, team = 0) {
+    constructor(id, x, typeName, isAI = false, team = 0, isPartner = false) {
         this.id = id;
         this.charType = typeName;
         const stats = CHARACTERS[typeName];
@@ -437,6 +451,17 @@ class Fighter {
         this.puppet = null;           // Cult Up — the mimic puppet { hist, t }
         this.portalCd = 0;            // Lumatrossia Down — drop-portal cooldown
         this._portalSlam = null;      // marks a foe falling out of a portal { owner, dmg }
+
+        // The Twins — a mirrored pair sharing one HP pool
+        this.isPartner = isPartner;   // true = the second (drawn-only) twin body
+        this.anchorX = x;             // centre the pair mirrors around
+        this.twinGap = 76;            // distance from anchor to each twin (L/R spread/converge)
+        this.symBuff = 0;             // Symmetry passive: >0 while the foe is centred between the twins
+        this.twinOffset = 60;         // live x-gap of the partner from the lead; both still move/attack together at any gap
+        this._twinLeaping = 0;        // Converge leap timer (partner leaps independently, then re-locks)
+        this.partner = null;          // the other twin (full Fighter, synced + drawn, hurtbox + hitbox source)
+        this.tether = null;           // Down — wire strung between the twins { t, life }
+        this.fastball = null;         // Up — the hurled twin as a missile { t, x, y, vx, vy }
 
         // Combat state
         this.attacks = stats.attacks;
@@ -491,6 +516,11 @@ class Fighter {
         // Animation variables
         this.animTimer = 0;
         this.inputTimer = 0;
+
+        // The Twins — spin up the second body right beside the first (drawn + synced, never self-driven)
+        if (typeName === 'TWINS' && !isPartner) {
+            this.partner = new Fighter(id + '_B', x + 60, 'TWINS', false, team, true);
+        }
     }
 
     update(dt) {
@@ -556,6 +586,8 @@ class Fighter {
         if (this.devotion > 0 && !this.lumActive) this.devotion = Math.max(0, this.devotion - dt * 3.5); // Congregation decays
         if (this.portalCd > 0) this.portalCd -= dt;         // Lumatrossia drop-portal cooldown
         if (this.puppet) this.updatePuppet(dt);             // Cult mimic puppet records the leader
+        if (this.tether) { this.tether.t += dt; this.updateTether(dt); if (this.tether.t >= this.tether.life) this.tether = null; }
+        if (this.fastball) this.updateFastball(dt); // the thrown twin sails across the map
         if (this._portalSlam && this.y >= GROUND_Y) {       // foe slams down out of a drop-portal
             let ps = this._portalSlam; this._portalSlam = null;
             this.takeDamage(ps.dmg, { x: 0, y: 0 }, 0.5, ps.owner, { unblockable: true });
@@ -700,6 +732,9 @@ class Fighter {
                 this.dir = (target.x > this.x) ? 1 : -1;
             }
         }
+
+        // The Twins — drive the mirrored formation + keep the second body synced
+        if (this.charType === 'TWINS' && !this.isPartner) this.updateTwins(dt);
     }
 
     // Which surface (if any) is directly under the fighter's feet this frame.
@@ -992,6 +1027,167 @@ class Fighter {
         playAudio(attackSfx.fire);
     }
 
+    // ---------------- THE TWINS: a two-body pair you steer together ----------------
+    // Both twins always mirror your actions at their own positions (the partner follows at the
+    // current gap). A twin only breaks off if IT was individually stunned/knocked — then it plays
+    // out its own hitstun while the other keeps fighting; once recovered it falls back in step.
+    updateTwins(dt) {
+        let p = this.partner;
+        if (!p) return;
+        if (this.fastball) return; // the controlled twin is sailing; partner stays anchored
+        if (p.state === 'HITSTUN' || this._twinLeaping > 0) {
+            this.updateSeparatedPartner(dt); // the partner is busy doing its own thing
+        } else {
+            this.followPartner(dt);          // both move/act as one at the current gap
+        }
+        let foe = this.getClosestEnemy();
+        let lo = Math.min(this.x, p.x), hi = Math.max(this.x, p.x);
+        let centred = !!foe && foe.x > lo && foe.x < hi;
+        this.symBuff = centred ? Math.min(1, this.symBuff + dt * 4) : Math.max(0, this.symBuff - dt * 3);
+    }
+
+    // The off twin runs its own physics (knockback slide / hitstun countdown); on recovery it
+    // re-locks its gap so the pair moves together again.
+    updateSeparatedPartner(dt) {
+        let p = this.partner;
+        p.hp = this.hp; p.maxHp = this.maxHp; p.team = this.team; p.symBuff = 0;
+        p.vy += 1500 * dt;
+        p.x += p.vx * dt;
+        p.y = Math.min(GROUND_Y, p.y + p.vy * dt);
+        if (p.y >= GROUND_Y) { p.y = GROUND_Y; p.vy = 0; }
+        p.x = Math.max(28, Math.min(WIDTH - 28, p.x));
+        if (p.state === 'HITSTUN') {
+            p.vx *= p.y < GROUND_Y ? 0.99 : 0.9;
+            p.stateTimer -= dt;
+            if (p.stateTimer <= 0 && p.y >= GROUND_Y) { p.changeState('IDLE'); this.twinOffset = p.x - this.x; } // re-lock the gap
+        } else {
+            p.vx *= 0.8;
+            if (p.y >= GROUND_Y) { p.state = 'IDLE'; this.twinOffset = p.x - this.x; }
+        }
+        p.animTimer += dt;
+        let foe = this.getClosestEnemy();
+        p.dir = foe ? (foe.x >= p.x ? 1 : -1) : p.dir;
+    }
+
+    // Both twins act as one: the partner follows at the current gap and mirrors the lead's pose.
+    followPartner(dt) {
+        let p = this.partner;
+        if (!p || this.fastball) return;
+        p.hp = this.hp; p.maxHp = this.maxHp; p.team = this.team; p.symBuff = this.symBuff;
+        p.invulnTimer = this.invulnTimer; p.overkillRed = this.overkillRed; p._overkilled = this._overkilled;
+        // If the LEAD is the one hurt, the other twin holds its ground unstunned (only the hit twin reels).
+        if (this.state === 'HITSTUN' || this.state === 'BLOCKBREAK') {
+            if (p.state === 'HITSTUN' || p.state === 'BLOCKBREAK') p.changeState('IDLE');
+            p.state = 'IDLE'; p.currentAttack = null; p.animTimer += dt; p.vx *= 0.8;
+            return;
+        }
+        p.x = Math.max(28, Math.min(WIDTH - 28, this.x + (this.twinOffset || 60)));
+        p.y = this.y;
+        p.state = this.state; p.stateTimer = this.stateTimer; p.animTimer = this.animTimer;
+        p.currentAttack = this.currentAttack; p.vy = this.vy; p._hover = this._hover || 0;
+        p.blockHealth = this.blockHealth; p._guardBreakFx = this._guardBreakFx; p.blockBreakTimer = this.blockBreakTimer;
+        p.tether = this.tether;
+        let foe = this.getClosestEnemy();
+        p.dir = foe ? (foe.x >= p.x ? 1 : -1) : -this.dir;
+    }
+
+    // The hitbox/projectile origin for the OTHER twin (used so attacks come from both bodies).
+    twinPartnerX() { return this.partner ? this.partner.x : (this.x + 60); }
+
+    // Side — Crossover: the twins dash forward, scissoring through together.
+    twinCrossover() {
+        this.vx = 720 * this.dir;
+        this.invulnTimer = Math.max(this.invulnTimer, 0.18);
+        spawnParticles(this.x + 30, GROUND_Y - 40, 14, '#9be3ff');
+        playAudio(attackSfx.knife);
+    }
+
+    // Up (twins together) — Fastball: hurl the CONTROLLED twin bodily across the map at the foe.
+    // You keep control of the twin that flew over; the other stays put where the pair stood.
+    twinFastball() {
+        let p = this.partner;
+        if (!p || this.fastball) return;
+        let foe = this.getClosestEnemy();
+        let dir = foe ? (foe.x >= this.x ? 1 : -1) : this.dir;
+        p.vx = 0; p.vy = 0; p.state = 'IDLE'; // the OTHER twin anchors where it is
+        this.vx = 950 * dir; this.vy = -300;  // YOU sail across (still fully controllable on landing)
+        this.fastball = { t: 0, dir, hit: false };
+        spawnParticles(this.x, this.y - 40, 16, '#9be3ff');
+        playAudio(attackSfx.punch);
+    }
+    // The thrown (controlled) twin is moved by normal physics; this just lands the strike and
+    // tumbles it as it sails, then hands control straight back once it touches down.
+    updateFastball(dt) {
+        let fb = this.fastball;
+        fb.t += dt;
+        this.tumbleTimer = 0.2; this._tumbleDir = fb.dir; // spin as you fly
+        if (!fb.hit) {
+            for (let e of players) {
+                if (!e || e.team === this.team || e.state === 'DEAD') continue;
+                if (Math.abs(e.x - this.x) < 48 && Math.abs(e.y - this.y) < 92) {
+                    fb.hit = true;
+                    let away = e.x < this.x ? -1 : 1;
+                    e.takeDamage(11, { x: 320 * away, y: -360 }, 0.55, this);
+                    spawnParticles(e.x, e.y - 40, 22, '#9be3ff');
+                    playAudio(attackSfx.punch);
+                    break;
+                }
+            }
+        }
+        if (this.y >= GROUND_Y && (fb.hit || fb.t > 0.35)) { // landed — full control resumes for BOTH twins
+            this.fastball = null; this.tumbleTimer = 0;
+            if (this.partner) this.twinOffset = this.partner.x - this.x; // lock the new (wide) gap so both move together
+        }
+    }
+
+    // Up (twins apart) — both leap at an angle toward each other; anything caught between is hit.
+    twinConverge() {
+        let p = this.partner;
+        if (!p) return;
+        let mid = (this.x + p.x) / 2;
+        this.vy = -480; this.vx = (mid >= this.x ? 1 : -1) * 380;
+        p.vy = -480; p.vx = (mid >= p.x ? 1 : -1) * 380; p.state = 'JUMP'; p.currentAttack = null;
+        this.twinOffset = 60; // they reunite — fall back into the tight pair on landing
+        this.invulnTimer = Math.max(this.invulnTimer, 0.2);
+        let hb = new Hitbox(mid - 75, GROUND_Y - 150, 150, 150, 9, { x: 0, y: -440 }, 0.5, this, 0.45);
+        hb.atk = { type: 'twinConverge', name: 'specUp' };
+        hitboxes.push(hb);
+        spawnParticles(mid, GROUND_Y - 60, 16, '#9be3ff');
+        playAudio(attackSfx.knife);
+    }
+
+    // Down — Tether: a taut wire strung between the two twins along the ground.
+    twinTether() {
+        this.tether = { t: 0, life: 3.0, tick: 0 };
+        playAudio(attackSfx.magic);
+    }
+    updateTether(dt) {
+        let th = this.tether;
+        th.tick -= dt;
+        let lx = Math.min(this.x, this.twinPartnerX()), rx = Math.max(this.x, this.twinPartnerX());
+        for (let p of players) {
+            if (!p || p.team === this.team || p.state === 'DEAD') continue;
+            if (p.x > lx + 8 && p.x < rx - 8 && p.y >= GROUND_Y - 36 && th.tick <= 0) {
+                th.tick = 0.55;
+                p.takeDamage(5, { x: 0, y: -340 }, 0.5, this, { unblockable: true }); // trip + pop up
+                spawnParticles(p.x, GROUND_Y - 10, 12, '#9be3ff');
+            }
+        }
+    }
+
+    // Neutral — Mirror Volley: both twins fire a bolt inward toward the centred foe.
+    twinVolley(dmgMod = 1) {
+        let atk = this.currentAttack;
+        let bodies = [{ x: this.x, dir: this.dir }, { x: this.twinPartnerX(), dir: (this.getClosestEnemy() ? (this.getClosestEnemy().x >= this.twinPartnerX() ? 1 : -1) : -this.dir) }];
+        for (let b of bodies) {
+            let p = new Projectile(b.x + b.dir * 18, this.y + atk.oy, atk.pSpeed * b.dir, 0, atk.w, atk.h, atk.dmg * dmgMod,
+                { x: atk.kb.x * b.dir, y: atk.kb.y }, atk.stun, this, atk.pLife, null);
+            p.subtype = 'twinBolt'; p.ownerId = this.id; p.ownerTeam = this.team; p.ownerCharType = this.charType;
+            projectiles.push(p);
+        }
+        playAudio(attackSfx.magic);
+    }
+
     // ---------------- TELEPATH PSI BARRIER (reflect) ----------------
     isReflecting() {
         if (this.state !== 'ATTACK' || !this.currentAttack || this.currentAttack.type !== 'psiBarrier') return false;
@@ -1024,6 +1220,12 @@ class Fighter {
         if (this.lumActive) return; // already summoned Lumatrossia — can't re-ult mid-install
         let ready = (infiniteMeter && this.team === 0) || this.meter >= this.meterMax;
         if (!ready) return;
+        // The Twins' Eclipse only lands if the foe is close enough to catch in the collision —
+        // no firing it from across the screen.
+        if (this.charType === 'TWINS') {
+            let foe = this.getClosestEnemy();
+            if (!foe || foe.state === 'DEAD' || Math.abs(foe.x - this.x) > 230) return; // out of range — don't spend meter
+        }
         if (!(infiniteMeter && this.team === 0)) this.meter = 0;
         this.startUltimate();
     }
@@ -1032,6 +1234,7 @@ class Fighter {
         // The Copy Cat performs the ultimate it stole; The Cult installs Lumatrossia; everyone else runs their own.
         let kind = (this.charType === 'COPYCAT') ? this.copiedKind
                  : (this.charType === 'CULT') ? 'install'
+                 : (this.charType === 'TWINS') ? 'eclipse'
                  : ULT_KIND[this.charType];
         if (!kind) return; // Zombie has no ultimate (and an un-charged Copy Cat shouldn't reach here)
         if (this.charType === 'COPYCAT') {
@@ -1127,7 +1330,10 @@ class Fighter {
     spawnUltActivation() {
         let u = this.ult;
         if (u.kind === 'arena') {
-            let hb = new Hitbox(this.x - 55, this.y - 86, 110, 86, 6, { x: 220 * this.dir, y: -120 }, 0.3, this, 0.4);
+            // a forward-reaching opener so the ult starts from a bit outside normal range (tuned mid)
+            let reach = 165;
+            let hx = this.dir > 0 ? this.x - 24 : this.x - reach + 24;
+            let hb = new Hitbox(hx, this.y - 90, reach, 90, 6, { x: 220 * this.dir, y: -120 }, 0.3, this, 0.42);
             hb.ultActivator = this;
             hitboxes.push(hb);
             sfx.playSwing();
@@ -1178,7 +1384,7 @@ class Fighter {
             if (u.t >= 0.55) {
                 u.t = 0; timeScale = 0.7;
                 if (u.kind === 'counter') u.phase = 'window';
-                else if (u.kind === 'arena') { u.phase = 'strike'; this.vx = 820 * this.dir; this.spawnUltActivation(); }
+                else if (u.kind === 'arena') { u.phase = 'strike'; this.vx = 930 * this.dir; this.spawnUltActivation(); }
                 else if (u.kind === 'orb') { u.phase = 'fire'; this.spawnUltActivation(); }
                 else if (u.kind === 'bomb') { u.phase = 'throw'; this.spawnUltActivation(); }
                 else if (u.kind === 'darkslash') { u.phase = 'swing'; }
@@ -1186,6 +1392,49 @@ class Fighter {
                 else if (u.kind === 'beaststorm') { u.phase = 'snare'; this.spawnUltActivation(); }
                 else if (u.kind === 'soultrain') { u.phase = 'rush'; }
                 else if (u.kind === 'install') { u.phase = 'summon'; this._lumFx = 1.4; }
+                else if (u.kind === 'eclipse') { u.phase = 'split'; u.target = this.getClosestEnemy(); }
+            }
+            return;
+        }
+
+        // THE TWINS — Eclipse: blink to the walls, then rocket inward and collide on the centred foe
+        if (u.kind === 'eclipse') {
+            let tg = u.target;
+            let p = this.partner;
+            if (!tg || tg.state === 'DEAD' || !p) { this.endUlt(); return; }
+            // pin the foe to centre stage
+            tg.state = 'HITSTUN'; tg.stateTimer = 3; tg.vx = 0; tg.vy = 0;
+            tg.x = WIDTH / 2; tg.y = GROUND_Y;
+            this.y = GROUND_Y; p.y = GROUND_Y; this.vx = 0; this.vy = 0;
+            // keep the partner drawn/animated through the cinematic
+            p.state = this.state; p.currentAttack = null; p.animTimer = this.animTimer; p.team = this.team; p.hp = this.hp; p.maxHp = this.maxHp; p._hover = 0;
+            ultCamera = { fx: WIDTH / 2, fy: GROUND_Y - 70, zoom: 1.4 };
+            if (u.phase === 'split') {
+                // streak to opposite walls
+                timeScale = 0.6;
+                let s = Math.min(1, u.t / 0.4);
+                this.x = WIDTH / 2 + (60 - WIDTH / 2) * s; this.dir = 1;
+                p.x = WIDTH / 2 + (WIDTH - 60 - WIDTH / 2) * s; p.dir = -1;
+                if (u.t > 0.55) { u.phase = 'rush'; u.t = 0; u.hit = false; }
+                return;
+            }
+            if (u.phase === 'rush') {
+                // rocket inward; they collide on the foe
+                timeScale = 0.5;
+                let s = Math.min(1, u.t / 0.26);
+                this.x = 60 + (WIDTH / 2 - 60) * s; this.dir = 1;
+                p.x = (WIDTH - 60) + (WIDTH / 2 - (WIDTH - 60)) * s; p.dir = -1;
+                for (let i = 0; i < 2; i++) spawnParticles(this.x, GROUND_Y - 50, 1, '#9be3ff'), spawnParticles(p.x, GROUND_Y - 50, 1, '#9be3ff');
+                if (!u.hit && s >= 1) {
+                    u.hit = true;
+                    tg.takeDamage(28, { x: 0, y: -480 }, 1.0, this, { isUlt: true, unblockable: true });
+                    tg._thrown = 0.4;
+                    spawnParticles(WIDTH / 2, GROUND_Y - 50, 50, '#fff');
+                    spawnParticles(WIDTH / 2, GROUND_Y - 50, 30, '#9be3ff');
+                    sfx.playDeath();
+                }
+                if (u.t > 0.6) { this.anchorX = WIDTH / 2; this.endUlt(); }
+                return;
             }
             return;
         }
@@ -1724,12 +1973,13 @@ class Fighter {
         // Unleash ultimate when charged and the opponent is in a sensible range
         if (this.meter >= this.meterMax && this.charType !== 'ZOMBIE' && onGround) {
             let want = this.charType === 'BRAWLER' ? dist < 110         // counter up close
-                     : this.charType === 'SWORDSMAN' ? dist < 150       // dash opener
+                     : this.charType === 'SWORDSMAN' ? dist < 215       // mid-range dash opener
                      : this.charType === 'DARK_RULER' ? dist < 130      // grab range
                      : this.charType === 'TELEPATH' ? dist < 120        // psychic snare range
                      : this.charType === 'BEAST_TAMER' ? dist < 170
                      : this.charType === 'PHANTOM' ? dist < 240        // soul-train rush has reach
                      : this.charType === 'CULT' ? true                  // the install needs no target
+                     : this.charType === 'TWINS' ? dist < 220           // Eclipse must catch the foe in range
                      : dist < 460;                                      // mage/ranger ranged
             if (want && Math.random() < 0.02 + lvl * 0.05) { this.tryUltimate(); return; }
         }
@@ -1747,6 +1997,7 @@ class Fighter {
             COPYCAT:   { range: 72,  kite: false, jumpy: 0.20 },
             CULT:      { range: 240, kite: true,  jumpy: 0.06 },
             LUMATROSSIA:{ range: 120, kite: false, jumpy: 0.04 },
+            TWINS:     { range: 70,  kite: false, jumpy: 0.10 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -1890,6 +2141,12 @@ class Fighter {
                     else if (r < 0.72) this.startAttack('specDown');           // Cataclysm
                     else if (r < 0.85) this.startAttack('specNeutral');        // Doomgaze beam
                     else this.startPlayerAttack('H');
+                } else if (this.charType === 'TWINS') {
+                    if (r < 0.42) this.startPlayerAttack(r < 0.22 ? 'L' : 'H'); // pincer jab / clap
+                    else if (r < 0.58) this.startAttack('specNeutral');         // Mirror Volley
+                    else if (r < 0.70) this.startAttack('specDown');            // Tether trap
+                    else if (target.y < GROUND_Y - 30 ? r < 0.85 : r < 0.78) this.startAttack('specUp'); // Fastball
+                    else this.startAttack('specSide');                          // Crossover
                 } else { // SWORDSMAN
                     if (r < 0.5) this.startPlayerAttack('L');
                     else if (r < 0.72) this.startPlayerAttack('H');
@@ -1951,6 +2208,7 @@ class Fighter {
         // Passives integration
         let spdMult = (this.parryBuffTimer > 0) ? 0.6 : 1.0;
         if (this.charType === 'BRAWLER') spdMult *= 0.82; // faster combat speed
+        if (this.charType === 'TWINS' && this.symBuff > 0) spdMult *= (1 - 0.22 * this.symBuff); // Symmetry: faster while the foe is centred
         this.currentAttack.startup *= spdMult;
         this.currentAttack.active *= spdMult;
         this.currentAttack.recovery *= spdMult;
@@ -1997,6 +2255,14 @@ class Fighter {
         if (t === 'lumTeleport') this.lumTeleport();                            // blink behind the foe
         if (t === 'lumPortal') this.lumPortal();                                // drop them out of the sky
         if (t === 'lumBeast') this.spawnBeastFire();                            // beast rains fire from above
+        // The Twins specials
+        if (t === 'crossover') this.twinCrossover();                            // scissor through each other
+        if (t === 'fastball') {                                                 // Up has two versions
+            let p = this.partner;
+            if (p && Math.abs(p.x - this.x) < 120) this.twinFastball();  // together: hurl yourself across
+            else this.twinConverge();                                   // apart: leap at each other
+        }
+        if (t === 'twinTether') this.twinTether();                              // string a wire between them
 
         // Cult — every action summons 1-3 cultists for the ritual (cosmetic flair)
         if (this.charType === 'CULT' && typeof spawnCultists === 'function') {
@@ -2047,6 +2313,11 @@ class Fighter {
             // claws slash, the dash pounce uses the knife swipe
             if (atk.type === 'catDash') playAudio(attackSfx.knife);
             else playAudio(attackSfx.kick);
+            return;
+        }
+        if (this.charType === 'TWINS') {                                                 // crisp synchronized strikes
+            if (atk.type === 'crossover' || atk.type === 'fastball') playAudio(attackSfx.knife);
+            else playAudio(attackSfx.punch);
             return;
         }
         if (this.charType === 'CULT') { playAudio(attackSfx.magic); return; }            // ritual strikes
@@ -2112,8 +2383,11 @@ class Fighter {
                 dmgMod += 0.5; this.tacticalReload = false; // Tactical Reload
             }
             if (this.charType === 'MAGE' && this.manaFontTimer > 0) { dmgMod += 0.6; this.manaFontTimer = 0; }
+            if (this.charType === 'TWINS' && this.symBuff > 0) dmgMod += 0.18 * this.symBuff; // Symmetry damage bonus
 
-            if (atk.type === 'arcaneRoulette') {
+            if (atk.type === 'mirrorVolley') {
+                this.twinVolley(dmgMod);                  // both twins fire inward
+            } else if (atk.type === 'arcaneRoulette') {
                 this.castArcaneRoulette(dmgMod);
             } else if (atk.type === 'updraftShot') {
                 // Blast straight down beneath the Ranger (launches self, hits pursuers)
@@ -2158,6 +2432,15 @@ class Fighter {
                 else if (atk.type === 'catDash') { hb.catPin = this; hb.atk = atk; } // pounce → pin & slash
                 else hb.atk = atk; // remember the move so its sound can play on contact
                 hitboxes.push(hb);
+                // The Twins — the SECOND body strikes too, from its own side (both act as one)
+                if (this.charType === 'TWINS' && !this.isPartner && !this.fastball && this.partner &&
+                    this.partner.state !== 'HITSTUN' && this.state !== 'HITSTUN') {
+                    let px = this.twinPartnerX();
+                    let pdir = (this.getClosestEnemy() ? (this.getClosestEnemy().x >= px ? 1 : -1) : -this.dir);
+                    let phx = px + (atk.ox * pdir) - (pdir < 0 ? atk.w : 0);
+                    let hb2 = new Hitbox(phx, this.y + atk.oy, atk.w, atk.h, atk.dmg * dmgMod, { x: atk.kb.x * pdir, y: atk.kb.y }, atk.stun, this, atk.active);
+                    hb2.atk = atk; hitboxes.push(hb2);
+                }
                 if (atk.type === 'darkNova') { spawnParticles(this.x + 40 * this.dir, GROUND_Y - 10, 20, '#111'); spawnParticles(this.x - 40 * this.dir, GROUND_Y - 10, 14, '#ff0033'); }
                 if (atk.type === 'cataclysm') { spawnParticles(this.x, GROUND_Y - 12, 34, '#ff0033'); spawnParticles(this.x, GROUND_Y - 12, 20, '#888'); }
             }
@@ -2431,7 +2714,7 @@ class Fighter {
             updateHUD();
             if (this.hp <= 0 && !this.isDummy) {
                 this.hp = 0;
-                if (opts.isUlt && isMatchWinningUltimateKill(attacker)) triggerOverkill(attacker, this);
+                if ((opts.isUlt || (attacker && attacker.lumActive)) && isMatchWinningUltimateKill(attacker)) triggerOverkill(attacker, this); // a kill as Lumatrossia (the Cult's install) counts as an ult kill
                 if (!this._ringedOut) {
                     this.y = this.floorUnder(this.y) ?? GROUND_Y;
                     this.vx = 0;
@@ -2477,10 +2760,15 @@ class Fighter {
         } else {
             this.rootTimer = 0; // being struck breaks the Grave Grasp hold
             this.catPin = null; // and breaks a Cat Dash pin if the cat gets interrupted
-            this.changeState('HITSTUN');
-            this.stateTimer = stun;
+            // The Twins — a hit only stuns/knocks the body that was actually struck; the other
+            // twin keeps fighting. HP (below) is still shared.
+            let hb = (this.charType === 'TWINS' && opts.hitBody === 'partner' && this.partner) ? this.partner : this;
+            hb.changeState('HITSTUN');
+            hb.stateTimer = stun;
+            hb.vx = kb.x; hb.vy = kb.y; hb.y -= 1; // knockback lands on the struck twin
+            this._twinKbApplied = (hb !== this); // skip the generic knockback below if it went to the partner
             sfx.playHit();
-            spawnParticles(this.x, this.y - 40, amount * 2, '#ff0033');
+            spawnParticles(hb.x, hb.y - 40, amount * 2, '#ff0033');
             if (attacker && attacker.charType === 'BRAWLER') { attacker.comboCount++; attacker.comboTimer = 2.0; }
         }
 
@@ -2512,9 +2800,8 @@ class Fighter {
         }
 
         this.hp -= amount;
-        this.vx = kb.x;
-        this.vy = kb.y;
-        this.y -= 1;
+        if (!this._twinKbApplied) { this.vx = kb.x; this.vy = kb.y; this.y -= 1; } // (partner-hit already took the knockback)
+        this._twinKbApplied = false;
 
         updateHUD();
 
@@ -3167,6 +3454,22 @@ class Fighter {
                 leftArmAngle = 0.66 + breath * 0.06; leftArmBend = 0.5;
                 rightArmAngle = -0.66 - breath * 0.06; rightArmBend = -0.5;
                 torsoLean = 0.04 + breath * 0.02;
+            } else if (this.charType === 'TWINS') {
+                if (this.isPreview) {
+                    // character-select pose: a confident synchronized stance, forearms folded across
+                    let bob = Math.sin(t * 2);
+                    headY += bob * 1.5;
+                    leftArmAngle = 1.55; leftArmBend = -1.25; rightArmAngle = 1.55; rightArmBend = 1.25; // crossed over the chest
+                    leftLegAngle = -0.3; rightLegAngle = 0.32; leftLegBend = 0.32; rightLegBend = 0.3;
+                    torsoLean = 0.02;
+                } else {
+                    // agile, alert bounce — light on the feet, fists loosely up and ready
+                    let bounce = Math.sin(t * 6);
+                    headY += bounce * 2.5;
+                    leftArmAngle = -0.9 + bounce * 0.06; leftArmBend = 1.0;
+                    rightArmAngle = 0.9 - bounce * 0.06; rightArmBend = -1.0;
+                    torsoLean = 0.02;
+                }
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -3260,6 +3563,14 @@ class Fighter {
                 leftArmBend = -0.4; rightArmBend = 0.4;
                 leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.28; rightLegBend = 0.28; // wide planted
                 torsoLean = -0.06;
+            } else if (this.charType === 'TWINS') {
+                // synchronized celebration — both twins throw an inner arm up to meet in a high-five, bouncing
+                let hop = Math.abs(Math.sin(t * 6));
+                headY += -4 + hop * 4;
+                rightArmAngle = 2.45 + Math.sin(t * 4) * 0.08; rightArmBend = -0.3; // inner arm up toward the partner
+                leftArmAngle = 0.6; leftArmBend = 1.2;                              // outer hand on hip
+                leftLegAngle = 0.4; rightLegAngle = -0.4; leftLegBend = -0.3; rightLegBend = 0.3;
+                torsoLean = 0.04;
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
@@ -3406,6 +3717,10 @@ class Fighter {
                 // a giant crouching low, fists gathered to erupt
                 leftArmAngle = 1.4; leftArmBend = -0.7; rightArmAngle = 1.6; rightArmBend = -0.7;
                 torsoLean = 0.18;
+            } else if (this.charType === 'TWINS') {
+                // a low coiled crouch, fists up and ready to spring
+                leftArmAngle = 1.7; leftArmBend = -0.95; rightArmAngle = 1.85; rightArmBend = -0.95;
+                torsoLean = 0.1;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -3494,6 +3809,18 @@ class Fighter {
                 leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.5; rightLegBend = 0.55;
                 leftArmAngle = 1.1; rightArmAngle = -1.1; leftArmBend = 0.4; rightArmBend = -0.4;
                 headY += 2; torsoLean = rise ? 0.16 : 0.24;
+            } else if (this.charType === 'TWINS') {
+                // an acrobatic tuck rising, legs reaching out to land
+                if (rise) {
+                    leftLegAngle = 0.3; rightLegAngle = -0.25; leftLegBend = 1.05; rightLegBend = 1.0;
+                    leftArmAngle = -1.4; rightArmAngle = 1.4; leftArmBend = 0.7; rightArmBend = -0.7;
+                    torsoLean = 0.1;
+                } else {
+                    leftLegAngle = -0.45; rightLegAngle = 0.45; leftLegBend = 0.5; rightLegBend = 0.5;
+                    leftArmAngle = -1.6; rightArmAngle = 1.6; leftArmBend = 0.4; rightArmBend = -0.4;
+                    torsoLean = -0.04;
+                }
+                headY += rise ? -2 : 2;
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -3550,6 +3877,12 @@ class Fighter {
                 leftArmAngle = 2.75 + brace; leftArmBend = -0.35;  // warding hand raised high
                 rightArmAngle = 1.25 - brace; rightArmBend = 0.55; // other clutched to the chest
                 torsoLean = 0.2; // hunched forward over the ward
+            } else if (this.charType === 'TWINS') {
+                // a tight, synchronized boxer's cross-guard — lead forearm slashed across the
+                // face, rear hand tucked guarding the body
+                leftArmAngle = 1.9 + brace; leftArmBend = -1.15;
+                rightArmAngle = 1.5 - brace; rightArmBend = -0.7;
+                torsoLean = -0.06;
             } else {
                 // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
@@ -3683,6 +4016,42 @@ class Fighter {
                 leftArmAngle = 1.6; leftArmBend = 0.35;
                 leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.5, ex); leftLegBend = 0.32; rightLegBend = 0.42;
                 torsoLean = mix(0.04, 0.24, ex); headY -= 1;
+            } else if (atk.type === 'twinJab') {
+                // a crisp straight jab inward
+                rightArmAngle = mix(2.0, 1.45, ex); rightArmBend = mix(-0.5, 0.08, ex);
+                leftArmAngle = 1.9; leftArmBend = -0.8; // rear guard
+                leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.46, ex); leftLegBend = 0.3; rightLegBend = 0.4;
+                torsoLean = mix(0.04, 0.18, ex);
+            } else if (atk.type === 'twinClap') {
+                // a committed two-step swing
+                rightArmAngle = mix(2.6, 1.2, ex); rightArmBend = mix(-0.8, 0.1, ex);
+                leftArmAngle = mix(2.0, 1.5, ex); leftArmBend = -0.5;
+                leftLegAngle = -0.4; rightLegAngle = mix(0.3, 0.58, ex); leftLegBend = 0.4; rightLegBend = 0.5;
+                torsoLean = mix(0.05, 0.26, ex); headY -= 1;
+            } else if (atk.type === 'crossover') {
+                // a scissoring slash as the twins dash through each other
+                rightArmAngle = mix(2.5, 1.0, ex); rightArmBend = mix(-0.4, 0.1, ex);
+                leftArmAngle = mix(-1.0, 1.3, ex); leftArmBend = mix(0.4, -0.1, ex);
+                leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.4; rightLegBend = 0.5;
+                torsoLean = mix(0.0, 0.3, ex);
+            } else if (atk.type === 'fastball') {
+                // overhand throw — winds back and hurls the partner forward
+                rightArmAngle = mix(2.7, 0.9, ex); rightArmBend = mix(-0.6, 0.1, ex);
+                leftArmAngle = mix(1.0, 1.7, ex); leftArmBend = 0.3;
+                leftLegAngle = -0.45; rightLegAngle = mix(0.3, 0.62, ex); leftLegBend = 0.4; rightLegBend = 0.5;
+                torsoLean = mix(-0.1, 0.28, ex); headY -= ex * 2;
+            } else if (atk.type === 'mirrorVolley') {
+                // both palms thrust forward to loose the bolt inward
+                rightArmAngle = mix(2.0, 1.5, ex); rightArmBend = 0.1;
+                leftArmAngle = mix(1.7, 1.4, ex); leftArmBend = 0.15;
+                leftLegAngle = -0.28; rightLegAngle = 0.34; leftLegBend = 0.32; rightLegBend = 0.36;
+                torsoLean = 0.06; headY -= 1;
+            } else if (atk.type === 'twinTether') {
+                // crouch and plant the wire along the ground
+                rightArmAngle = mix(1.6, 1.05, ex); rightArmBend = 0.3;
+                leftArmAngle = mix(1.5, 1.1, ex); leftArmBend = 0.3;
+                leftLegAngle = -0.34; rightLegAngle = 0.34; leftLegBend = 0.7; rightLegBend = 0.66;
+                headY += 5; torsoLean = 0.14;
             } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
@@ -4106,6 +4475,15 @@ class Fighter {
                 headY += bob * 2.5 - 2; torsoLean = isWalkingForward ? 0.05 : -0.03;
                 leftArmAngle = 1.16; leftArmBend = 0.72;    // hands stay clasped, gliding forward
                 rightArmAngle = 1.0; rightArmBend = 0.55;
+            } else if (this.charType === 'TWINS') {
+                // a nimble side-shuffle — quick light steps, fists loosely up and ready
+                let step = Math.sin(t * 13);
+                leftLegAngle = -0.06 + step * 0.4; rightLegAngle = -0.06 - step * 0.4;
+                leftLegBend = 0.3 + Math.max(0, step) * 0.5; rightLegBend = 0.3 + Math.max(0, -step) * 0.5;
+                headY += Math.abs(step) * 3;
+                leftArmAngle = -0.85 + step * 0.1; rightArmAngle = 0.85 - step * 0.1;
+                leftArmBend = 0.9; rightArmBend = -0.9;
+                torsoLean = 0.03;
             } else {
                 // Alternating gait: the two legs swing in OPPOSITE phase around a
                 // near-vertical centre, and each knee bends as that foot lifts/swings.
@@ -4530,6 +4908,24 @@ class Fighter {
             ctx.globalAlpha = 0.25 + (this._lumFx > 0 ? this._lumFx * 0.4 : 0);
             ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 3; ctx.shadowBlur = 16; ctx.shadowColor = '#ff0033';
             ctx.beginPath(); ctx.ellipse(0, -2, 26, 8, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+        } else if (this.charType === 'TWINS') {
+            ctx.save();
+            // one twin wears a blue headband, the other an orange one
+            let bandCol = this.isPartner ? '#ff8a1e' : '#2f6fed';
+            ctx.fillStyle = bandCol; ctx.strokeStyle = bandCol; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.fillRect(-12, headY - 6, 24, 5); // band across the forehead
+            ctx.lineWidth = 3;                   // knot + trailing tails off the side
+            ctx.beginPath();
+            ctx.moveTo(-12, headY - 2); ctx.lineTo(-23, headY + 4);
+            ctx.moveTo(-12, headY + 1); ctx.lineTo(-22, headY + 10);
+            ctx.stroke();
+            // Symmetry aura — a glow ring while the pincer is balanced and the buff is live
+            if (this.symBuff > 0.05) {
+                ctx.globalAlpha = this.symBuff * 0.6;
+                ctx.strokeStyle = bandCol; ctx.lineWidth = 2; ctx.shadowBlur = 12; ctx.shadowColor = bandCol;
+                ctx.beginPath(); ctx.arc(0, headY + 6, 26, 0, Math.PI * 2); ctx.stroke();
+            }
             ctx.restore();
         } else if (this.charType === 'ZOMBIE') {
             // Missing eye / exposed skull detail

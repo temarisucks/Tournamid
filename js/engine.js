@@ -297,6 +297,23 @@ function drawCultPuppets(c) {
     }
 }
 
+// The Twins — the wire strung between the two bodies (Down special)
+function drawTwinFx(c) {
+    for (let p of players) {
+        if (!p || p.charType !== 'TWINS' || p.isPartner || !p.tether) continue;
+        let px = p.twinPartnerX();
+        let life = 1 - p.tether.t / p.tether.life;
+        let lx = Math.min(p.x, px), rx = Math.max(p.x, px), y = GROUND_Y - 10 + Math.sin(performance.now() / 120) * 2;
+        c.save();
+        c.globalAlpha = Math.min(1, life * 1.6);
+        c.strokeStyle = '#9be3ff'; c.lineWidth = 2.5; c.shadowBlur = 10; c.shadowColor = '#9be3ff';
+        c.beginPath(); c.moveTo(lx, y); c.lineTo(rx, y); c.stroke();
+        c.fillStyle = '#fff';
+        for (let i = 0; i < 5; i++) { let fx = lx + (rx - lx) * (((i / 5) + (performance.now() / 600) % 1) % 1); c.beginPath(); c.arc(fx, y, 1.6, 0, Math.PI * 2); c.fill(); }
+        c.restore();
+    }
+}
+
 function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
@@ -473,6 +490,33 @@ function checkCollisions() {
                     spawnParticles(proj.x, proj.y, 10, col);
                     if (!proj.pierce) proj.active = false; // beams pierce, everything else pops
                 }
+            }
+        }
+    }
+
+    // The Twins — the SECOND body is also a hurtbox feeding the shared HP. Route hits to the
+    // controller (keyed on its id, so one swing can't double-dip across both bodies).
+    for (let owner of players) {
+        let tw = owner.partner;
+        if (!tw || owner.state === 'DEAD') continue;
+        let px = tw.x - owner.width / 2, py = tw.y - owner.height;
+        for (let h of hitboxes) {
+            if (!h.active || !h.owner || h.owner.team === owner.team || h.hasHit.has(owner.id)) continue;
+            if (h.x < px + owner.width && h.x + h.w > px && h.y < py + owner.height && h.y + h.h > py) {
+                h.hasHit.add(owner.id);
+                if (h.grabThrow) { h.grabThrow.captureThrow(owner); h.active = false; continue; }
+                if (h.atk && h.owner) h.owner.playAttackSound(h.atk);
+                let landed = owner.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab || !!h.unblockableUlt, hitBody: 'partner' });
+                if (landed && h.ultActivator) h.ultActivator.onUltConnect(owner);
+            }
+        }
+        for (let proj of projectiles) {
+            if (!proj.active || !proj.owner || proj.owner.team === owner.team || proj.hasHit.has(owner.id)) continue;
+            if (proj.x < px + owner.width && proj.x + proj.w > px && proj.y < py + owner.height && proj.y + proj.h > py) {
+                proj.hasHit.add(owner.id);
+                let landed = owner.takeDamage(proj.damage, proj.knockback, proj.lightningStun || proj.stun, proj.owner, { unblockable: proj.unblockable, isUlt: !!proj.ultActivator || !!proj.isUltDamage, hitBody: 'partner' });
+                if (proj.ultActivator) { if (landed) proj.ultActivator.onUltConnect(owner); proj.active = false; }
+                else if (!proj.pierce) proj.active = false;
             }
         }
     }
@@ -723,6 +767,7 @@ function nextRound() {
         if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
         if ('devotion' in p) p.devotion = 0;
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
+        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
@@ -1740,7 +1785,7 @@ function drawTrafficLight(c, x, baseY, H, phase) {
 }
 
 // ---------------- LADDER CLIMB SCREEN ----------------
-const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', CULT: 'cult', LUMATROSSIA: 'lumatrossia', ZOMBIE: 'zombie' };
+const LADDER_ICON_FILE = { BRAWLER: 'brawler', SWORDSMAN: 'swordsman', MAGE: 'mage', RANGER: 'ranger', DARK_RULER: 'darkruler', TELEPATH: 'telepath', BEAST_TAMER: 'beasttamer', PHANTOM: 'phantom', COPYCAT: 'copycat', CULT: 'cult', LUMATROSSIA: 'lumatrossia', TWINS: 'twins', ZOMBIE: 'zombie' };
 let _charIconCache = {};
 function getCharIcon(type) {
     if (type in _charIconCache) return _charIconCache[type];
@@ -1911,6 +1956,8 @@ function draw() {
 
     // Entities
     players.forEach(p => p.draw(ctx));
+    players.forEach(p => { if (p.partner && p.state !== 'DEAD') p.partner.draw(ctx); }); // The Twins' second body
+    drawTwinFx(ctx); // tethers + fastball trails
     drawCultSummons(ctx); // summoned cultists performing the ritual alongside the leader
     drawCultPuppets(ctx); // the mimic puppet echoing the leader
     drawLumFx(ctx);       // Lumatrossia's drop-portals + fire-breathing beast maws

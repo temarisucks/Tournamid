@@ -107,6 +107,17 @@ const CHAR_INFO = [
             ["Down", "Consecrated Ground", "plant a ritual zone: chips the foe inside, siphons their meter, and charges your install"]
         ],
         ult: "Ultimate — Summon Lumatrossia (install): become a giant horned demon for as long as the draining bar lasts. New kit — Backhand / Tyrant's Fist / Doomgaze beam, plus Side: blink behind the foe, Up: a beast that rains Mage-fire, Down: a portal that drops them from the sky (cooldown). Armored and grab-immune but cannot block; desummons when the bar empties; win the round as him and you revert next round."
+    },
+    {
+        name: "THE TWINS", role: "Two-body pincer pair",
+        passive: "Passive — Two as One: you control a pair that share one HP bar but are separate bodies. A stun/knockback only locks down the twin actually hit — the other keeps fighting. While the foe is centred between them, both gain a damage + speed buff (Symmetry).",
+        specials: [
+            ["Neutral", "Mirror Volley", "both twins fire a bolt inward — converging fire on a foe caught between them"],
+            ["Side", "Crossover", "the twins dash forward, scissoring through together"],
+            ["Up", "Fastball / Converge", "together: hurl yourself bodily across the map at the foe — you keep control of the twin that flew over, the other stays put. Apart: both leap at each other, crushing anything between"],
+            ["Down", "Tether", "string a taut wire between the two bodies — whoever crosses it is tripped"]
+        ],
+        ult: "Ultimate — Eclipse: both twins blink to opposite walls and rocket inward, crushing whoever's caught in the middle as they collide."
     }
 ];
 
@@ -415,7 +426,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -470,6 +481,17 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
         previewCtx.arc(0, 0, 18 + (1 - burst) * 62, 0, Math.PI * 2);
         previewCtx.stroke();
         previewCtx.restore();
+    }
+
+    // The Twins — show BOTH bodies straddling the slot, mirrored
+    if (charType === 'TWINS' && fighter.partner) {
+        fighter.x = x - 30 * dir;
+        let pn = fighter.partner;
+        pn.isPreview = true; pn.y = fighter.y; pn.x = x + 30 * dir; pn.dir = -dir;
+        pn.state = fighter.state; pn.stateTimer = fighter.stateTimer; pn.animTimer = fighter.animTimer; pn.currentAttack = fighter.currentAttack;
+        fighter.draw(previewCtx);
+        pn.draw(previewCtx);
+        return;
     }
 
     fighter.draw(previewCtx);
@@ -821,7 +843,7 @@ function ladderLevelFor(index, total) {
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT'];
+    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS'];
     // Don't put the player's own pick(s) on the ladder, and cap the gauntlet at 9 rungs.
     let picked = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam.slice() : [p1Selection];
     ladder.queue = ladderShuffle(FULL_ROSTER.filter(c => !picked.includes(c))).slice(0, 9);
