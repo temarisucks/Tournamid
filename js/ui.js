@@ -325,12 +325,14 @@ function releaseTouchPointer(pointerId) {
     if (held.btn) held.btn.classList.remove('held');
     touchHeld.delete(pointerId);
 }
+let touchStickReset = null; // set by initTouchControls; recentres the analog stick
 function releaseAllTouchControls() {
     touchHeld.forEach(held => {
         keys[held.code] = false;
         if (held.btn) held.btn.classList.remove('held');
     });
     touchHeld.clear();
+    if (touchStickReset) touchStickReset();
 }
 function initTouchControls() {
     let panel = document.getElementById('touch-controls');
@@ -347,6 +349,48 @@ function initTouchControls() {
         btn.addEventListener('pointercancel', e => { e.preventDefault(); releaseTouchPointer(e.pointerId); });
         btn.addEventListener('lostpointercapture', e => releaseTouchPointer(e.pointerId));
     });
+
+    // ---- Virtual analog stick (movement) ----
+    // Tilt maps onto the digital move keys: past the deadzone sideways = walk, flick up = jump,
+    // pull down = crouch. Diagonals work (e.g. down-toward for crouch-walking specials).
+    let stick = document.getElementById('touch-stick');
+    let knob = document.getElementById('touch-stick-knob');
+    if (stick && knob) {
+        let sid = null;
+        const setDir = (action, on) => { let code = touchCodeForAction(action); if (code) keys[code] = !!on; };
+        touchStickReset = () => {
+            sid = null;
+            ['l', 'r', 'u', 'd'].forEach(a => setDir(a, false));
+            knob.style.transform = 'translate(0px, 0px)';
+            stick.classList.remove('held');
+        };
+        const moveStick = e => {
+            // bounding rect is in (possibly non-uniformly) scaled screen space — normalise
+            let rect = stick.getBoundingClientRect();
+            let nx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+            let ny = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+            let len = Math.hypot(nx, ny);
+            if (len > 1) { nx /= len; ny /= len; }
+            let r = stick.offsetWidth / 2; // unscaled container units for the knob visual
+            knob.style.transform = 'translate(' + (nx * r * 0.62) + 'px, ' + (ny * r * 0.62) + 'px)';
+            const DEAD = 0.3;
+            setDir('l', nx < -DEAD);
+            setDir('r', nx > DEAD);
+            setDir('u', ny < -DEAD * 1.3); // jump needs a deliberate upward flick
+            setDir('d', ny > DEAD * 1.3);  // crouch needs a deliberate downward pull
+        };
+        stick.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            sid = e.pointerId;
+            stick.setPointerCapture(sid);
+            stick.classList.add('held');
+            moveStick(e);
+        });
+        stick.addEventListener('pointermove', e => { if (e.pointerId === sid) { e.preventDefault(); moveStick(e); } });
+        stick.addEventListener('pointerup', e => { if (e.pointerId === sid) { e.preventDefault(); touchStickReset(); } });
+        stick.addEventListener('pointercancel', e => { if (e.pointerId === sid) touchStickReset(); });
+        stick.addEventListener('lostpointercapture', e => { if (e.pointerId === sid) touchStickReset(); });
+    }
 }
 function updateTouchControlsVisibility() {
     let panel = document.getElementById('touch-controls');

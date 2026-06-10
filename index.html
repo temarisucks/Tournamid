@@ -48,7 +48,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.16.5</span>
+        <span class="menu-version">v0.17.0</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -276,11 +276,8 @@
     </div>
 
     <div id="touch-controls" class="hidden" aria-label="Touch controls">
-        <div class="touch-cluster touch-dpad">
-            <button class="touch-btn touch-up" data-touch-action="u">UP</button>
-            <button class="touch-btn touch-left" data-touch-action="l">LEFT</button>
-            <button class="touch-btn touch-down" data-touch-action="d">DOWN</button>
-            <button class="touch-btn touch-right" data-touch-action="r">RIGHT</button>
+        <div class="touch-cluster touch-stick" id="touch-stick">
+            <div class="touch-stick-knob" id="touch-stick-knob"></div>
         </div>
         <div class="touch-cluster touch-actions">
             <button class="touch-btn" data-touch-action="block">BLOCK</button>
