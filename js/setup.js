@@ -41,6 +41,11 @@ window.addEventListener('resize', fitGameToScreen);
 window.addEventListener('orientationchange', () => setTimeout(fitGameToScreen, 120));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', fitGameToScreen);
 fitGameToScreen();
+// iOS Safari zoom guards: double/triple-tap zoom is disabled via CSS touch-action:manipulation;
+// these block the remaining routes (pinch gestures + double-click zoom on the page).
+document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 
 let lastTime = 0;
 let requestID;
