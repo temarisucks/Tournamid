@@ -180,8 +180,9 @@ class Projectile {
         // Ultimate bomb (Ranger): arcs, clangs on the floor, then detonates
         if (this.subtype === 'bomb') {
             this.vy += 1400 * dt;
-            if (this.y >= GROUND_Y - this.h) {
-                this.y = GROUND_Y - this.h; this.vx = 0; this.vy = 0;
+            let bombGy = stageGroundYAt(this.x, GROUND_Y);
+            if (this.y >= bombGy - this.h) {
+                this.y = bombGy - this.h; this.vx = 0; this.vy = 0;
                 this._sit = (this._sit || 0) + dt;
                 if (this._sit > 0.5) {
                     this.active = false;
@@ -431,7 +432,7 @@ class Fighter {
         this.charType = typeName;
         const stats = CHARACTERS[typeName];
         
-        this.x = x; this.y = GROUND_Y;
+        this.x = x; this.y = stageGroundYAt(x, GROUND_Y);
         this.vx = 0; this.vy = 0;
         this.width = stats.width; this.height = stats.height;
         this.hp = stats.hp; this.maxHp = stats.hp;
@@ -904,7 +905,7 @@ class Fighter {
         if (this.state === 'DEAD') return;
         // In training, falling off just respawns you on the stage
         if (trainingMode) {
-            this.x = WIDTH / 2; this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+            this.x = WIDTH / 2; this.y = stageGroundYAt(WIDTH / 2, GROUND_Y); this.vx = 0; this.vy = 0;
             this.hp = this.maxHp; this.state = 'IDLE'; this.ledge = null;
             return;
         }
@@ -935,7 +936,7 @@ class Fighter {
         this.vx = 0; this.vy = 0;
         // Hold them firmly in your grip, hoisted in front of you
         tg.state = 'HITSTUN'; tg.stateTimer = 0.6; tg.vx = 0; tg.vy = 0;
-        tg.x = this.x + this.dir * 54; tg.y = GROUND_Y - 16;
+        tg.x = this.x + this.dir * 54; tg.y = this.y - 16;
         if (th.t >= 0.4) {
             // hurl them clear across to the opposite side of the screen
             tg.takeDamage(th.dmg, { x: 3000 * this.dir, y: -260 }, 0.9, this, { unblockable: true });
@@ -953,7 +954,7 @@ class Fighter {
         if (this.catPin || !target || target.state === 'DEAD' || target.invulnTimer > 0) return;
         this.catPin = { target, t: 0, hits: 0, hitTick: 0 };
         this.dir = target.x >= this.x ? 1 : -1;
-        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+        this.vx = 0; this.vy = 0; this.y = stageGroundYAt(this.x, GROUND_Y);
         spawnParticles(target.x, target.y - 30, 12, '#fff');
         playAudio(attackSfx.knife);
     }
@@ -962,10 +963,10 @@ class Fighter {
         let cp = this.catPin, tg = cp.target;
         if (!tg || tg.state === 'DEAD') { this.catPin = null; if (this.state === 'ATTACK') this.changeState('IDLE'); return; }
         cp.t += dt;
-        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+        this.vx = 0; this.vy = 0; this.y = stageGroundYAt(this.x, GROUND_Y);
         // hold them pinned under the cat
         tg.state = 'HITSTUN'; tg.stateTimer = 0.4; tg.vx = 0; tg.vy = 0;
-        tg.x = this.x + this.dir * 22; tg.y = GROUND_Y;
+        tg.x = this.x + this.dir * 22; tg.y = this.y;
         // a flurry of rapid slashes
         cp.hitTick -= dt;
         if (cp.hitTick <= 0 && cp.hits < 5) {
@@ -1065,7 +1066,7 @@ class Fighter {
         } else {
             this.x = Math.max(60, Math.min(WIDTH - 60, this.x + this.dir * 220));
         }
-        this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+        this.y = stageGroundYAt(this.x, GROUND_Y); this.vx = 0; this.vy = 0;
         this.invulnTimer = Math.max(this.invulnTimer, 0.22);
         spawnParticles(this.x, this.y - 60, 26, '#ff0033'); spawnParticles(this.x, this.y - 60, 13, '#fff'); // reappear
         playAudio(attackSfx.magic);
@@ -1116,7 +1117,7 @@ class Fighter {
             spawnParticles(fx, this.y - 45, 2, '#6fd0ff');
         }
         this.x = Math.max(28, Math.min(WIDTH - 28, past.x));
-        this.y = Math.min(GROUND_Y, past.y);
+        this.y = Math.min(stageGroundYAt(this.x, GROUND_Y), past.y);
         this.vx = 0; this.vy = 0;
         let lost = past.hp - this.hp;
         if (lost > 0) this.hp = Math.min(this.maxHp, this.hp + lost * 0.6);
@@ -1153,8 +1154,9 @@ class Fighter {
         p.hp = this.hp; p.maxHp = this.maxHp; p.team = this.team; p.symBuff = 0;
         p.vy += 1500 * dt;
         p.x += p.vx * dt;
-        p.y = Math.min(GROUND_Y, p.y + p.vy * dt);
-        if (p.y >= GROUND_Y) { p.y = GROUND_Y; p.vy = 0; }
+        let pGy = stageGroundYAt(p.x, GROUND_Y);
+        p.y = Math.min(pGy, p.y + p.vy * dt);
+        if (p.y >= pGy) { p.y = pGy; p.vy = 0; }
         p.x = Math.max(28, Math.min(WIDTH - 28, p.x));
         if (p.state === 'HITSTUN') {
             p.vx *= p.y < GROUND_Y ? 0.99 : 0.9;
@@ -1370,7 +1372,7 @@ class Fighter {
         this.ult = null;
         if (ultActive === this) { ultActive = null; ultCamera = null; timeScale = 1; }
         if (this.state === 'ULT') {
-            this.state = this.y < GROUND_Y ? 'FALL' : 'IDLE';
+            this.state = this.y < stageGroundYAt(this.x, GROUND_Y) ? 'FALL' : 'IDLE';
             this.stateTimer = 0;
         }
     }
@@ -1396,8 +1398,8 @@ class Fighter {
         this.meter = this.meterMax; // the meter bar now reads as the install timer, draining down
         this._lumFx = 1.0;
         this.state = 'IDLE'; this.vx = 0; this.vy = 0; this.currentAttack = null;
-        spawnParticles(this.x, GROUND_Y - 70, 44, '#ff0033');
-        spawnParticles(this.x, GROUND_Y - 70, 22, '#fff');
+        spawnParticles(this.x, this.y - 70, 44, '#ff0033');
+        spawnParticles(this.x, this.y - 70, 22, '#fff');
     }
 
     // Desummon Lumatrossia and return the cult to battle.
@@ -1411,8 +1413,8 @@ class Fighter {
         }
         this._cultSaved = null;
         this.lumActive = false; this.lumTimer = 0; this.meter = 0; this._lumFx = 1.0;
-        if (this.state !== 'DEAD') { this.state = this.y < GROUND_Y ? 'FALL' : 'IDLE'; this.currentAttack = null; }
-        spawnParticles(this.x, GROUND_Y - 60, 30, '#ff0033');
+        if (this.state !== 'DEAD') { this.state = this.y < stageGroundYAt(this.x, GROUND_Y) ? 'FALL' : 'IDLE'; this.currentAttack = null; }
+        spawnParticles(this.x, this.y - 60, 30, '#ff0033');
     }
 
     // Devotion tier (Congregation): 0/1/2 — more cultists, bigger zones, faster ult.
@@ -1476,6 +1478,9 @@ class Fighter {
     updateUlt(dt) {
         let u = this.ult;
         if (!u) { this.changeState('IDLE'); return; }
+        // Stage-aware floor: ult cinematics pin fighters to "the ground", which on
+        // raised-floor stages (End of the World) is the main island top, not GROUND_Y.
+        const STAGE_GY = getStageGeo().main.top;
         // Crash guard: after an online ult-sync the players array is rebuilt and
         // u.target is re-linked by index. If that link fails (trimmed projectile,
         // length mismatch) the payoff phases would deref a null target and crash.
@@ -1488,7 +1493,7 @@ class Fighter {
         u.t += dt;
         this.vx = 0;
         // keep grounded unless a phase repositions us
-        if (this.y < GROUND_Y) { this.vy += 1500 * dt; this.y = Math.min(GROUND_Y, this.y + this.vy * dt); if (this.y >= GROUND_Y) this.vy = 0; }
+        if (this.y < STAGE_GY) { this.vy += 1500 * dt; this.y = Math.min(STAGE_GY, this.y + this.vy * dt); if (this.y >= STAGE_GY) this.vy = 0; }
 
         // DECLARE — the line drops, then the activation comes out
         if (u.phase === 'declare') {
@@ -1516,11 +1521,11 @@ class Fighter {
             if (!tg || tg.state === 'DEAD' || !p) { this.endUlt(); return; }
             // pin the foe to centre stage
             tg.state = 'HITSTUN'; tg.stateTimer = 3; tg.vx = 0; tg.vy = 0;
-            tg.x = WIDTH / 2; tg.y = GROUND_Y;
-            this.y = GROUND_Y; p.y = GROUND_Y; this.vx = 0; this.vy = 0;
+            tg.x = WIDTH / 2; tg.y = STAGE_GY;
+            this.y = STAGE_GY; p.y = STAGE_GY; this.vx = 0; this.vy = 0;
             // keep the partner drawn/animated through the cinematic
             p.state = this.state; p.currentAttack = null; p.animTimer = this.animTimer; p.team = this.team; p.hp = this.hp; p.maxHp = this.maxHp; p._hover = 0;
-            ultCamera = { fx: WIDTH / 2, fy: GROUND_Y - 70, zoom: 1.4 };
+            ultCamera = { fx: WIDTH / 2, fy: STAGE_GY - 70, zoom: 1.4 };
             if (u.phase === 'split') {
                 // streak to opposite walls
                 timeScale = 0.6;
@@ -1536,13 +1541,13 @@ class Fighter {
                 let s = Math.min(1, u.t / 0.26);
                 this.x = 60 + (WIDTH / 2 - 60) * s; this.dir = 1;
                 p.x = (WIDTH - 60) + (WIDTH / 2 - (WIDTH - 60)) * s; p.dir = -1;
-                for (let i = 0; i < 2; i++) spawnParticles(this.x, GROUND_Y - 50, 1, '#9be3ff'), spawnParticles(p.x, GROUND_Y - 50, 1, '#9be3ff');
+                for (let i = 0; i < 2; i++) spawnParticles(this.x, STAGE_GY - 50, 1, '#9be3ff'), spawnParticles(p.x, STAGE_GY - 50, 1, '#9be3ff');
                 if (!u.hit && s >= 1) {
                     u.hit = true;
                     tg.takeDamage(28, { x: 0, y: -480 }, 1.0, this, { isUlt: true, unblockable: true });
                     tg._thrown = 0.4;
-                    spawnParticles(WIDTH / 2, GROUND_Y - 50, 50, '#fff');
-                    spawnParticles(WIDTH / 2, GROUND_Y - 50, 30, '#9be3ff');
+                    spawnParticles(WIDTH / 2, STAGE_GY - 50, 50, '#fff');
+                    spawnParticles(WIDTH / 2, STAGE_GY - 50, 30, '#9be3ff');
                     sfx.playDeath();
                 }
                 if (u.t > 0.6) { this.anchorX = WIDTH / 2; this.endUlt(); }
@@ -1563,9 +1568,9 @@ class Fighter {
             if (u.phase === 'dodges') {
                 // the foe swings over and over; each swing meets a different dodge
                 timeScale = 0.42;
-                this.y = GROUND_Y; this.vx = 0;
+                this.y = STAGE_GY; this.vx = 0;
                 this.dir = tg.x >= this.x ? 1 : -1;
-                tg.x = this.x + this.dir * 58; tg.y = GROUND_Y;
+                tg.x = this.x + this.dir * 58; tg.y = STAGE_GY;
                 tg.dir = -this.dir;
                 // puppet the foe through repeated light swings
                 tg.state = 'ATTACK';
@@ -1579,7 +1584,7 @@ class Fighter {
                     spawnParticles(this.x - this.dir * 10, this.y - 50, 8, '#6fd0ff'); // whiff blur
                     playAudio(attackSfx.timeHit); // each dodge rings out (pitch-wobbled per play)
                 }
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 70, zoom: 1.8 };
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 70, zoom: 1.8 };
                 if (u.t > 2.1) { u.phase = 'freeze'; u.t = 0; u.hits = 0; u.stored = 0; tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0; sfx.playDeath(); }
                 return;
             }
@@ -1587,7 +1592,7 @@ class Fighter {
                 // TIME STOP — the world drains of colour (overlay in engine); he flurries from every angle
                 timeScale = 0.06; // the world is frozen; he acts in real time (frameRealDt)
                 tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0;
-                ultCamera = { fx: tg.x, fy: GROUND_Y - 75, zoom: 1.7 };
+                ultCamera = { fx: tg.x, fy: STAGE_GY - 75, zoom: 1.7 };
                 if (u.hits < 6 && u.t > 0.25 + u.hits * 0.24) {
                     u.hits++;
                     u.stored += 5; // damage is STORED, not dealt — it all lands at the wave
@@ -1610,7 +1615,7 @@ class Fighter {
                 let s = Math.min(1, u.t / 0.4);
                 this.x = u.slideFrom + (u.slideTo - u.slideFrom) * (1 - Math.pow(1 - s, 2));
                 this.dir = tg.x >= this.x ? 1 : -1;
-                spawnParticles(this.x, GROUND_Y - 8, 2, '#6fd0ff');
+                spawnParticles(this.x, STAGE_GY - 8, 2, '#6fd0ff');
                 if (u.t > 0.55) { u.phase = 'wave'; u.t = 0; }
                 return;
             }
@@ -1636,12 +1641,12 @@ class Fighter {
         // THE CULT — Summon Lumatrossia: cultists float up, then the install takes over
         if (u.kind === 'install') {
             timeScale = 0.5;
-            this.vx = 0; this.y = GROUND_Y;
-            ultCamera = { fx: this.x, fy: GROUND_Y - 90, zoom: 1.35 };
+            this.vx = 0; this.y = STAGE_GY;
+            ultCamera = { fx: this.x, fy: STAGE_GY - 90, zoom: 1.35 };
             // four cultists rise, arms raised, chanting
             for (let i = 0; i < 4; i++) {
                 if (onlineDeterministicRandom('cultRise' + i, this) < 0.25) {
-                    spawnParticles(this.x + (i - 1.5) * 40, GROUND_Y - 30 - u.t * 120, 2, '#ff0033');
+                    spawnParticles(this.x + (i - 1.5) * 40, STAGE_GY - 30 - u.t * 120, 2, '#ff0033');
                 }
             }
             if (u.t > 1.3) { this.becomeLumatrossia(); this.endUlt(); }
@@ -1658,8 +1663,8 @@ class Fighter {
                 tg.state = 'HITSTUN'; tg.stateTimer = 2.6; tg.vx = 0; tg.vy = 0;
                 this.dir = tg.x >= this.x ? 1 : -1;
                 tg.x = this.x + this.dir * 82 + Math.sin(u.t * 30) * 3;
-                tg.y = GROUND_Y - 44 + Math.sin(u.t * 34) * 3;
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 80, zoom: 1.55 };
+                tg.y = STAGE_GY - 44 + Math.sin(u.t * 34) * 3;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 80, zoom: 1.55 };
                 if (!u.bound) {
                     u.bound = true;
                     tg.takeDamage(6, { x: 0, y: 0 }, 0.35, this, { isUlt: true, unblockable: true });
@@ -1679,7 +1684,7 @@ class Fighter {
                 let ease = 1 - Math.pow(1 - p, 3);
                 tg.x = u.bruteStartX + (u.bruteEndX - u.bruteStartX) * ease;
                 tg.y = u.bruteY - Math.sin(p * Math.PI) * 34;
-                ultCamera = { fx: tg.x, fy: GROUND_Y - 95, zoom: 1.4 };
+                ultCamera = { fx: tg.x, fy: STAGE_GY - 95, zoom: 1.4 };
                 if (!u.bruteHit && u.t > 0.08) {
                     u.bruteHit = true;
                     tg.takeDamage(18, { x: 0, y: 0 }, 0.45, this, { isUlt: true, unblockable: true });
@@ -1692,8 +1697,8 @@ class Fighter {
                 let tg = u.target;
                 timeScale = 0.5;
                 tg.state = 'HITSTUN'; tg.stateTimer = 1.8; tg.vx = 0; tg.vy = 0;
-                tg.y = GROUND_Y - 58 + Math.sin(u.t * 18) * 5;
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 105, zoom: 1.48 };
+                tg.y = STAGE_GY - 58 + Math.sin(u.t * 18) * 5;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 105, zoom: 1.48 };
                 if (u.ravenHits < 2 && u.t > 0.08 + u.ravenHits * 0.12) {
                     u.ravenHits++;
                     tg.takeDamage(7, { x: 0, y: -70 }, 0.25, this, { isUlt: true, unblockable: true });
@@ -1703,14 +1708,14 @@ class Fighter {
                 if (u.t > 0.36) {
                     u.phase = 'alphaWhip'; u.t = 0; u.whipDone = false;
                     this.x = Math.max(55, Math.min(WIDTH - 55, tg.x - this.dir * 78));
-                    this.y = GROUND_Y;
+                    this.y = STAGE_GY;
                 }
             } else if (u.phase === 'alphaWhip') {
                 let tg = u.target;
                 timeScale = 0.54;
                 this.dir = tg.x >= this.x ? 1 : -1;
                 tg.state = 'HITSTUN'; tg.stateTimer = 1.2; tg.vx = 0; tg.vy = 0;
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 85, zoom: 1.55 };
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 85, zoom: 1.55 };
                 if (!u.whipDone && u.t > 0.14) {
                     u.whipDone = true;
                     tg.takeDamage(24, { x: 980 * this.dir, y: -340 }, 0.75, this, { isUlt: true, unblockable: true });
@@ -1731,7 +1736,7 @@ class Fighter {
                 timeScale = 0.9;
                 this.x += 1550 * this.dir * dt;
                 this.x = Math.max(38, Math.min(WIDTH - 38, this.x));
-                this.y = GROUND_Y;
+                this.y = STAGE_GY;
                 spawnParticles(this.x - this.dir * 30, this.y - 50, 2, '#9aa6c8');
                 let foe = this.getClosestEnemy();
                 if (foe && foe.state !== 'DEAD' && Math.abs(foe.x - this.x) < 74) {
@@ -1746,14 +1751,14 @@ class Fighter {
                 // hauled up by the throat — he keeps facing the way he rushed (no turn-around)
                 timeScale = 0.42;
                 tg.state = 'HITSTUN'; tg.stateTimer = 4; tg.vx = 0; tg.vy = 0;
-                tg.x = this.x + this.dir * 42; tg.y = GROUND_Y; this.y = GROUND_Y;
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 72, zoom: 1.95 };
+                tg.x = this.x + this.dir * 42; tg.y = STAGE_GY; this.y = STAGE_GY;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 72, zoom: 1.95 };
                 if (!u.seizeHit) { u.seizeHit = true; tg.takeDamage(3, { x: 0, y: 0 }, 0.5, this, { isUlt: true, unblockable: true }); spawnParticles(tg.x, tg.y - 60, 14, '#cfd8ff'); }
                 if (u.t > 0.6) {
                     u.phase = 'shatter'; u.t = 0;
                     u.wallDir = this.dir; // keep driving them forward into the wall ahead
                     u.shatterX = u.wallDir > 0 ? WIDTH - 8 : 8;
-                    u.shatterY = GROUND_Y - 96;
+                    u.shatterY = STAGE_GY - 96;
                 }
                 return;
             }
@@ -1764,7 +1769,7 @@ class Fighter {
                 tg.state = 'HITSTUN'; tg.stateTimer = 4; tg.vx = 0; tg.vy = 0;
                 tg.x = (this.x + this.dir * 42) + (u.shatterX - (this.x + this.dir * 42)) * p;
                 tg.y = u.shatterY;
-                this.x = tg.x - u.wallDir * 46; this.dir = u.wallDir; this.y = GROUND_Y;
+                this.x = tg.x - u.wallDir * 46; this.dir = u.wallDir; this.y = STAGE_GY;
                 ultCamera = { fx: u.shatterX - u.wallDir * 64, fy: u.shatterY, zoom: 2.05 };
                 if (!u.cracked && u.t > 0.42) { u.cracked = true; sfx.playDeath(); spawnParticles(u.shatterX, u.shatterY, 34, '#fff'); }
                 if (u.t > 1.0) { u.phase = 'void'; u.t = 0; u.voidHits = 0; }
@@ -1787,8 +1792,8 @@ class Fighter {
                     selectedStage = stages[Math.floor(Math.random() * stages.length)] || 'dojo';
                     if (typeof initStageActors === 'function') initStageActors();
                     if (typeof music !== 'undefined' && music.resetFightPick) { music.resetFightPick(); music.play('fight'); }
-                    tg.x = WIDTH / 2; tg.y = GROUND_Y - 260; tg.vy = 0;
-                    this.x = Math.max(60, Math.min(WIDTH - 60, WIDTH / 2 + (tg.x > WIDTH / 2 ? -130 : 130))); this.y = GROUND_Y;
+                    tg.x = WIDTH / 2; tg.y = STAGE_GY - 260; tg.vy = 0;
+                    this.x = Math.max(60, Math.min(WIDTH - 60, WIDTH / 2 + (tg.x > WIDTH / 2 ? -130 : 130))); this.y = STAGE_GY;
                     this.dir = tg.x >= this.x ? 1 : -1;
                 }
                 return;
@@ -1799,16 +1804,16 @@ class Fighter {
                 let p = Math.min(1, u.t / 0.32);
                 tg.state = 'HITSTUN'; tg.stateTimer = 3; tg.vx = 0;
                 tg.x = WIDTH / 2;
-                tg.y = (GROUND_Y - 260) + 260 * (p * p);
-                ultCamera = { fx: WIDTH / 2, fy: GROUND_Y - 80, zoom: 1.5 };
+                tg.y = (STAGE_GY - 260) + 260 * (p * p);
+                ultCamera = { fx: WIDTH / 2, fy: STAGE_GY - 80, zoom: 1.5 };
                 if (!u.smashed && p >= 1) {
                     u.smashed = true;
-                    tg.y = GROUND_Y;
+                    tg.y = STAGE_GY;
                     let away = (tg.x >= this.x) ? 1 : -1;
                     tg.takeDamage(24, { x: 520 * away, y: -220 }, 0.95, this, { isUlt: true, unblockable: true });
                     tg.tumbleTimer = 0.85; tg._tumbleAngle = 0; tg._tumbleDir = away; // skid + roll across the floor
-                    spawnParticles(tg.x, GROUND_Y - 28, 52, '#fff');
-                    spawnParticles(tg.x, GROUND_Y - 28, 30, '#ff0033');
+                    spawnParticles(tg.x, STAGE_GY - 28, 52, '#fff');
+                    spawnParticles(tg.x, STAGE_GY - 28, 30, '#ff0033');
                     sfx.playDeath();
                 }
                 if (u.t > 0.9) this.endUlt();
@@ -1829,8 +1834,8 @@ class Fighter {
                 // suspend the foe in a telekinetic vice, jittering helplessly
                 let lift = Math.min(120, u.t * 240);
                 tg.x = this.x + this.dir * 70 + Math.sin(u.t * 40) * 4;
-                tg.y = GROUND_Y - lift + Math.sin(u.t * 30) * 4;
-                ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 100, zoom: 1.7 };
+                tg.y = STAGE_GY - lift + Math.sin(u.t * 30) * 4;
+                ultCamera = { fx: (this.x + tg.x) / 2, fy: STAGE_GY - 100, zoom: 1.7 };
                 u.hitTick = (u.hitTick || 0) - dt;
                 if (u.hitTick <= 0 && u.t < 1.5) {
                     u.hitTick = 0.2;
@@ -1855,18 +1860,18 @@ class Fighter {
         // ---- DARK RULER giant slash ----
         if (u.kind === 'darkslash') {
             timeScale = 0.45;
-            ultCamera = { fx: this.x + this.dir * 80, fy: GROUND_Y - 80, zoom: 1.5 };
+            ultCamera = { fx: this.x + this.dir * 80, fy: STAGE_GY - 80, zoom: 1.5 };
             if (!u.fired && u.t > 0.14) {
                 // unleash an enormous crescent that screams across the arena
                 u.fired = true;
-                let p = new Projectile(this.x + this.dir * 30, GROUND_Y - 210, 950 * this.dir, 0,
+                let p = new Projectile(this.x + this.dir * 30, STAGE_GY - 210, 950 * this.dir, 0,
                     72, 210, 40, { x: 620 * this.dir, y: -280 }, 0.7, this, 1.8, null);
                 p.subtype = 'giantslash'; p.pierce = true; p.unblockable = true;
                 p.isUltDamage = true; // its kills count as ultimate kills (overkill), without the connect/despawn of ultActivator
                 projectiles.push(p);
                 sfx.playDeath(); playAudio(attackSfx.sword);
-                spawnParticles(this.x + this.dir * 40, GROUND_Y - 90, 24, '#111');
-                spawnParticles(this.x + this.dir * 40, GROUND_Y - 90, 14, '#ff0033');
+                spawnParticles(this.x + this.dir * 40, STAGE_GY - 90, 24, '#111');
+                spawnParticles(this.x + this.dir * 40, STAGE_GY - 90, 14, '#ff0033');
             }
             if (u.t > 0.6) this.endUlt();
             return;
@@ -1882,7 +1887,7 @@ class Fighter {
                 ultCamera = { fx: (this.x + tg.x) / 2, fy: this.y - 50, zoom: 2.0 };
                 tg.state = 'HITSTUN'; tg.stateTimer = 2; tg.vx = 0; tg.vy = 0;
                 this.dir = tg.x >= this.x ? 1 : -1;
-                tg.x = this.x + this.dir * 46; tg.y = GROUND_Y;
+                tg.x = this.x + this.dir * 46; tg.y = STAGE_GY;
                 if (u.t > 0.6) {
                     u.phase = 'slam'; u.t = 0; u.bounced = 0;
                     u.flyVx = 1700 * this.dir; // launched toward the wall
@@ -1893,8 +1898,8 @@ class Fighter {
                 let tg = u.target;
                 timeScale = 0.4;
                 tg.state = 'HITSTUN'; tg.stateTimer = 2; tg.vx = 0; tg.vy = 0;
-                tg.x += u.flyVx * dt; tg.y = GROUND_Y;
-                ultCamera = { fx: tg.x, fy: GROUND_Y - 60, zoom: 1.7 };
+                tg.x += u.flyVx * dt; tg.y = STAGE_GY;
+                ultCamera = { fx: tg.x, fy: STAGE_GY - 60, zoom: 1.7 };
                 if (u.bounced < 2) {
                     if (tg.x <= tg.width / 2 + 3) {
                         tg.x = tg.width / 2 + 3; u.flyVx = Math.abs(u.flyVx) * 0.85; u.bounced++;
@@ -1942,7 +1947,7 @@ class Fighter {
                         u.dashTo = l2r ? rightEdge : leftEdge;
                         this.dir = l2r ? 1 : -1;
                         u.dashProg = 0; u.dashHit = false;
-                        this.y = GROUND_Y - (u.dashCount % 3) * 26; // vary the height each pass
+                        this.y = STAGE_GY - (u.dashCount % 3) * 26; // vary the height each pass
                         sfx.playSwing();
                     }
                 }
@@ -1957,7 +1962,7 @@ class Fighter {
                     }
                 }
             } else if (u.phase === 'finish') {
-                this.y = GROUND_Y;
+                this.y = STAGE_GY;
                 if (u.t > 0.5) this.endUlt();
             }
             return;
@@ -1998,14 +2003,14 @@ class Fighter {
                 tg.state = 'HITSTUN'; tg.stateTimer = 2.5; tg.vx = 0; tg.vy = 0;
                 if (!u.blasted) {
                     u.blasted = true;
-                    u.fx = { x: u.tx, y: GROUND_Y - 20, r: 12 };
+                    u.fx = { x: u.tx, y: STAGE_GY - 20, r: 12 };
                     tg.takeDamage(14, { x: 0, y: 0 }, 0.6, this, { isUlt: true, unblockable: true });
-                    spawnParticles(u.tx, GROUND_Y - 20, 30, '#ff5a2a'); playAudio(attackSfx.shot);
+                    spawnParticles(u.tx, STAGE_GY - 20, 30, '#ff5a2a'); playAudio(attackSfx.shot);
                 }
                 if (u.fx) u.fx.r = Math.min(140, u.fx.r + 420 * dt);
                 tg.x = u.tx;
-                tg.y = Math.max(GROUND_Y - 210, GROUND_Y - u.t * 900); // blasted upward
-                ultCamera = { fx: u.tx, fy: GROUND_Y - 120, zoom: 1.5 };
+                tg.y = Math.max(STAGE_GY - 210, STAGE_GY - u.t * 900); // blasted upward
+                ultCamera = { fx: u.tx, fy: STAGE_GY - 120, zoom: 1.5 };
                 if (u.t > 0.5) { u.phase = 'execute'; u.t = 0; u.ty2 = tg.y; this.invulnTimer = 1.0; }
             } else if (u.phase === 'execute') {
                 let tg = u.target;
@@ -2022,8 +2027,8 @@ class Fighter {
                     p.subtype = 'beam'; projectiles.push(p);
                     spawnParticles(u.tx, tg.y, 18, '#fff'); playAudio(attackSfx.shot);
                 }
-                if (u.shot) tg.y = Math.min(GROUND_Y, tg.y + 1500 * dt); // slammed back down
-                if (u.t > 0.8) { this.y = GROUND_Y; this.endUlt(); }
+                if (u.shot) tg.y = Math.min(STAGE_GY, tg.y + 1500 * dt); // slammed back down
+                if (u.t > 0.8) { this.y = STAGE_GY; this.endUlt(); }
             }
             return;
         }
@@ -2825,7 +2830,7 @@ class Fighter {
     doBlink() {
         let oldX = this.x, oldY = this.y;
         this.x = Math.max(this.width/2, Math.min(WIDTH - this.width/2, this.x + this.dir * 200));
-        this.y = Math.min(GROUND_Y, this.y - 50); this.vy = -240;
+        this.y = Math.min(stageGroundYAt(this.x, GROUND_Y), this.y - 50); this.vy = -240;
         this.invulnTimer = 0.22;
         spawnParticles(oldX, oldY - 40, 12, '#fff');
         spawnParticles(this.x, this.y - 40, 12, '#fff');
@@ -3156,7 +3161,7 @@ class Fighter {
                 this.sealedEnemy = attacker;
                 attacker.ultSealed = true;
                 if (attacker.ult) attacker.endUlt(); // cut the killing cinematic short
-                this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+                this.vx = 0; this.vy = 0; this.y = stageGroundYAt(this.x, GROUND_Y);
                 this.changeState('IDLE');
                 this.invulnTimer = Math.max(this.invulnTimer, 0.6);
                 this._nineLivesFx = 1.1;
@@ -3272,8 +3277,8 @@ class Fighter {
         this.rootTimer = 1.4;
         this.changeState('HITSTUN');
         this.stateTimer = 1.4;
-        this.vx = 0; this.vy = 0; this.y = GROUND_Y;
-        spawnParticles(this.x, GROUND_Y - 10, 16, '#cfd8ff');
+        this.vx = 0; this.vy = 0; this.y = stageGroundYAt(this.x, GROUND_Y);
+        spawnParticles(this.x, this.y - 10, 16, '#cfd8ff');
     }
 
     // Grave Drag: the chain caught us — stunned and reeled all the way to the Phantom.
@@ -3295,7 +3300,7 @@ class Fighter {
         let e = p * p * (3 - 2 * p);
         let destX = Math.max(40, Math.min(WIDTH - 40, src.x + src.dir * 52));
         this.x = this.yankFromX + (destX - this.yankFromX) * e;
-        this.y = GROUND_Y; this.vx = 0; this.vy = 0;
+        this.y = stageGroundYAt(this.x, GROUND_Y); this.vx = 0; this.vy = 0;
         if (this.state !== 'HITSTUN') this.changeState('HITSTUN');
         if (this.stateTimer < 0.2) this.stateTimer = 0.2;
         if (this.yankTimer <= 0) this.yankSource = null;
@@ -3571,7 +3576,7 @@ class Fighter {
         if (this.state === 'DEAD' && this._overkilled) return;
         // Self-heal: an ATTACK state with no attack data (possible after an online
         // snapshot merge) would crash the pose chain — settle to idle instead.
-        if (this.state === 'ATTACK' && !this.currentAttack) this.state = this.y < GROUND_Y ? 'FALL' : 'IDLE';
+        if (this.state === 'ATTACK' && !this.currentAttack) this.state = this.y < stageGroundYAt(this.x, GROUND_Y) ? 'FALL' : 'IDLE';
         // Time Skip — edited out of the timeline for a beat: just a streak, no body
         if (this._skipHide > 0) {
             ctx.save();

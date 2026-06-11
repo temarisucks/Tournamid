@@ -747,7 +747,7 @@ function onlineGuestApplyFighter(p, src, isOwn) {
             let allowX = Math.max(p._predSpdX || 0, Math.abs(keepVx)) * latSec + 30;
             let allowY = Math.max(p._predSpdY || 0, Math.abs(keepVy)) * latSec + 30;
             let dx = src.x - keepX, dy = src.y - keepY;
-            if (keepY >= GROUND_Y && src.y >= GROUND_Y) dy = 0; // both grounded — y agrees
+            if (keepY >= stageGroundYAt(keepX, GROUND_Y) && src.y >= stageGroundYAt(src.x, GROUND_Y)) dy = 0; // both grounded — y agrees
             let exX = Math.abs(dx) > allowX ? dx - Math.sign(dx) * allowX : 0;
             let exY = Math.abs(dy) > allowY ? dy - Math.sign(dy) * allowY : 0;
             if (Math.hypot(exX, exY) > 140) { p.x = src.x; p.y = src.y; } // hopeless — snap
@@ -764,7 +764,7 @@ function onlineGuestApplyFighter(p, src, isOwn) {
     p.ult = src.ult ? { ...src.ult, target: players[src.ult.targetIndex] || null } : null;
     p.tether = src.tether ? { ...src.tether } : null;
     p.puppet = src.puppet
-        ? { hist: [{ x: src.puppet.x, dir: p.dir, state: 'IDLE', atk: null, st: 0, anim: 0, y: GROUND_Y }], t: 0, delay: 13, fall: src.puppet.fall }
+        ? { hist: [{ x: src.puppet.x, dir: p.dir, state: 'IDLE', atk: null, st: 0, anim: 0, y: stageGroundYAt(src.puppet.x, GROUND_Y) }], t: 0, delay: 13, fall: src.puppet.fall }
         : null;
     if (p.partner && src.partner) {
         Object.assign(p.partner, src.partner);
@@ -774,7 +774,7 @@ function onlineGuestApplyFighter(p, src, isOwn) {
 
     // Consistency: never leave any body in ATTACK without attack data (the pose
     // chain reads atk.startup) — settle to idle instead of crashing the renderer.
-    if (p.state === 'ATTACK' && !p.currentAttack) p.state = p.y < GROUND_Y ? 'FALL' : 'IDLE';
+    if (p.state === 'ATTACK' && !p.currentAttack) p.state = p.y < stageGroundYAt(p.x, GROUND_Y) ? 'FALL' : 'IDLE';
     if (p.partner && p.partner.state === 'ATTACK' && !p.partner.currentAttack) p.partner.state = p.state;
 
     // local hit feedback (sounds + sparks the guest sim would otherwise never produce)
@@ -810,7 +810,8 @@ function onlineGuestAdvance(realDt) {
             if (p.ult) p.ult.t = (p.ult.t || 0) + dt;
             if (p.state !== 'DEAD') {
                 p.x += p.vx * dt;
-                if (p.y < GROUND_Y || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); }
+                let drGy = stageGroundYAt(p.x, GROUND_Y);
+                if (p.y < drGy || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(drGy, p.y + p.vy * dt); }
                 p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
             }
         }
@@ -821,7 +822,7 @@ function onlineGuestAdvance(realDt) {
         // the Traveler's afterimages are recorded locally from observed movement
         if (p.charType === 'TRAVELER') {
             p._trailTick = (p._trailTick || 0) - realDt;
-            let moving = Math.abs(p.vx) > 60 || p.y < GROUND_Y || p.state === 'ATTACK' || p.state === 'ULT';
+            let moving = Math.abs(p.vx) > 60 || p.y < stageGroundYAt(p.x, GROUND_Y) || p.state === 'ATTACK' || p.state === 'ULT';
             if (moving && p._trailTick <= 0) { p._trailTick = 0.05; (p._trail = p._trail || []).push({ x: p.x, y: p.y, dir: p.dir, age: 0 }); }
             if (p._trail) { p._trail.forEach(g => g.age += realDt); p._trail = p._trail.filter(g => g.age < 0.24); }
         }
@@ -847,7 +848,8 @@ function onlineGuestPredictOwn(p, realDt, dt) {
         if (p.ult) p.ult.t = (p.ult.t || 0) + dt;
         if (p.state !== 'DEAD') {
             p.x += p.vx * dt;
-            if (p.y < GROUND_Y || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); }
+            let fsGy = stageGroundYAt(p.x, GROUND_Y);
+            if (p.y < fsGy || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(fsGy, p.y + p.vy * dt); }
             p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
         }
         return;

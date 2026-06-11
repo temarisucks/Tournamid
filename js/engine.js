@@ -274,7 +274,7 @@ function drawCultPuppets(c) {
         if (!leader || !leader.puppet || leader.state === 'DEAD') continue;
         let pp = leader.puppet;
         let snap = pp.hist.length ? pp.hist[0] : { x: leader.x, dir: leader.dir, state: 'IDLE', anim: 0, atk: null };
-        let footY = GROUND_Y - (pp.fall || 0) * 130; // drops into place
+        let footY = stageGroundYAt(snap.x, GROUND_Y) - (pp.fall || 0) * 130; // drops into place
         c.save();
         c.translate(snap.x, footY);
         c.scale(snap.dir || 1, 1);
@@ -311,7 +311,7 @@ function drawTravelerFx(c) {
             let past = p.posHistory[0];
             if (Math.abs(past.x - p.x) > 30) {
                 let sx = p.x, sy = p.y, sd = p.dir;
-                p.x = past.x; p.y = Math.min(GROUND_Y, past.y);
+                p.x = past.x; p.y = Math.min(stageGroundYAt(past.x, GROUND_Y), past.y);
                 c.save(); c.globalAlpha = 0.13; p.draw(c); c.restore();
                 p.x = sx; p.y = sy; p.dir = sd;
             }
@@ -383,7 +383,7 @@ function drawTwinFx(c) {
         if (!p || p.charType !== 'TWINS' || p.isPartner || !p.tether) continue;
         let px = p.twinPartnerX();
         let life = 1 - p.tether.t / p.tether.life;
-        let lx = Math.min(p.x, px), rx = Math.max(p.x, px), y = GROUND_Y - 10 + Math.sin(performance.now() / 120) * 2;
+        let lx = Math.min(p.x, px), rx = Math.max(p.x, px), y = stageGroundYAt((lx + rx) / 2, GROUND_Y) - 10 + Math.sin(performance.now() / 120) * 2;
         c.save();
         c.globalAlpha = Math.min(1, life * 1.6);
         c.strokeStyle = '#9be3ff'; c.lineWidth = 2.5; c.shadowBlur = 10; c.shadowColor = '#9be3ff';
@@ -463,7 +463,7 @@ function vortexLogic(self, dt) {
         // strong pull, scaling up as they get closer
         let pull = 320 + (1 - dist / 240) * 420;
         p.x += Math.sign(dx) * pull * dt;
-        if (p.y >= GROUND_Y && dy < -30) p.vy = Math.min(p.vy, -120); // lifts grounded foes slightly toward an airborne core
+        if (p.y >= stageGroundYAt(p.x, GROUND_Y) && dy < -30) p.vy = Math.min(p.vy, -120); // lifts grounded foes slightly toward an airborne core
         if (dist < 46 && self._coreTick <= 0) { // churned in the core
             self._coreTick = 0.38;
             p.takeDamage(2, { x: 0, y: 0 }, 0.34, self.owner, { unblockable: true });
@@ -754,7 +754,7 @@ function switchActive(team, auto) {
     let foe = players[1 - team];
     let atX = cur ? cur.x : bench.x;
     let atDir = foe ? (foe.x >= atX ? 1 : -1) : (cur ? cur.dir : bench.dir);
-    bench.x = atX; bench.y = GROUND_Y; bench.vx = 0; bench.vy = 0;
+    bench.x = atX; bench.y = stageGroundYAt(atX, GROUND_Y); bench.vx = 0; bench.vy = 0;
     bench.dir = atDir;
     bench.ledge = null; bench.ult = null; bench.currentAttack = null;
     bench.invulnTimer = Math.max(bench.invulnTimer || 0, 0.55); // tag-in protection
@@ -876,10 +876,10 @@ function nextRound() {
         if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
         if ('devotion' in p) p.devotion = 0;
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
-        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
+        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = stageGroundYAt(x + 60, GROUND_Y); p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
         if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; } // fresh timeline each round
         p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
-        p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
+        p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
         p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
@@ -940,8 +940,9 @@ function updateWinAnimations(dt) {
         p.animTimer += dt;
         p.stateTimer += dt;
         p.vx = 0;
-        if (p.y < GROUND_Y) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); if (p.y >= GROUND_Y) p.vy = 0; }
-        else p.vy = 0;
+        let winGy = stageGroundYAt(p.x, GROUND_Y);
+        if (p.y < winGy) { p.vy += 1500 * dt; p.y = Math.min(winGy, p.y + p.vy * dt); if (p.y >= winGy) p.vy = 0; }
+        else { p.vy = 0; p.y = winGy; }
         let col = p.charType === 'MAGE' ? '#c98bff' : p.charType === 'TELEPATH' ? '#9be3ff' : p.charType === 'DARK_RULER' ? '#ff0033' : null;
         if (col) {
             p._winFxTimer = (p._winFxTimer || 0) - dt;
