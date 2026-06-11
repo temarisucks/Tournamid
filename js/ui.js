@@ -154,7 +154,7 @@ function closeCharInfo() {
 }
 
 // --- MENU NAVIGATION ---
-const OFFLINE_MODES = new Set(['PVP', 'CPU', 'CPU_WATCH', 'VS2', 'VS2_PVP', 'VS2_WATCH', 'LADDER', 'LADDER2', 'PVE']);
+const OFFLINE_MODES = new Set(['PVP', 'CPU', 'CPU_WATCH', 'VS2', 'VS2_PVP', 'VS2_WATCH', 'LADDER', 'LADDER2', 'INFINITE_LADDER', 'PVE']);
 function isTeamSelectMode(mode = currentMode) { return mode === 'VS2' || mode === 'VS2_PVP' || mode === 'VS2_WATCH' || mode === 'LADDER2'; }
 function isCpuWatchMode(mode = currentMode) { return mode === 'CPU_WATCH' || mode === 'VS2_WATCH'; }
 function setOfflineModesOpen(open) {
@@ -898,21 +898,52 @@ function ladderLevelFor(index, total) {
     return Math.min(1, 0.3 + (index / (total - 1)) * 0.7); // first rung 0.3 → last 1.0
 }
 
+const LADDER_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
+function randomLadderCharacter(exclude = []) {
+    let pool = LADDER_ROSTER.filter(c => !exclude.includes(c));
+    return pool[Math.floor(Math.random() * pool.length)] || LADDER_ROSTER[0];
+}
+
 // Enter Ladder mode after the player picks their fighter: build the gauntlet and
 // show the climb screen (no stage select — each rung is fought on a random arena).
 function enterLadder() {
-    const FULL_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
     // Don't put the player's own pick(s) on the ladder, and cap the gauntlet at 9 rungs.
     let picked = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam.slice() : [p1Selection];
-    ladder.queue = ladderShuffle(FULL_ROSTER.filter(c => !picked.includes(c))).slice(0, 9);
+    ladder.queue = ladderShuffle(LADDER_ROSTER.filter(c => !picked.includes(c))).slice(0, 9);
     // Pre-roll each rung's tag partner up front (LADDER2 only) so the climb screen can show BOTH opponents.
     ladder.partners = ladder.queue.map(challenger => {
         let p = getRandomCharacter();
         if (p === challenger) p = getRandomCharacter(); // one re-roll to avoid a mirror pair
         return p;
     });
-    ladder.index = 0; ladder.active = true;
+    ladder.playerQueue = [];
+    ladder.index = 0; ladder.active = true; ladder.infinite = false;
     showLadderScreen(false); // light up rung 1, then drop into the fight
+}
+
+function enterInfiniteLadder() {
+    sfx.init();
+    currentMode = 'INFINITE_LADDER';
+    playerTeam = [];
+    opponentTeam = [];
+    ladder.index = 0;
+    ladder.active = true;
+    ladder.infinite = true;
+    let firstPlayer = randomLadderCharacter();
+    ladder.playerQueue = [firstPlayer];
+    ladder.queue = [randomLadderCharacter([firstPlayer])];
+    ladder.partners = [];
+    p1Selection = firstPlayer;
+    p2Selection = ladder.queue[0];
+    showLadderScreen(false);
+}
+
+function appendInfiniteLadderRung() {
+    let nextPlayer = randomLadderCharacter();
+    ladder.playerQueue.push(nextPlayer);
+    ladder.queue.push(randomLadderCharacter([nextPlayer]));
+    p1Selection = nextPlayer;
+    p2Selection = ladder.queue[ladder.index];
 }
 
 // Show the canvas ladder. climb=true animates the player's icon up one rung first.
@@ -949,7 +980,13 @@ function startLadderBattle(index) {
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
 
-    let lvl = ladderLevelFor(index, ladder.queue.length);
+    if (currentMode === 'INFINITE_LADDER') {
+        p1Selection = ladder.playerQueue[index] || randomLadderCharacter();
+        ladder.playerQueue[index] = p1Selection;
+        if (!ladder.queue[index]) ladder.queue[index] = randomLadderCharacter([p1Selection]);
+        p2Selection = ladder.queue[index];
+    }
+    let lvl = currentMode === 'INFINITE_LADDER' ? Math.min(1, 0.35 + index * 0.04) : ladderLevelFor(index, ladder.queue.length);
     let teamFight = currentMode === 'LADDER2';
     if (teamFight) {
         // 2v2 ladder: your squad vs the rung's challenger + its pre-rolled partner (shown on the climb screen)
@@ -972,7 +1009,7 @@ function startLadderBattle(index) {
 
     document.getElementById('timer').classList.remove('hidden');
     document.getElementById('wave-counter').classList.remove('hidden');
-    document.getElementById('wave-counter').innerText = "RUNG " + (index + 1) + "/" + ladder.queue.length;
+    document.getElementById('wave-counter').innerText = currentMode === 'INFINITE_LADDER' ? "STREAK " + (index + 1) : "RUNG " + (index + 1) + "/" + ladder.queue.length;
     matchTimer = 99; document.getElementById('timer').innerText = matchTimer; matchTimerAccumulator = 0;
 
     roundWins = [0, 0]; currentRound = 1; roundAnnounce = null;
@@ -993,6 +1030,11 @@ function ladderResolveMatch() {
     let playerWon = roundWins[0] > roundWins[1];
     if (playerWon) {
         ladder.index++;
+        if (currentMode === 'INFINITE_LADDER') {
+            appendInfiniteLadderRung();
+            showLadderScreen(true);
+            return;
+        }
         if (ladder.index >= ladder.queue.length) showLadderComplete();
         else showLadderScreen(true); // climb up, then the next challenger
     } else {
@@ -1011,17 +1053,23 @@ function showLadderComplete() {
 }
 
 function showLadderDefeat() {
+    ladder.active = false;
     ladderView = null;
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('settings-btn').classList.remove('hidden');
     let opp = CHARACTERS[ladder.queue[ladder.index]];
-    document.getElementById('ladder-defeat-sub').innerText =
-        'Fell at rung ' + (ladder.index + 1) + ' of ' + ladder.queue.length + (opp ? ' — ' + opp.name + ' bested you.' : '.');
+    document.getElementById('ladder-defeat-sub').innerText = currentMode === 'INFINITE_LADDER'
+        ? 'Infinite streak ended at fight ' + (ladder.index + 1) + (opp ? ' — ' + opp.name + ' bested you.' : '.')
+        : 'Fell at rung ' + (ladder.index + 1) + ' of ' + ladder.queue.length + (opp ? ' — ' + opp.name + ' bested you.' : '.');
     showScreen('ladder-defeat-screen');
     gameState = 'MENU';
 }
 
 function ladderRetry() {
+    if (currentMode === 'INFINITE_LADDER') {
+        enterInfiniteLadder();
+        return;
+    }
     startLadderBattle(ladder.index); // same rung, fresh best-of-3
 }
 

@@ -591,7 +591,7 @@ const STAGES = {
 };
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)
-let ladder = { queue: [], partners: [], index: 0, active: false }; // partners[i] = the rung's tag partner (LADDER2 only)
+let ladder = { queue: [], partners: [], playerQueue: [], index: 0, active: false, infinite: false }; // partners[i] = the rung's tag partner (LADDER2 only)
 let ladderView = null; // canvas ladder-climb screen animation state
 let stageActors = null;
 
@@ -825,7 +825,7 @@ const CHARACTERS = {
             light: { startup: 0.1, active: 0.1, recovery: 0.2, dmg: 6, w: 66, h: 26, ox: 32, oy: -56, kb: {x: 120, y: -60}, stun: 0.26, type: 'mistClaw' },       // reaching mist swipe
             heavy: { startup: 0.24, active: 0.16, recovery: 0.32, dmg: 12, w: 96, h: 40, ox: 36, oy: -52, kb: {x: 240, y: -150}, stun: 0.45, type: 'scytheLash' },   // wide reaping lash
             specNeutral: { startup: 0.16, active: 0.18, recovery: 0.34, dmg: 8, w: 108, h: 28, ox: 44, oy: -58, kb: {x: 120, y: -80}, stun: 0.4, type: 'soulSiphon' }, // long claw, drains HP
-            specSide: { startup: 0.22, active: 0.14, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 540, pLife: 0.92, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // mist-chain that reels the foe in (blockable)
+            specSide: { startup: 0.22, active: 0.14, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 360, pLife: 1.15, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // slower mist-chain that reels the foe in (blockable)
             specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 96, ox: 8, oy: -104, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
             specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 0, y: 0}, stun: 0.3, grab: true, type: 'graveGrasp' } // ground hands ROOT the foe in place (unblockable)
         }

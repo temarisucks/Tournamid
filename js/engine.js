@@ -730,7 +730,7 @@ function updateHUD() {
     }
 }
 
-function isLadderMode() { return currentMode === 'LADDER' || currentMode === 'LADDER2'; }
+function isLadderMode() { return currentMode === 'LADDER' || currentMode === 'LADDER2' || currentMode === 'INFINITE_LADDER'; }
 
 // ---------------- 2v2 TAG-TEAM ----------------
 // Bring the benched team-mate onto the field. `auto` (a KO swap) skips the manual guards.
@@ -847,7 +847,7 @@ function endRound(winnerIdx, subtitle) {
     if (roundWins[0] >= ROUNDS_TO_WIN || roundWins[1] >= ROUNDS_TO_WIN) {
         let p1Won = roundWins[0] > roundWins[1];
         // Ladder rungs are best-of-3; endGame routes to the ladder flow when in LADDER mode.
-        if (currentMode === 'LADDER') endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", "");
+        if (currentMode === 'LADDER' || currentMode === 'INFINITE_LADDER') endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", "");
         else endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", `Match ${roundWins[0]} – ${roundWins[1]}`);
         return;
     }
@@ -2166,9 +2166,9 @@ function drawLadderScreen(c) {
 
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillStyle = '#fff'; c.font = 'bold 34px monospace';
-    c.fillText('THE LADDER', WIDTH / 2, 64);
+    c.fillText(currentMode === 'INFINITE_LADDER' ? 'INFINITE LADDER' : 'THE LADDER', WIDTH / 2, 64);
     c.fillStyle = '#888'; c.font = '14px monospace';
-    c.fillText('Defeat every challenger to reach the top', WIDTH / 2, 92);
+    c.fillText(currentMode === 'INFINITE_LADDER' ? 'Random fighter. Random opponent. Stop when you lose.' : 'Defeat every challenger to reach the top', WIDTH / 2, 92);
 
     let n = ladder.queue.length;
     let railL = WIDTH * 0.44, railR = WIDTH * 0.56, cx = (railL + railR) / 2, box = 56;
@@ -2215,7 +2215,8 @@ function drawLadderScreen(c) {
     let pbox = 50, px = railL - 70;
     c.save(); c.shadowBlur = 16; c.shadowColor = '#fff';
     c.fillStyle = '#101010'; c.fillRect(px - pbox / 2, py - pbox / 2, pbox, pbox); c.restore();
-    let mySquad = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam : [p1Selection];
+    let infinitePick = currentMode === 'INFINITE_LADDER' ? (ladder.playerQueue[ladder.index] || p1Selection) : p1Selection;
+    let mySquad = (currentMode === 'LADDER2' && playerTeam.length) ? playerTeam : [infinitePick];
     if (mySquad.length >= 2) { // two mini-icons for the 2v2 squad
         drawCharIcon(c, mySquad[0], px, py - 12, pbox - 20);
         drawCharIcon(c, mySquad[1], px, py + 12, pbox - 20);
@@ -2224,7 +2225,7 @@ function drawLadderScreen(c) {
     }
     c.strokeStyle = '#fff'; c.lineWidth = 2; c.strokeRect(px - pbox / 2, py - pbox / 2, pbox, pbox);
     c.fillStyle = '#fff'; c.font = 'bold 11px monospace';
-    c.fillText('YOU', px, py + pbox / 2 + 12);
+    c.fillText(currentMode === 'INFINITE_LADDER' ? 'YOU: RANDOM' : 'YOU', px, py + pbox / 2 + 12);
     c.strokeStyle = 'rgba(255,255,255,0.25)'; c.lineWidth = 2;
     c.beginPath(); c.moveTo(px + pbox / 2, py); c.lineTo(railL, py); c.stroke();
 
@@ -2233,7 +2234,9 @@ function drawLadderScreen(c) {
         let pt = ladder.partners[ladder.index];
         if (CHARACTERS[pt]) nextName += '  +  ' + CHARACTERS[pt].name;
     }
-    let cap = ladderView && ladderView.phase === 'climb' ? 'Climbing the ladder...' : ('NEXT  —  ' + nextName);
+    let cap = ladderView && ladderView.phase === 'climb'
+        ? (currentMode === 'INFINITE_LADDER' ? 'Extending the streak...' : 'Climbing the ladder...')
+        : (currentMode === 'INFINITE_LADDER' ? ('FIGHT ' + (ladder.index + 1) + '  —  ' + nextName) : ('NEXT  —  ' + nextName));
     c.fillStyle = '#ddd'; c.font = '18px monospace';
     c.fillText(cap, WIDTH / 2, HEIGHT - 40);
 }
