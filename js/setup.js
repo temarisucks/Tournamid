@@ -320,7 +320,9 @@ const roundVoices = {
 };
 
 // --- SETTINGS: per-category volume + custom key bindings (persisted) ---
-let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, blood: true };
+let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, blood: true, cpuLevel: 'normal' };
+// CPU difficulty → aiLevel scalar. Ladder/tower modes ignore this (they ramp on their own).
+function cpuLevelValue() { return { easy: 0.25, normal: 0.55, hard: 0.92 }[settings.cpuLevel] || 0.55; }
 try { let s = JSON.parse(localStorage.getItem('massacreSettings')); if (s) Object.assign(settings, s); } catch (e) {}
 // First-time mobile players get on-screen controls turned on by default (still toggleable in Settings)
 if (isMobileDevice && !localStorage.getItem('massacreSettings')) settings.touchControls = true;

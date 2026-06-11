@@ -438,9 +438,10 @@ function triggerOverkill(attacker, victim) {
             particles.push(new Particle(victim.x, victim.y - 45, vx, vy, life, '#ff0033', size));
         }
         for (let i = 0; i < 70; i++) {
+            let sx = Math.max(0, Math.min(WIDTH, victim.x + (Math.random() - 0.5) * 520));
             bloodStains.push({
-                x: Math.max(0, Math.min(WIDTH, victim.x + (Math.random() - 0.5) * 520)),
-                y: GROUND_Y + (Math.random() * 8 - 4),
+                x: sx,
+                y: stageGroundYAt(sx) + (Math.random() * 8 - 4), // pool on the stage's real floor height
                 size: 4 + Math.random() * 16
             });
         }
@@ -1059,7 +1060,7 @@ function startEntranceSequence() {
     [a, b].forEach(p => {
         p._entKind = ENTRANCE_KIND[p.charType];
         p._entProg = 0;
-        if (p.partner) { p.partner.x = p.x - p.dir * 40; p.partner.y = GROUND_Y; }
+        if (p.partner) { p.partner.x = p.x - p.dir * 40; p.partner.y = stageGroundYAt(p.partner.x); }
     });
 }
 
@@ -1088,7 +1089,7 @@ function updateEntranceSeq(dt) {
         let text = line[1];
         // the camera drifts over and leans in on whoever is talking (camNow eases it)
         let spkPos = entranceSpeakerPos(line);
-        ultCamera = { fx: Math.max(170, Math.min(WIDTH - 170, spkPos.x)), fy: GROUND_Y - 88, zoom: 1.5 };
+        ultCamera = { fx: Math.max(170, Math.min(WIDTH - 170, spkPos.x)), fy: stageGroundYAt(spkPos.x) - 88, zoom: 1.5 };
         if (s.charIdx < text.length) { // typing out
             s.blipTick -= dt;
             if (s.blipTick <= 0) {
@@ -1137,19 +1138,19 @@ function driveEntrance(p, i, prog, dt) {
     } else if (k === 'float') { // Mage: drifts in hovering, juggling sparks
         p.x = from + (to - from) * Math.min(1, prog / 0.85);
         let h = prog < 0.8 ? 24 + Math.sin(s.t * 4) * 3 : Math.max(0, 24 * (1 - (prog - 0.8) / 0.18));
-        p.y = GROUND_Y - h;
+        p.y = stageGroundYAt(p.x) - h;
         p.state = 'IDLE';
         if (prog < 0.8 && Math.random() < 0.14) spawnParticles(p.x + p.dir * 10, p.y - 78, 1, '#c98bff');
     } else if (k === 'levitate') { // Telepath: descends serenely from on high
         p.x = from + (to - from) * Math.min(1, prog / 0.7);
-        p.y = GROUND_Y - 130 * (1 - Math.min(1, prog / 0.85));
+        p.y = stageGroundYAt(p.x) - 130 * (1 - Math.min(1, prog / 0.85));
         p.state = 'IDLE';
     } else if (k === 'mist') { // Phantom: rises out of the floor at his mark
         p.x = to;
-        p.y = GROUND_Y + 70 * (1 - Math.min(1, prog / 0.85));
+        p.y = stageGroundYAt(to) + 70 * (1 - Math.min(1, prog / 0.85));
         p._entAlpha = Math.min(1, prog / 0.7);
         p.state = 'IDLE';
-        if (prog < 0.9 && Math.random() < 0.3) spawnParticles(to + (Math.random() - 0.5) * 44, GROUND_Y - 6, 1, '#cfd8ff');
+        if (prog < 0.9 && Math.random() < 0.3) spawnParticles(to + (Math.random() - 0.5) * 44, stageGroundYAt(to) - 6, 1, '#cfd8ff');
     } else if (k === 'allfours') { // Copy Cat: sprints in low, then stands and stretches
         if (prog < 0.55) { p.x = from + (to - from) * (prog / 0.55); p.state = 'CROUCH'; }
         else { p.x = to; p.state = 'IDLE'; }
@@ -1160,29 +1161,34 @@ function driveEntrance(p, i, prog, dt) {
         if (p._lastStutterX !== nx) {
             if (p._trail) p._trail.push({ x: p.x, y: p.y, dir: p.dir, age: 0 });
             p._lastStutterX = nx;
-            if (prog > 0.05) spawnParticles(nx, GROUND_Y - 50, 5, '#6fd0ff');
+            if (prog > 0.05) spawnParticles(nx, stageGroundYAt(nx) - 50, 5, '#6fd0ff');
         }
-        p.x = nx; p.state = 'IDLE';
+        p.x = nx; p.y = stageGroundYAt(p.x); p.state = 'IDLE';
     } else if (k === 'cartwheel') { // Twins: both flip in, the partner overtaking the lead
         let pr = Math.min(1, prog / 0.7);
         p.x = from + (to - from) * pr;
+        let cgy = stageGroundYAt(p.x);
         if (prog < 0.7) {
             p.tumbleTimer = 0.2; p._tumbleAngle += dt * 10 * p.dir; p.state = 'JUMP';
-            p.y = GROUND_Y - Math.abs(Math.sin(prog * 12)) * 24;
-        } else { p.tumbleTimer = 0; p._tumbleAngle = 0; p.state = 'IDLE'; p.y = GROUND_Y; }
+            p.y = cgy - Math.abs(Math.sin(prog * 12)) * 24;
+        } else { p.tumbleTimer = 0; p._tumbleAngle = 0; p.state = 'IDLE'; p.y = cgy; }
         if (p.partner) {
             let pf = from - p.dir * 46, pt = to + p.dir * 60;
             p.partner.x = pf + (pt - pf) * pr;
-            p.partner.y = prog < 0.7 ? GROUND_Y - Math.abs(Math.cos(prog * 12)) * 24 : GROUND_Y;
+            let pgy = stageGroundYAt(p.partner.x);
+            p.partner.y = prog < 0.7 ? pgy - Math.abs(Math.cos(prog * 12)) * 24 : pgy;
             p.partner.state = p.state; p.partner.animTimer = p.animTimer; p.partner.dir = p.dir;
             p.partner.tumbleTimer = p.tumbleTimer; p.partner._tumbleAngle = -p._tumbleAngle;
         }
     } else { // walk-class entrances: jog / spinblade / stride / whip / procession
         p.x = from + (to - from) * Math.min(1, prog / 0.82);
+        p.y = stageGroundYAt(p.x); // walk ON the stage's floor (raised on some maps)
         p.state = prog < 0.82 ? 'WALK' : 'IDLE';
-        if (k === 'procession' && prog < 0.78 && Math.random() < 0.09) spawnCultists(p.x, GROUND_Y, p.dir, 1, 'march');
-        if (k === 'stride' && prog < 0.82 && Math.random() < 0.4) spawnParticles(p.x - p.dir * 30, GROUND_Y - 5, 1, '#ff0033'); // dragged blade sparks
+        if (k === 'procession' && prog < 0.78 && Math.random() < 0.09) spawnCultists(p.x, stageGroundYAt(p.x), p.dir, 1, 'march');
+        if (k === 'stride' && prog < 0.82 && Math.random() < 0.4) spawnParticles(p.x - p.dir * 30, stageGroundYAt(p.x) - 5, 1, '#ff0033'); // dragged blade sparks
     }
+    // every other grounded arrival (roll, all-fours sprint) also rides the real floor
+    if (k === 'roll' || k === 'allfours') p.y = stageGroundYAt(p.x);
 }
 
 function finishEntranceSeq() {
@@ -1190,12 +1196,12 @@ function finishEntranceSeq() {
     if (!s) return;
     [players[0], players[1]].forEach((p, i) => {
         if (!p) return;
-        p.x = s.targets[i]; p.y = GROUND_Y; p.vx = 0; p.vy = 0; p.state = 'IDLE'; p.stateTimer = 0;
+        p.x = s.targets[i]; p.y = stageGroundYAt(p.x); p.vx = 0; p.vy = 0; p.state = 'IDLE'; p.stateTimer = 0;
         p._entProg = null; p._entAlpha = null; p._lastStutterX = null;
         p.tumbleTimer = 0; p._tumbleAngle = 0;
         if (p.charType === 'TWINS' && p.partner) {
             p.twinOffset = 60;
-            p.partner.x = p.x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE';
+            p.partner.x = p.x + 60; p.partner.y = stageGroundYAt(p.partner.x); p.partner.state = 'IDLE';
             p.partner.tumbleTimer = 0; p.partner._tumbleAngle = 0;
         }
     });

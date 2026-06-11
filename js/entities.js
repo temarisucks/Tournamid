@@ -13,9 +13,11 @@ class Particle {
         this.y += this.vy * dt;
         this.life -= dt;
         
-        // Floor collision for blood
-        if (this.y >= GROUND_Y && this.color === '#ff0033') {
-            this.y = GROUND_Y;
+        // Floor collision for blood — against the STAGE's floor at this x (raised floors
+        // like End of the World sit above GROUND_Y; over a ring-out void there's no floor)
+        let bloodFloor = this.color === '#ff0033' ? stageFloorAt(this.x) : null;
+        if (bloodFloor !== null && this.y >= bloodFloor) {
+            this.y = bloodFloor;
             this.life = 0; // kill particle
             // Create a permanent stain
             if (settings.blood && bloodStains.length < 500) {
@@ -55,8 +57,9 @@ class BodyPart {
         this.vx *= 0.992;
         this.life -= dt;
 
-        if (this.y >= GROUND_Y - 2) {
-            this.y = GROUND_Y - 2;
+        let gibFloor = stageFloorAt(this.x); // raised floors catch gibs; the void doesn't
+        if (gibFloor !== null && this.y >= gibFloor - 2) {
+            this.y = gibFloor - 2;
             this.vy *= -0.32;
             this.vx *= 0.82;
             this.spin *= 0.72;
@@ -2153,6 +2156,27 @@ class Fighter {
         this.aiBlockTimer -= dt;
         const lvl = this.aiLevel == null ? 0.5 : this.aiLevel;
 
+        // ---------- RING-OUT AWARENESS (platform stages) ----------
+        const geoAI = getStageGeo();
+        const aiSurfaceUnder = x => { // is there any surface at-or-below our feet at this x?
+            if (!geoAI.ringOut) return true;
+            if (x >= geoAI.main.left && x <= geoAI.main.right) return true;
+            for (let pl of geoAI.platforms) if (x >= pl.left && x <= pl.right && pl.top >= this.y - 6) return true;
+            return false;
+        };
+        if (geoAI.ringOut && !onGround && !aiSurfaceUnder(this.x)) {
+            // knocked over the void: forget the fight — steer hard back toward the island
+            // and burn the rising special as a recovery move (the ledge grab catches the rest)
+            let cx = (geoAI.main.left + geoAI.main.right) / 2;
+            this.dir = cx > this.x ? 1 : -1;
+            this.vx = spd * this.dir;
+            if (this.vy > 110 && this.state !== 'ATTACK' && this.attacks.specUp &&
+                this.charType !== 'TWINS' && this.charType !== 'LUMATROSSIA' && Math.random() < 0.35) {
+                this.startAttack('specUp');
+            }
+            return;
+        }
+
         // Hold a committed block for its duration rather than re-deciding it each frame.
         if (this.aiBlockTimer > 0 && onGround && ['IDLE', 'WALK', 'BLOCK', 'CROUCH'].includes(this.state)) {
             this.dir = toward;
@@ -2195,6 +2219,14 @@ class Fighter {
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
+        // ---------- MATCHUP AWARENESS (constant-time reads — no perf cost) ----------
+        // vs zoners, standing at mid-range is exactly where they want you: close the gap
+        // harder and hop projectiles more eagerly.
+        if (lvl >= 0.45 && !arch.kite && ['MAGE', 'RANGER', 'CULT', 'TRAVELER'].includes(target.charType)) {
+            arch.range = Math.min(arch.range, 62);
+            arch.jumpy += 0.12;
+        }
+
         // ---------- REACTIVE DEFENSE (gated by aiReactTimer so it can't be spammed) ----------
         // Only ever consider a defensive reaction once per cooldown window. When a threat
         // appears we make a SINGLE weighted decision and then commit, instead of re-rolling
@@ -2232,10 +2264,22 @@ class Fighter {
         }
 
         // ---------- MOVEMENT (every frame, hold toward preferred spacing) ----------
+        // Smart overrides: step OUT of enemy ground hazards, and the Phantom deliberately
+        // stands still at range to charge his Fading Veil.
+        let hazardDir = 0;
+        if (lvl >= 0.4 && onGround) {
+            for (let z of consecrateZones) if (z.team !== this.team && Math.abs(this.x - z.x) < z.radius + 16) { hazardDir = this.x >= z.x ? 1 : -1; break; }
+            if (!hazardDir) for (let z of cultTraps) if (z.team !== this.team && !z.triggered && z.t >= z.arm && Math.abs(this.x - z.x) < z.radius + 20) { hazardDir = this.x >= z.x ? 1 : -1; break; }
+        }
+        let holdStill = this.charType === 'PHANTOM' && lvl >= 0.55 && dist > 280 &&
+                        !this._fadeIntangible && this.fadeCooldown <= 0; // play the passive: go ghost
         let move = 0;
-        if (dist > arch.range + 25) move = toward;                       // close in
+        if (hazardDir) move = hazardDir;                                 // off the sigil/snare first
+        else if (holdStill) move = 0;
+        else if (dist > arch.range + 25) move = toward;                  // close in
         else if (arch.kite && dist < arch.range - 70) move = -toward;    // zoners back off
         if (move === -toward && (this.x < 90 || this.x > WIDTH - 90)) move = 0; // don't back into a wall
+        if (move !== 0 && onGround && !aiSurfaceUnder(this.x + move * 44)) move = 0; // never WALK off a ledge
         if (move !== 0) {
             this.vx = spd * move;
             if (onGround) this.changeState('WALK');
@@ -2249,6 +2293,45 @@ class Fighter {
         if (this.aiTimer > 0) return;
         this.aiTimer = (0.12 + Math.random() * 0.22) * (1.15 - lvl * 0.4); // sharper at higher level
         const r = Math.random();
+
+        // ---------- MATCHUP DISCIPLINE (cheap field reads, gated by difficulty) ----------
+        if (lvl >= 0.45) {
+            // a broken guard or a rooted foe is a FREE hit — take the big one
+            if (onGround && dist < arch.range + 70 && (target.state === 'BLOCKBREAK' || target.rootTimer > 0)) {
+                this.startPlayerAttack('H');
+                return;
+            }
+            // recognise the states where attacking is exactly what the foe wants
+            let trap = (target.charType === 'COPYCAT' && target.agilityTimer > 0)                                   // Agility counter-mark
+                    || (target.state === 'ATTACK' && target.currentAttack && target.currentAttack.type === 'parry') // parry stance
+                    || target._fadeIntangible                                                                        // Phantom faded out
+                    || (target.ult && target.ult.kind === 'counter' && target.ult.phase === 'window')               // Brawler's counter
+                    || (target.ult && target.ult.kind === 'chronostop' && target.ult.phase === 'stance');           // Traveler's counter
+            if (trap) {
+                if (dist < 150 && onGround) { this.vx = -toward * spd * 0.7; this.changeState('WALK'); } // back off and wait it out
+                return;
+            }
+            // a raised Psi Barrier reflects projectiles — zoners hold the shot
+            if (arch.kite && target.isReflecting && target.isReflecting()) return;
+            // a full enemy ult meter up close deserves respect: guard up instead of feeding it
+            if (lvl >= 0.6 && target.meter >= target.meterMax && dist < 220 && r < 0.22) {
+                this.dir = toward;
+                this.aiBlockTimer = 0.3 + Math.random() * 0.25;
+                this.changeState('BLOCK');
+                return;
+            }
+            // crack open turtles with the unblockables
+            if (onGround && target.state === 'BLOCK' && dist < 95 && r < 0.5) {
+                if (this.charType === 'DARK_RULER') { this.startAttack('specSide'); return; }  // Abyssal Grab
+                if (this.charType === 'PHANTOM') { this.startAttack('specDown'); return; }     // Grave Grasp
+            }
+            // bait out the Traveler's Temporal Slip with a cheap poke before committing
+            if (lvl >= 0.55 && target.charType === 'TRAVELER' && target.slipCd <= 0 && onGround &&
+                dist < arch.range + 50 && r < 0.5) {
+                this.startPlayerAttack('L');
+                return;
+            }
+        }
 
         // Air offense: keep it simple
         if (!onGround) {
@@ -2324,7 +2407,8 @@ class Fighter {
                     else if (r < 0.80) this.startAttack('specDown');            // Grave Grasp root
                     else this.startAttack('specSide');                         // Grave Drag yank
                 } else if (this.charType === 'COPYCAT') {
-                    if (r < 0.40) this.startPlayerAttack(r < 0.22 ? 'L' : 'H'); // quick claws
+                    if (lvl >= 0.5 && target.lastSpecialAtk && r < 0.18) this.startAttack('specNeutral'); // steal their fresh special
+                    else if (r < 0.40) this.startPlayerAttack(r < 0.22 ? 'L' : 'H'); // quick claws
                     else if (r < 0.58) this.startAttack('specSide');            // Cat Dash pin
                     else if (r < 0.72) this.startAttack('specUp');              // Piano Drop
                     else if (r < 0.84) this.startAttack('specDown');            // Agility counter-mark
@@ -2336,11 +2420,12 @@ class Fighter {
                     else if (r < 0.85) this.startAttack('specNeutral');        // Doomgaze beam
                     else this.startPlayerAttack('H');
                 } else if (this.charType === 'TWINS') {
-                    if (r < 0.42) this.startPlayerAttack(r < 0.22 ? 'L' : 'H'); // pincer jab / clap
-                    else if (r < 0.58) this.startAttack('specNeutral');         // Mirror Volley
-                    else if (r < 0.70) this.startAttack('specDown');            // Tether trap
-                    else if (target.y < GROUND_Y - 30 ? r < 0.85 : r < 0.78) this.startAttack('specUp'); // Fastball
-                    else this.startAttack('specSide');                          // Crossover
+                    let rr = this.symBuff > 0.5 ? r * 0.7 : r; // foe caught in the pincer — press the advantage
+                    if (rr < 0.42) this.startPlayerAttack(rr < 0.22 ? 'L' : 'H'); // pincer jab / clap
+                    else if (rr < 0.58) this.startAttack('specNeutral');         // Mirror Volley
+                    else if (rr < 0.70) this.startAttack('specDown');            // Tether trap
+                    else if (target.y < GROUND_Y - 30 ? rr < 0.85 : rr < 0.78) this.startAttack('specUp'); // Fastball
+                    else this.startAttack('specSide');                           // Crossover
                 } else if (this.charType === 'TRAVELER') {
                     if (this.hp < this.maxHp * 0.45 && this.rewindCd <= 0 && r < 0.3) this.startAttack('specDown'); // undo the damage
                     else if (r < 0.46) this.startPlayerAttack(r < 0.26 ? 'L' : 'H'); // jab / flash kick
@@ -2479,7 +2564,7 @@ class Fighter {
             let n = (atkName === 'light') ? 1 : (atkName === 'heavy') ? 2 : 2 + Math.min(1, this.cultTier());
             let ck = t === 'darkOffering' ? 'throw' : t === 'procession' ? 'march'
                    : t === 'cultPuppet' ? 'raise' : t === 'consecrate' ? 'kneel' : 'strike';
-            spawnCultists(this.x, GROUND_Y, this.dir, n, ck);
+            spawnCultists(this.x, stageGroundYAt(this.x), this.dir, n, ck); // on the stage's real floor
         }
     }
 

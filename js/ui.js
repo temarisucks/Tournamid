@@ -348,7 +348,16 @@ function renderGameplaySettings() {
     if (!el) return;
     el.innerHTML =
         `<div class="settings-toggle"><span>Touch Screen Controls</span><button class="toggle-btn${settings.touchControls ? ' on' : ''}" onclick="toggleSetting('touchControls')">${settings.touchControls ? 'ON' : 'OFF'}</button></div>` +
-        `<div class="settings-toggle"><span>Blood</span><button class="toggle-btn${settings.blood ? ' on' : ''}" onclick="toggleSetting('blood')">${settings.blood ? 'ON' : 'OFF'}</button></div>`;
+        `<div class="settings-toggle"><span>Blood</span><button class="toggle-btn${settings.blood ? ' on' : ''}" onclick="toggleSetting('blood')">${settings.blood ? 'ON' : 'OFF'}</button></div>` +
+        `<div class="settings-toggle"><span>CPU Difficulty</span><button class="toggle-btn${settings.cpuLevel !== 'easy' ? ' on' : ''}" onclick="cycleCpuLevel()">${(settings.cpuLevel || 'normal').toUpperCase()}</button></div>`;
+}
+
+// Easy → Normal → Hard → Easy. Ignored by the tower modes, which ramp on their own.
+function cycleCpuLevel() {
+    const order = ['easy', 'normal', 'hard'];
+    settings.cpuLevel = order[(order.indexOf(settings.cpuLevel || 'normal') + 1) % order.length];
+    saveSettings();
+    renderGameplaySettings();
 }
 function toggleSetting(key) {
     settings[key] = !settings[key];
@@ -884,7 +893,7 @@ function startGame() {
         let p2Team = (currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') && opponentTeam.length >= 2
             ? opponentTeam.slice(0, 2)
             : [getRandomCharacter(), getRandomCharacter()];
-        buildTeams(playerTeam.slice(0, 2), p2Team, null, currentMode === 'VS2_WATCH', currentMode !== 'VS2_PVP');
+        buildTeams(playerTeam.slice(0, 2), p2Team, cpuLevelValue(), currentMode === 'VS2_WATCH', currentMode !== 'VS2_PVP');
         document.getElementById('timer').classList.remove('hidden');
         document.getElementById('wave-counter').classList.add('hidden');
         matchTimer = 99;
@@ -897,6 +906,7 @@ function startGame() {
             // Standing dummy to practice combos / ultimates on
             let dummy = new Fighter('DUMMY', WIDTH * 0.7, p1Selection, true, 1);
             dummy.isDummy = true;
+            dummy.aiLevel = cpuLevelValue(); // honored when "Fight Back (CPU)" is on
             players.push(dummy);
             document.getElementById('p2-name').innerText = "DUMMY";
             document.getElementById('timer').classList.add('hidden');
@@ -909,6 +919,7 @@ function startGame() {
             startPvEWave();
         } else {
             players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU' || currentMode === 'CPU_WATCH', 1));
+            players.forEach(p => { if (p.isAI && !p.isDummy) p.aiLevel = cpuLevelValue(); }); // covers CPU + both watch-mode fighters
             document.getElementById('p2-name').innerText = (currentMode === 'CPU' || currentMode === 'CPU_WATCH') ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
             document.getElementById('timer').classList.remove('hidden');
             document.getElementById('wave-counter').classList.add('hidden');
