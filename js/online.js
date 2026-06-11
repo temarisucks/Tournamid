@@ -729,8 +729,11 @@ function onlineGuestApplyFighter(p, src, isOwn) {
             p.state = keepState; p.stateTimer = keepTimer; p.currentAttack = keepAtk;
             p.vx = keepVx; p.vy = keepVy; p.dir = keepDir;
             let latSec = ((onlineState.pingMs || 120) / 1000) + ONLINE_SNAPSHOT_RATE;
-            let allowX = Math.abs(keepVx) * latSec + 24;
-            let allowY = Math.abs(keepVy) * latSec + 24;
+            // use the RECENT peak speed, not the instantaneous one: right after stopping or
+            // reversing, velocity reads ~0 but the host's stale view still trails the old
+            // motion — instantaneous slack collapsed and caused a tiny backward drag.
+            let allowX = Math.max(p._predSpdX || 0, Math.abs(keepVx)) * latSec + 30;
+            let allowY = Math.max(p._predSpdY || 0, Math.abs(keepVy)) * latSec + 30;
             let dx = src.x - keepX, dy = src.y - keepY;
             if (keepY >= GROUND_Y && src.y >= GROUND_Y) dy = 0; // both grounded — y agrees
             let exX = Math.abs(dx) > allowX ? dx - Math.sign(dx) * allowX : 0;
@@ -888,6 +891,10 @@ function onlineGuestPredictOwn(p, realDt, dt) {
     }
     p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
     if (foe && p.state !== 'ATTACK') p.dir = foe.x > p.x ? 1 : -1;
+    // recent peak speed, decaying over ~0.25s — feeds the reconciliation slack so a
+    // fresh stop/turn isn't "corrected" while the host is still catching up
+    p._predSpdX = Math.max(Math.abs(p.vx), (p._predSpdX || 0) - 1400 * realDt);
+    p._predSpdY = Math.max(Math.abs(p.vy), (p._predSpdY || 0) - 2400 * realDt);
 }
 
 // Overkill gore spawned locally on the guest when the host's overkill fires

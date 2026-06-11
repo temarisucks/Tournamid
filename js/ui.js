@@ -11,8 +11,18 @@ function startBootSequence() {
     let boot = document.getElementById('boot-screen');
     let btn = document.getElementById('boot-enter');
     if (btn) btn.classList.add('gone');
+    // boot punches use an exaggerated pitch spread: each lands lower and heavier
+    const bootPunchSound = rate => {
+        let a = attackSfx.punch;
+        let v = a.pool ? a.pool[a.cursor = (a.cursor + 1) % a.pool.length] : a;
+        try {
+            v.preservesPitch = false; v.mozPreservesPitch = false; v.webkitPreservesPitch = false;
+            v.playbackRate = rate + (Math.random() - 0.5) * 0.08;
+            v.currentTime = 0; v.play();
+        } catch (e) {}
+    };
     const punch = n => {
-        playAudio(attackSfx.punch);
+        bootPunchSound([1.12, 0.98, 0.82][n - 1]); // high jab, mid cross, heavy finisher
         // each punch lands somewhere new — flash there + shake the whole screen
         boot.style.setProperty('--fx', (30 + Math.random() * 40) + '%');
         boot.style.setProperty('--fy', (30 + Math.random() * 40) + '%');
