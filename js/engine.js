@@ -1043,7 +1043,7 @@ function startEntranceSequence() {
     let a = players[0], b = players[1];
     if (!ENTRANCE_KIND[a.charType] || !ENTRANCE_KIND[b.charType]) return;
     let key = [a.charType, b.charType].sort().join('|');
-    let scriptPool = [INTRO_DIALOGUE[key], INTRO_DIALOGUE_B[key]].filter(Boolean);
+    let scriptPool = [INTRO_DIALOGUE[key], INTRO_DIALOGUE_B[key], INTRO_DIALOGUE_C[key], INTRO_DIALOGUE_D[key]].filter(Boolean);
     entranceSeq = {
         phase: 'enter', t: 0,
         script: scriptPool.length ? scriptPool[Math.floor(Math.random() * scriptPool.length)] : null,

@@ -474,7 +474,7 @@ const INTRO_DIALOGUE = {
     'TRAVELER|TRAVELER': [['P1', "I've seen this. I win."], ['P2', "Funny. So have I."]]
 };
 
-// Second exchange per matchup — each fight randomly picks between the two sets.
+// Second exchange per matchup - each fight randomly picks between the sets.
 const INTRO_DIALOGUE_B = {
     'BRAWLER|SWORDSMAN': [['SWORDSMAN', "I'll give you one free swing."], ['BRAWLER', "Big mistake. I only need one."]],
     'BRAWLER|MAGE': [['BRAWLER', "No tricks, wizard. Just you and me."], ['MAGE', "Okay, but the tricks are coming anyway."]],
@@ -566,6 +566,226 @@ const INTRO_DIALOGUE_B = {
     'TRAVELER|TRAVELER': [['P1', "There's only supposed to be one of me."], ['P2', "Yes. ME."]]
 };
 
+// Third exchange per matchup - added from the reviewed draft.
+const INTRO_DIALOGUE_C = {
+    "BRAWLER|SWORDSMAN": [["BRAWLER", "That blade better be fast."], ["SWORDSMAN", "It is already finished."]],
+    "BRAWLER|MAGE": [["MAGE", "I brought fire, ice, lightning, maybe bees."], ["BRAWLER", "Maybe what?"]],
+    "BRAWLER|RANGER": [["RANGER", "You close distance. I make distance hurt."], ["BRAWLER", "You talk too much for a guy in punching range."]],
+    "BRAWLER|DARK_RULER": [["DARK_RULER", "You stand before a king."], ["BRAWLER", "I stand before a target."]],
+    "BRAWLER|TELEPATH": [["TELEPATH", "Every punch announces itself."], ["BRAWLER", "Then stop listening."]],
+    "BEAST_TAMER|BRAWLER": [["BEAST_TAMER", "The brute wants first swing."], ["BRAWLER", "Tell him to get in line."]],
+    "BRAWLER|PHANTOM": [["PHANTOM", "Your train is boarding."], ["BRAWLER", "I don't ride with strangers."]],
+    "BRAWLER|COPYCAT": [["COPYCAT", "Big arms, angry face, easy!"], ["BRAWLER", "Copy the footwork too."]],
+    "BRAWLER|CULT": [["CULT", "Your strength belongs to Lumatrossia."], ["BRAWLER", "He can come take it."]],
+    "BRAWLER|TWINS": [["TWINS", "We dodge left."], ["TWINS_B", "No, right."], ["BRAWLER", "I'll punch center."]],
+    "BRAWLER|TRAVELER": [["TRAVELER", "You swing wide in five seconds."], ["BRAWLER", "Thanks for the warning."]],
+    "BRAWLER|BRAWLER": [["P1", "You hit hard?"], ["P2", "Hard enough to make you forget."]],
+
+    "MAGE|SWORDSMAN": [["SWORDSMAN", "Chaos has no form."], ["MAGE", "That's why it fits everywhere."]],
+    "RANGER|SWORDSMAN": [["RANGER", "Steel versus lead. Classic mistake."], ["SWORDSMAN", "Lead moves once. Steel returns."]],
+    "DARK_RULER|SWORDSMAN": [["DARK_RULER", "Serve me, blade."], ["SWORDSMAN", "My blade serves only my hand."]],
+    "SWORDSMAN|TELEPATH": [["TELEPATH", "You rehearse every strike."], ["SWORDSMAN", "Discipline is not rehearsal."]],
+    "BEAST_TAMER|SWORDSMAN": [["BEAST_TAMER", "The serpent hates sharp things."], ["SWORDSMAN", "It should keep its distance."]],
+    "PHANTOM|SWORDSMAN": [["PHANTOM", "Cut me and hear the whistle."], ["SWORDSMAN", "I prefer silence."]],
+    "COPYCAT|SWORDSMAN": [["COPYCAT", "Teach me the sword thing!"], ["SWORDSMAN", "It takes years."]],
+    "CULT|SWORDSMAN": [["CULT", "Your blade could carve holy symbols."], ["SWORDSMAN", "It carves exits."]],
+    "SWORDSMAN|TWINS": [["TWINS", "Can he cut both of us?"], ["TWINS_B", "Not if we argue fast enough."], ["SWORDSMAN", "Argue after the draw."]],
+    "SWORDSMAN|TRAVELER": [["TRAVELER", "Your perfect strike misses in timeline seven."], ["SWORDSMAN", "Then stand in this one."]],
+    "SWORDSMAN|SWORDSMAN": [["P1", "Draw cleanly."], ["P2", "Fall cleanly."]],
+
+    "MAGE|RANGER": [["MAGE", "Bullet, meet mystery orb."], ["RANGER", "Mystery orb, meet reload."]],
+    "DARK_RULER|MAGE": [["DARK_RULER", "You laugh before power."], ["MAGE", "And during. Sometimes after."]],
+    "MAGE|TELEPATH": [["TELEPATH", "Your thoughts are fireworks in a closet."], ["MAGE", "Pretty, right?"]],
+    "BEAST_TAMER|MAGE": [["MAGE", "Is the snake magic-resistant?"], ["BEAST_TAMER", "It is mage-resistant."]],
+    "MAGE|PHANTOM": [["PHANTOM", "Your magic flickers like a dying lamp."], ["MAGE", "Dying lamps explode now?"]],
+    "COPYCAT|MAGE": [["COPYCAT", "Random magic plus copying. Best idea ever."], ["MAGE", "That's also the worst idea ever."]],
+    "CULT|MAGE": [["CULT", "Your chaos begs for a master."], ["MAGE", "It begs for snacks."]],
+    "MAGE|TWINS": [["MAGE", "I made one spell for both of you."], ["TWINS", "Efficient."], ["TWINS_B", "Suspicious."]],
+    "MAGE|TRAVELER": [["TRAVELER", "Every spell creates a branch."], ["MAGE", "Do any have snacks?"]],
+    "MAGE|MAGE": [["P1", "Did you also prepare irresponsibly?"], ["P2", "I prepared nothing."]],
+
+    "DARK_RULER|RANGER": [["RANGER", "Big sword. Bigger target."], ["DARK_RULER", "Small gun. Smaller chance."]],
+    "RANGER|TELEPATH": [["TELEPATH", "You count every round."], ["RANGER", "And every mistake."]],
+    "BEAST_TAMER|RANGER": [["RANGER", "That brute bulletproof?"], ["BEAST_TAMER", "No. Angry."]],
+    "PHANTOM|RANGER": [["PHANTOM", "Your gun sounds like a funeral bell."], ["RANGER", "Yours?"]],
+    "COPYCAT|RANGER": [["COPYCAT", "I copied your gun noises."], ["RANGER", "You copied empty threats."]],
+    "CULT|RANGER": [["CULT", "Your shots cannot pierce faith."], ["RANGER", "Faith wearing armor?"]],
+    "RANGER|TWINS": [["TWINS", "Shoot him."], ["TWINS_B", "No, shoot him."], ["RANGER", "I can multitask."]],
+    "RANGER|TRAVELER": [["TRAVELER", "You miss by an inch."], ["RANGER", "Then I'll move an inch."]],
+    "RANGER|RANGER": [["P1", "Draw on three."], ["P2", "I draw on two."]],
+
+    "DARK_RULER|TELEPATH": [["TELEPATH", "Your mind is a locked throne room."], ["DARK_RULER", "Then die at the door."]],
+    "BEAST_TAMER|DARK_RULER": [["DARK_RULER", "Your pack needs a crown."], ["BEAST_TAMER", "They'd chew it."]],
+    "DARK_RULER|PHANTOM": [["PHANTOM", "Your throne has a final stop."], ["DARK_RULER", "I do not ride. I conquer."]],
+    "COPYCAT|DARK_RULER": [["COPYCAT", "I copied your evil laugh."], ["DARK_RULER", "You copied mockery."]],
+    "CULT|DARK_RULER": [["CULT", "A throne is just an altar facing backward."], ["DARK_RULER", "An altar can be overturned."]],
+    "DARK_RULER|TWINS": [["DARK_RULER", "Two voices. One silence."], ["TWINS", "That's ominous."], ["TWINS_B", "And bad math."]],
+    "DARK_RULER|TRAVELER": [["TRAVELER", "Empires end. Yours ends loudly."], ["DARK_RULER", "Then history will hear me."]],
+    "DARK_RULER|DARK_RULER": [["P1", "There is one throne."], ["P2", "And one corpse beside it."]],
+
+    "BEAST_TAMER|TELEPATH": [["TELEPATH", "Your snake is planning something."], ["BEAST_TAMER", "Good. Saves me planning."]],
+    "PHANTOM|TELEPATH": [["PHANTOM", "No heartbeat. No thoughts. Just rails."], ["TELEPATH", "Rails still lead somewhere."]],
+    "COPYCAT|TELEPATH": [["COPYCAT", "Can I copy thoughts?"], ["TELEPATH", "Start with one."]],
+    "CULT|TELEPATH": [["CULT", "Our minds are not alone."], ["TELEPATH", "No. They're crowded."]],
+    "TELEPATH|TWINS": [["TELEPATH", "You finish each other's thoughts."], ["TWINS", "No we don't."], ["TWINS_B", "Yes we do."]],
+    "TELEPATH|TRAVELER": [["TRAVELER", "You hear intent. I hear consequence."], ["TELEPATH", "Then hear this one."]],
+    "TELEPATH|TELEPATH": [["P1", "You heard that?"], ["P2", "Unfortunately."]],
+
+    "BEAST_TAMER|PHANTOM": [["PHANTOM", "Your beasts cannot follow where I go."], ["BEAST_TAMER", "The raven follows anything."]],
+    "BEAST_TAMER|COPYCAT": [["COPYCAT", "If I copy you, do I get pets?"], ["BEAST_TAMER", "You get bitten."]],
+    "BEAST_TAMER|CULT": [["CULT", "Three beasts. One offering."], ["BEAST_TAMER", "You counted wrong."]],
+    "BEAST_TAMER|TWINS": [["TWINS", "Can we pet the raven?"], ["TWINS_B", "Bad question."], ["BEAST_TAMER", "Smart twin."]],
+    "BEAST_TAMER|TRAVELER": [["TRAVELER", "Your beasts choose wrong in every timeline."], ["BEAST_TAMER", "They choose me."]],
+    "BEAST_TAMER|BEAST_TAMER": [["P1", "Your serpent looks nervous."], ["P2", "Yours looks edible."]],
+
+    "COPYCAT|PHANTOM": [["COPYCAT", "Do I need to die to copy you?"], ["PHANTOM", "It would help."]],
+    "CULT|PHANTOM": [["CULT", "The dead should answer Lumatrossia."], ["PHANTOM", "The dead answer the rails."]],
+    "PHANTOM|TWINS": [["TWINS", "If we close our eyes..."], ["TWINS_B", "...does it leave?"], ["PHANTOM", "No. It arrives."]],
+    "PHANTOM|TRAVELER": [["TRAVELER", "I have postponed death."], ["PHANTOM", "I accept late arrivals."]],
+    "PHANTOM|PHANTOM": [["P1", "This route is mine."], ["P2", "Then switch tracks."]],
+
+    "COPYCAT|CULT": [["COPYCAT", "If I join, do I get a mask?"], ["CULT", "You get a purpose."]],
+    "COPYCAT|TWINS": [["COPYCAT", "Two of you means double copying."], ["TWINS", "Don't encourage it."]],
+    "COPYCAT|TRAVELER": [["TRAVELER", "You copy moments. I own them."], ["COPYCAT", "Then I'll copy ownership."]],
+    "COPYCAT|COPYCAT": [["P1", "You're me."], ["P2", "No, you're me badly."]],
+
+    "CULT|TWINS": [["CULT", "Two voices for the chorus."], ["TWINS", "We don't sing."], ["TWINS_B", "We absolutely sing."]],
+    "CULT|TRAVELER": [["TRAVELER", "I've seen your ritual fail."], ["CULT", "Then you saw a test."]],
+    "CULT|CULT": [["P1", "Your chant is off."], ["P2", "Your faith is thin."]],
+
+    "TRAVELER|TWINS": [["TRAVELER", "One of you ducks late."], ["TWINS", "Which one?"], ["TWINS_B", "Don't tell him."]],
+    "TWINS|TWINS": [["P1", "We're the real pair."], ["P2", "We're the better pair."]],
+    
+    "TRAVELER|TRAVELER": [["P1", "This loop belongs to me."], ["P2", "Then why am I already here?"]]
+};
+
+// Fourth exchange per matchup - added from the reviewed draft.
+const INTRO_DIALOGUE_D = {
+    "BRAWLER|SWORDSMAN": [["SWORDSMAN", "Bare hands against steel?"], ["BRAWLER", "Steel bends."]],
+    "BRAWLER|MAGE": [["BRAWLER", "No vanishing tricks."], ["MAGE", "Fine. Exploding tricks."]],
+    "BRAWLER|RANGER": [["BRAWLER", "One bullet won't stop me."], ["RANGER", "Good thing I brought more."]],
+    "BRAWLER|DARK_RULER": [["BRAWLER", "How's the crown stay on?"], ["DARK_RULER", "Fear."]],
+    "BRAWLER|TELEPATH": [["BRAWLER", "Read this fist."], ["TELEPATH", "It has a very small vocabulary."]],
+
+    "BEAST_TAMER|BRAWLER": [["BRAWLER", "You hiding behind pets?"], ["BEAST_TAMER", "No. Standing with family."]],
+
+    "BRAWLER|PHANTOM": [["BRAWLER", "Can ghosts bruise?"], ["PHANTOM", "Can fists haunt?"]],
+    "BRAWLER|COPYCAT": [["BRAWLER", "Quit doing my stance."], ["COPYCAT", "Quit having such a good stance."]],
+    "BRAWLER|CULT": [["BRAWLER", "Nice masks. Hide the bruises?"], ["CULT", "They hide devotion."]],
+    "BRAWLER|TWINS": [["BRAWLER", "Which one talks first?"], ["TWINS", "Me!"], ["TWINS_B", "Wrong answer!"]],
+    "BRAWLER|TRAVELER": [["BRAWLER", "Future got anything on this?"], ["TRAVELER", "Yes. A headache."]],
+    "BRAWLER|BRAWLER": [["P1", "Same gloves, worse face."], ["P2", "Same face, worse luck."]],
+
+    "MAGE|SWORDSMAN": [["MAGE", "What if I enchant your sword?"], ["SWORDSMAN", "I will cut the enchantment."]],
+
+    "RANGER|SWORDSMAN": [["SWORDSMAN", "Your weapon has no soul."], ["RANGER", "It has ammo."]],
+
+    "DARK_RULER|SWORDSMAN": [["SWORDSMAN", "A king without restraint is just a butcher."], ["DARK_RULER", "A butcher still knows where to cut."]],
+
+    "SWORDSMAN|TELEPATH": [["SWORDSMAN", "If you know my move, answer it."], ["TELEPATH", "I already did."]],
+
+    "BEAST_TAMER|SWORDSMAN": [["SWORDSMAN", "Your beasts move without honor."], ["BEAST_TAMER", "They move to survive."]],
+
+    "PHANTOM|SWORDSMAN": [["SWORDSMAN", "A ghost has no center."], ["PHANTOM", "Neither does fear."]],
+
+    "COPYCAT|SWORDSMAN": [["SWORDSMAN", "Imitation without discipline is noise."], ["COPYCAT", "Good. I'm loud."]],
+
+    "CULT|SWORDSMAN": [["SWORDSMAN", "Faith won't parry steel."], ["CULT", "Steel rusts. Faith doesn't."]],
+
+    "SWORDSMAN|TWINS": [["SWORDSMAN", "Two openings."], ["TWINS", "He means you."], ["TWINS_B", "He means us."]],
+    "SWORDSMAN|TRAVELER": [["SWORDSMAN", "Time cannot dull a blade."], ["TRAVELER", "Everything dulls eventually."]],
+    "SWORDSMAN|SWORDSMAN": [["P1", "Your stance opens low."], ["P2", "Your eyes open slowly."]],
+
+    "MAGE|RANGER": [["RANGER", "Your aim is a rumor."], ["MAGE", "Rumors spread."]],
+
+    "DARK_RULER|MAGE": [["MAGE", "Can I borrow the throne for a spell?"], ["DARK_RULER", "Touch it and lose the hand."]],
+
+    "MAGE|TELEPATH": [["MAGE", "Predict this spell."], ["TELEPATH", "You haven't chosen it."]],
+
+    "BEAST_TAMER|MAGE": [["BEAST_TAMER", "No sparks near the animals."], ["MAGE", "What about tasteful sparks?"]],
+
+    "MAGE|PHANTOM": [["MAGE", "Can I haunt a spell?"], ["PHANTOM", "You can haunt a passenger car."]],
+
+    "COPYCAT|MAGE": [["MAGE", "If you copy me, warn yourself."], ["COPYCAT", "I never listen to me."]],
+
+    "CULT|MAGE": [["MAGE", "Do cult robes come in purple?"], ["CULT", "Only after the rite."]],
+
+    "MAGE|TWINS": [["TWINS", "Which hand casts?"], ["TWINS_B", "Both, probably."], ["MAGE", "Sometimes neither."]],
+    "MAGE|TRAVELER": [["MAGE", "Future me proud?"], ["TRAVELER", "Future you is on fire."]],
+    "MAGE|MAGE": [["P1", "No copying my spellbook."], ["P2", "I can't read mine either."]],
+
+    "DARK_RULER|RANGER": [["DARK_RULER", "Hunters belong in kennels."], ["RANGER", "Kings belong in history."]],
+
+    "RANGER|TELEPATH": [["RANGER", "If you know where I'll shoot, move."], ["TELEPATH", "If you know I know, miss."]],
+
+    "BEAST_TAMER|RANGER": [["BEAST_TAMER", "Hunt my beasts and they hunt back."], ["RANGER", "Good. Saves tracking time."]],
+
+    "PHANTOM|RANGER": [["RANGER", "If bullets pass through you, I'll aim for what follows."], ["PHANTOM", "Brave."]],
+
+    "COPYCAT|RANGER": [["RANGER", "Hat stays with me."], ["COPYCAT", "But I look adorable in it."]],
+
+    "CULT|RANGER": [["RANGER", "I can count your flock."], ["CULT", "You cannot count what answers."]],
+
+    "RANGER|TWINS": [["RANGER", "One whistle, both duck."], ["TWINS", "Which whistle?"]],
+    "RANGER|TRAVELER": [["RANGER", "You've seen this draw?"], ["TRAVELER", "Sixteen times."]],
+    "RANGER|RANGER": [["P1", "Same gun?"], ["P2", "Better aim."]],
+
+    "DARK_RULER|TELEPATH": [["DARK_RULER", "I forbid your intrusion."], ["TELEPATH", "Fear is not a password."]],
+
+    "BEAST_TAMER|DARK_RULER": [["BEAST_TAMER", "The brute hates tyrants."], ["DARK_RULER", "The brute will learn hierarchy."]],
+
+    "DARK_RULER|PHANTOM": [["DARK_RULER", "Ghost, kneel."], ["PHANTOM", "I have no knees."]],
+
+    "COPYCAT|DARK_RULER": [["DARK_RULER", "Wear my face and perish."], ["COPYCAT", "But it's such a dramatic face."]],
+
+    "CULT|DARK_RULER": [["DARK_RULER", "Your god hides behind insects."], ["CULT", "Your crown hides an insect."]],
+
+    "DARK_RULER|TWINS": [["TWINS", "If we steal the crown..."], ["TWINS_B", "...do we share it?"], ["DARK_RULER", "You share the grave."]],
+    "DARK_RULER|TRAVELER": [["DARK_RULER", "Time bends to power."], ["TRAVELER", "Power rusts in time."]],
+    "DARK_RULER|DARK_RULER": [["P1", "False crown."], ["P2", "Frail king."]],
+
+    "BEAST_TAMER|TELEPATH": [["BEAST_TAMER", "Stay out of their heads."], ["TELEPATH", "They invited me."]],
+
+    "PHANTOM|TELEPATH": [["TELEPATH", "Your silence screams."], ["PHANTOM", "Then listen closer."]],
+
+    "COPYCAT|TELEPATH": [["TELEPATH", "Your mind changes costumes."], ["COPYCAT", "And every one looks great."]],
+
+    "CULT|TELEPATH": [["TELEPATH", "I hear the thing behind your prayers."], ["CULT", "Then you are blessed."]],
+
+    "TELEPATH|TWINS": [["TWINS", "Can you read both at once?"], ["TELEPATH", "Sadly."]],
+    "TELEPATH|TRAVELER": [["TELEPATH", "Your thoughts arrive before you do."], ["TRAVELER", "Punctuality matters."]],
+    "TELEPATH|TELEPATH": [["P1", "This will be quiet."], ["P2", "Nothing about you is quiet."]],
+
+    "BEAST_TAMER|PHANTOM": [["BEAST_TAMER", "The brute doesn't scare easy."], ["PHANTOM", "He has not heard the whistle."]],
+    "BEAST_TAMER|COPYCAT": [["BEAST_TAMER", "My beasts don't like copies."], ["COPYCAT", "What about flattering copies?"]],
+    "BEAST_TAMER|CULT": [["BEAST_TAMER", "Your god smells wrong."], ["CULT", "He smells of eternity."]],
+    "BEAST_TAMER|TWINS": [["BEAST_TAMER", "The snake sees two warm targets."], ["TWINS", "I'm cold."], ["TWINS_B", "Liar."]],
+    "BEAST_TAMER|TRAVELER": [["BEAST_TAMER", "The raven hates your clock."], ["TRAVELER", "The clock hates her back."]],
+    "BEAST_TAMER|BEAST_TAMER": [["P1", "No hurting the animals."], ["P2", "Then call yours off."]],
+
+    "COPYCAT|PHANTOM": [["PHANTOM", "Nine lives make nine tickets."], ["COPYCAT", "I'm not paying fare."]],
+
+    "CULT|PHANTOM": [["PHANTOM", "Your god has no ticket."], ["CULT", "He owns the station."]],
+
+    "PHANTOM|TWINS": [["PHANTOM", "Two souls, side by side."], ["TWINS", "Creepy."], ["TWINS_B", "Hold my hand."]],
+    "PHANTOM|TRAVELER": [["PHANTOM", "You run through time."], ["TRAVELER", "You run a train."]],
+    "PHANTOM|PHANTOM": [["P1", "Two conductors."], ["P2", "One last stop."]],
+
+    "COPYCAT|CULT": [["CULT", "Mimic the chant."], ["COPYCAT", "La la doom doom?"]],
+    "COPYCAT|TWINS": [["TWINS", "It's copying my walk."], ["TWINS_B", "That's my walk."], ["COPYCAT", "Now it's mine."]],
+    "COPYCAT|TRAVELER": [["COPYCAT", "Future me wins, right?"], ["TRAVELER", "Future you asks the same question."]],
+    "COPYCAT|COPYCAT": [["P1", "Copy this."], ["P2", "Already did."]],
+
+    "CULT|TWINS": [["TWINS", "Can your god juggle?"], ["CULT", "He juggles worlds."]],
+    "CULT|TRAVELER": [["CULT", "Time kneels before the old hunger."], ["TRAVELER", "It trips, actually."]],
+    "CULT|CULT": [["P1", "One flock must lead."], ["P2", "One flock must burn."]],
+
+    "TRAVELER|TWINS": [["TWINS", "Can you rewind us separately?"], ["TRAVELER", "I tried. It was annoying."]],
+
+    "TWINS|TWINS": [["P1", "Mirror match."], ["P2", "Window match."]],
+
+    "TRAVELER|TRAVELER": [["P1", "We both know the ending."], ["P2", "Yes."]]
+};
 let introSequence = null; // { phase, t, text, done, fightPlayed }
 function beginIntroSequence(kind = 'round1') {
     if (currentMode === 'TRAINING') {
