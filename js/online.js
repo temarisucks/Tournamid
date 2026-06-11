@@ -22,7 +22,7 @@ const ONLINE_REMOTE_BINDINGS = {
 
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
 const ONLINE_TAP_ACTIONS = ['u', 'atkL', 'atkH', 'special', 'ult']; // edge-triggered — never drop these
-const ONLINE_SNAPSHOT_RATE = 0.05;   // host → guest state, 20x/sec
+const ONLINE_SNAPSHOT_RATE = 1 / 30; // host → guest state, 30x/sec
 const ONLINE_INPUT_HEARTBEAT = 0.05; // guest → host inputs re-sent at least this often
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 300;  // no traffic for this long → treat remote input as released
@@ -659,7 +659,7 @@ function onlineGuestApplySnapshot(snap) {
     for (let i = 0; i < Math.min(players.length, snap.players.length); i++) {
         let p = players[i], src = snap.players[i];
         if (!p || !src) continue;
-        onlineGuestApplyFighter(p, src);
+        onlineGuestApplyFighter(p, src, i === onlineState.slot);
     }
 
     // banner: adopt the host's (typed by line so the local timer keeps ticking smoothly)
@@ -694,7 +694,10 @@ function onlineGuestApplySnapshot(snap) {
     updateHUD();
 }
 
-function onlineGuestApplyFighter(p, src) {
+// States where the host's word is law even for the predicted local fighter
+const ONLINE_FORCED_STATES = ['HITSTUN', 'DEAD', 'BLOCKBREAK', 'ULT', 'LEDGE'];
+
+function onlineGuestApplyFighter(p, src, isOwn) {
     // derive local feedback from the diffs BEFORE overwriting
     let hpDrop = p.hp - src.hp;
     let guardDrop = p.blockHealth - src.blockHealth;
@@ -708,8 +711,31 @@ function onlineGuestApplyFighter(p, src) {
         else { p.charType = src.charType; if (CHARACTERS[src.charType]) p.attacks = CHARACTERS[src.charType].attacks; }
     }
 
-    ONLINE_FIGHTER_FIELDS.forEach(k => { p[k] = src[k]; });
-    p.currentAttack = src.atk || null;
+    if (isOwn) {
+        // OWN fighter is client-side PREDICTED: the local input drives its movement
+        // and poses instantly; the host stays authoritative for combat results.
+        let keepX = p.x, keepY = p.y, keepVx = p.vx, keepVy = p.vy, keepDir = p.dir;
+        let keepState = p.state, keepTimer = p.stateTimer, keepAtk = p.currentAttack;
+        ONLINE_FIGHTER_FIELDS.forEach(k => { p[k] = src[k]; });
+        if (ONLINE_FORCED_STATES.includes(src.state) || ONLINE_FORCED_STATES.includes(keepState)) {
+            // getting hit / dying / ulting: the host's version wins outright
+            p.currentAttack = src.atk || null;
+        } else {
+            // keep the predicted motion/pose, softly reconciling position drift
+            p.state = keepState; p.stateTimer = keepTimer; p.currentAttack = keepAtk;
+            p.vx = keepVx; p.vy = keepVy; p.dir = keepDir;
+            let dx = src.x - keepX, dy = src.y - keepY;
+            if (Math.hypot(dx, dy) > 90) { p.x = src.x; p.y = src.y; } // way off — snap
+            else { p.x = keepX + dx * 0.22; p.y = keepY + dy * 0.22; } // gentle pull toward truth
+            // if the host has us mid-attack and we predicted none (lost packet), adopt it
+            if ((p.state === 'IDLE' || p.state === 'WALK') && src.state === 'ATTACK') {
+                p.state = 'ATTACK'; p.stateTimer = src.stateTimer; p.currentAttack = src.atk || null;
+            }
+        }
+    } else {
+        ONLINE_FIGHTER_FIELDS.forEach(k => { p[k] = src[k]; });
+        p.currentAttack = src.atk || null;
+    }
     p.ult = src.ult ? { ...src.ult, target: players[src.ult.targetIndex] || null } : null;
     p.tether = src.tether ? { ...src.tether } : null;
     p.puppet = src.puppet
@@ -737,20 +763,26 @@ function onlineGuestApplyFighter(p, src) {
     }
 }
 
-// Between snapshots the guest animates what it has: dead-reckon positions, advance
-// pose clocks, and run the purely-cosmetic systems (particles, gibs, trails).
+// Between snapshots the guest animates what it has: the OWN fighter is fully predicted
+// from local input (instant response), the remote fighter is dead-reckoned, and the
+// purely-cosmetic systems (particles, gibs, trails) run locally.
 function onlineGuestAdvance(realDt) {
     let dt = realDt * (timeScale || 1);
-    for (let p of players) {
+    for (let i = 0; i < players.length; i++) {
+        let p = players[i];
         if (!p) continue;
         p.animTimer += realDt;
-        if (p.state === 'ATTACK' || p.state === 'ULT' || p.state === 'WIN') p.stateTimer += dt;
-        else if (p.state === 'HITSTUN') p.stateTimer -= dt;
-        if (p.ult) p.ult.t = (p.ult.t || 0) + dt;
-        if (p.state !== 'DEAD') {
-            p.x += p.vx * dt;
-            if (p.y < GROUND_Y || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); }
-            p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
+        if (i === onlineState.slot) {
+            onlineGuestPredictOwn(p, realDt, dt); // local input drives this one
+        } else {
+            if (p.state === 'ATTACK' || p.state === 'ULT' || p.state === 'WIN') p.stateTimer += dt;
+            else if (p.state === 'HITSTUN') p.stateTimer -= dt;
+            if (p.ult) p.ult.t = (p.ult.t || 0) + dt;
+            if (p.state !== 'DEAD') {
+                p.x += p.vx * dt;
+                if (p.y < GROUND_Y || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); }
+                p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
+            }
         }
         if (p.tumbleTimer > 0) { p.tumbleTimer -= dt; p._tumbleAngle += Math.abs(p.vx) * dt * 0.04 * (p._tumbleDir || 1); }
         if (p._guardBreakFx > 0) p._guardBreakFx -= dt;
@@ -770,6 +802,77 @@ function onlineGuestAdvance(realDt) {
     bodyParts.forEach(p => p.update(realDt));
     bodyParts = bodyParts.filter(p => p.life > 0);
     Object.assign(previousKeys, keys);
+}
+
+// CLIENT-SIDE PREDICTION: the guest's own fighter moves, jumps, crouches, blocks and
+// STARTS attack animations the instant the button is pressed. The host still owns all
+// outcomes (hits, damage, knockback) — snapshots gently reconcile any drift, and
+// disadvantage states (hitstun/ults/death) are taken from the host verbatim.
+function onlineGuestPredictOwn(p, realDt, dt) {
+    if (introSequence && !introSequence.done) return; // frozen until FIGHT
+    if (ONLINE_FORCED_STATES.includes(p.state)) {
+        // host-driven state: just play it out (knockback slide, stun countdown, ult clock)
+        if (p.state === 'HITSTUN') p.stateTimer -= dt;
+        else if (p.state === 'ULT') p.stateTimer += dt;
+        if (p.ult) p.ult.t = (p.ult.t || 0) + dt;
+        if (p.state !== 'DEAD') {
+            p.x += p.vx * dt;
+            if (p.y < GROUND_Y || p.vy < 0) { p.vy += 1500 * dt; p.y = Math.min(GROUND_Y, p.y + p.vy * dt); }
+            p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
+        }
+        return;
+    }
+    let c = onlineLocalControls();
+    let foe = players[1 - onlineState.slot];
+
+    if (p.state === 'ATTACK') {
+        // tick the predicted swing; the real hitbox happens on the host
+        p.stateTimer += dt;
+        let a = p.currentAttack;
+        if (!a || p.stateTimer >= a.startup + a.active + a.recovery) {
+            p.currentAttack = null;
+            p.state = p.y < GROUND_Y ? 'FALL' : 'IDLE';
+        }
+        p.x += p.vx * dt;
+        if (p.y >= GROUND_Y) p.vx *= 0.9;
+    } else {
+        let grounded = p.y >= GROUND_Y;
+        let crouching = keys[c.d] && grounded;
+        let blocking = keys[c.block] && grounded && !p.lumActive;
+        let spd = p.speed;
+        p.vx = 0;
+        if (!crouching && !blocking) {
+            if (keys[c.l]) p.vx = -spd;
+            if (keys[c.r]) p.vx = spd;
+        }
+        if (blocking) p.state = 'BLOCK';
+        else if (crouching) p.state = 'CROUCH';
+        else if (grounded && keyPressed(c.u)) { p.vy = p.jumpForce; p.state = 'JUMP'; }
+        else if (grounded && p.state !== 'JUMP' && p.state !== 'FALL') p.state = Math.abs(p.vx) > 1 ? 'WALK' : 'IDLE';
+        // start the attack ANIMATION immediately — the host resolves the actual hit
+        if (!blocking && !crouching) {
+            let name = null;
+            if (keyPressed(c.atkL)) name = p.y < GROUND_Y ? 'airLight' : 'light';
+            else if (keyPressed(c.atkH)) name = p.y < GROUND_Y ? 'airHeavy' : 'heavy';
+            else if (keyPressed(c.special)) {
+                name = keys[c.u] ? 'specUp' : keys[c.d] ? 'specDown' : (keys[c.l] || keys[c.r]) ? 'specSide' : 'specNeutral';
+            }
+            if (name) {
+                let atk = (p.attacks && p.attacks[name]) || (typeof createAttackVariant === 'function' ? createAttackVariant(p, name) : null);
+                if (atk) { p.currentAttack = { ...atk, name }; p.state = 'ATTACK'; p.stateTimer = 0; p.hasSpawnedHitbox = true; }
+            }
+        }
+        p.x += p.vx * dt;
+    }
+    // shared physics
+    if (p.y < GROUND_Y || p.vy < 0) {
+        p.vy += 1500 * dt;
+        p.y = Math.min(GROUND_Y, p.y + p.vy * dt);
+        if (p.y >= GROUND_Y) { p.vy = 0; if (p.state === 'JUMP' || p.state === 'FALL') p.state = 'IDLE'; }
+        else if (p.state !== 'ATTACK') p.state = p.vy < 0 ? 'JUMP' : 'FALL';
+    }
+    p.x = Math.max(p.width / 2, Math.min(WIDTH - p.width / 2, p.x));
+    if (foe && p.state !== 'ATTACK') p.dir = foe.x > p.x ? 1 : -1;
 }
 
 // Overkill gore spawned locally on the guest when the host's overkill fires
