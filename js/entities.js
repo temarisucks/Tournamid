@@ -3484,6 +3484,9 @@ class Fighter {
 
     draw(ctx) {
         if (this.state === 'DEAD' && this._overkilled) return;
+        // Self-heal: an ATTACK state with no attack data (possible after an online
+        // snapshot merge) would crash the pose chain — settle to idle instead.
+        if (this.state === 'ATTACK' && !this.currentAttack) this.state = this.y < GROUND_Y ? 'FALL' : 'IDLE';
         // Time Skip — edited out of the timeline for a beat: just a streak, no body
         if (this._skipHide > 0) {
             ctx.save();

@@ -747,6 +747,11 @@ function onlineGuestApplyFighter(p, src, isOwn) {
         p.partner.currentAttack = p.currentAttack;
     }
 
+    // Consistency: never leave any body in ATTACK without attack data (the pose
+    // chain reads atk.startup) — settle to idle instead of crashing the renderer.
+    if (p.state === 'ATTACK' && !p.currentAttack) p.state = p.y < GROUND_Y ? 'FALL' : 'IDLE';
+    if (p.partner && p.partner.state === 'ATTACK' && !p.partner.currentAttack) p.partner.state = p.state;
+
     // local hit feedback (sounds + sparks the guest sim would otherwise never produce)
     if (hpDrop >= 1 && src.state !== 'DEAD') {
         spawnParticles(p.x, p.y - 40, Math.min(20, hpDrop * 2), '#ff0033');
