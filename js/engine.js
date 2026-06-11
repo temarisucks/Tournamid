@@ -1030,6 +1030,219 @@ function drawRoundAnnounce(ctx) {
     ctx.restore();
 }
 
+// ---------------- PRE-FIGHT ENTRANCES + DIALOGUE ----------------
+// Both fighters arrive with their own signature entrance, trade a matchup-specific
+// exchange (typed out with per-character voice blips), THEN the announcer runs.
+function startEntranceSequence() {
+    if (currentMode === 'ONLINE' || currentMode === 'PVE' || currentMode === 'TRAINING') return;
+    if (players.length < 2 || !players[0] || !players[1]) return;
+    let a = players[0], b = players[1];
+    if (!ENTRANCE_KIND[a.charType] || !ENTRANCE_KIND[b.charType]) return;
+    let key = [a.charType, b.charType].sort().join('|');
+    let scriptPool = [INTRO_DIALOGUE[key], INTRO_DIALOGUE_B[key]].filter(Boolean);
+    entranceSeq = {
+        phase: 'enter', t: 0,
+        script: scriptPool.length ? scriptPool[Math.floor(Math.random() * scriptPool.length)] : null,
+        lineIdx: 0, charIdx: 0, blipTick: 0, lineHold: 0,
+        targets: [a.x, b.x],
+        showRound: !!roundAnnounce
+    };
+    roundAnnounce = null;      // the ROUND 1 banner waits for the ceremony to finish
+    introSequence = null;      // so does the announcer
+    Object.assign(previousKeys, keys); // a held key from the menus shouldn't insta-skip
+    a.x = -50; b.x = WIDTH + 50; // start off-screen
+    a.dir = 1; b.dir = -1;
+    [a, b].forEach(p => {
+        p._entKind = ENTRANCE_KIND[p.charType];
+        p._entProg = 0;
+        if (p.partner) { p.partner.x = p.x - p.dir * 40; p.partner.y = GROUND_Y; }
+    });
+}
+
+function updateEntranceSeq(dt) {
+    let s = entranceSeq, a = players[0], b = players[1];
+    if (!s || !a || !b) { entranceSeq = null; return; }
+    // any fresh button press skips the whole ceremony
+    for (let k in keys) { if (keys[k] && !previousKeys[k]) { finishEntranceSeq(); return; } }
+    s.t += dt;
+    // afterimage trails keep aging so the Traveler's stutter ghosts fade properly
+    [a, b].forEach(p => { if (p._trail && p._trail.length) { p._trail.forEach(g => g.age += dt); p._trail = p._trail.filter(g => g.age < 0.24); } });
+
+    if (s.phase === 'enter') {
+        let prog = Math.min(1, s.t / 1.8);
+        driveEntrance(a, 0, prog, dt);
+        driveEntrance(b, 1, prog, dt);
+        if (prog >= 1) {
+            if (s.script) { s.phase = 'line'; s.t = 0; s.lineIdx = 0; s.charIdx = 0; s.lineHold = 0; }
+            else finishEntranceSeq();
+        }
+        return;
+    }
+    if (s.phase === 'line') {
+        [a, b].forEach(p => { p.animTimer += dt; if (p.partner) p.partner.animTimer += dt; });
+        let line = s.script[s.lineIdx];
+        let text = line[1];
+        // the camera drifts over and leans in on whoever is talking (camNow eases it)
+        let spkPos = entranceSpeakerPos(line);
+        ultCamera = { fx: Math.max(170, Math.min(WIDTH - 170, spkPos.x)), fy: GROUND_Y - 88, zoom: 1.5 };
+        if (s.charIdx < text.length) { // typing out
+            s.blipTick -= dt;
+            if (s.blipTick <= 0) {
+                s.blipTick = 0.04;
+                s.charIdx++;
+                let ch = text[s.charIdx - 1];
+                if (s.charIdx % 2 === 0 && /[a-zA-Z0-9]/.test(ch)) {
+                    let spk = line[0];
+                    let voice = spk === 'P1' ? a.charType : spk === 'P2' ? b.charType : spk;
+                    sfx.playBlip(voice);
+                }
+            }
+        } else { // hold the finished line, then advance
+            s.lineHold += dt;
+            if (s.lineHold > 0.85) {
+                s.lineIdx++; s.charIdx = 0; s.lineHold = 0; s.blipTick = 0;
+                if (s.lineIdx >= s.script.length) finishEntranceSeq();
+            }
+        }
+    }
+}
+
+// Where the current line's speaker is standing (the second twin speaks from the partner body)
+function entranceSpeakerPos(line) {
+    let a = players[0], b = players[1];
+    let spk = line[0];
+    let speaker = spk === 'P1' ? a : spk === 'P2' ? b : [a, b].find(p => p.charType === (spk === 'TWINS_B' ? 'TWINS' : spk)) || a;
+    if (spk === 'TWINS_B' && speaker.partner) return { x: speaker.partner.x, y: speaker.partner.y, speaker };
+    return { x: speaker.x, y: speaker.y, speaker };
+}
+
+// Per-character arrival movement. Poses come from the entrance flourish block in Fighter.draw.
+function driveEntrance(p, i, prog, dt) {
+    let s = entranceSeq;
+    let from = i === 0 ? -50 : WIDTH + 50;
+    let to = s.targets[i];
+    p.animTimer += dt;
+    p._entProg = prog;
+    p.dir = i === 0 ? 1 : -1;
+    let k = p._entKind;
+    if (k === 'roll') { // Ranger: combat-roll in, come up spinning the pistol
+        if (prog < 0.45) {
+            p.x = from + (to - from) * (prog / 0.45);
+            p.tumbleTimer = 0.2; p._tumbleAngle += dt * 14 * p.dir; p.state = 'CROUCH';
+        } else { p.x = to; p.tumbleTimer = 0; p._tumbleAngle = 0; p.state = 'IDLE'; }
+    } else if (k === 'float') { // Mage: drifts in hovering, juggling sparks
+        p.x = from + (to - from) * Math.min(1, prog / 0.85);
+        let h = prog < 0.8 ? 24 + Math.sin(s.t * 4) * 3 : Math.max(0, 24 * (1 - (prog - 0.8) / 0.18));
+        p.y = GROUND_Y - h;
+        p.state = 'IDLE';
+        if (prog < 0.8 && Math.random() < 0.14) spawnParticles(p.x + p.dir * 10, p.y - 78, 1, '#c98bff');
+    } else if (k === 'levitate') { // Telepath: descends serenely from on high
+        p.x = from + (to - from) * Math.min(1, prog / 0.7);
+        p.y = GROUND_Y - 130 * (1 - Math.min(1, prog / 0.85));
+        p.state = 'IDLE';
+    } else if (k === 'mist') { // Phantom: rises out of the floor at his mark
+        p.x = to;
+        p.y = GROUND_Y + 70 * (1 - Math.min(1, prog / 0.85));
+        p._entAlpha = Math.min(1, prog / 0.7);
+        p.state = 'IDLE';
+        if (prog < 0.9 && Math.random() < 0.3) spawnParticles(to + (Math.random() - 0.5) * 44, GROUND_Y - 6, 1, '#cfd8ff');
+    } else if (k === 'allfours') { // Copy Cat: sprints in low, then stands and stretches
+        if (prog < 0.55) { p.x = from + (to - from) * (prog / 0.55); p.state = 'CROUCH'; }
+        else { p.x = to; p.state = 'IDLE'; }
+    } else if (k === 'stutter') { // Traveler: teleports forward in discrete skips
+        let steps = 4;
+        let q = Math.min(steps, Math.floor(Math.min(1, prog / 0.8) * (steps + 1)));
+        let nx = from + (to - from) * (q / steps);
+        if (p._lastStutterX !== nx) {
+            if (p._trail) p._trail.push({ x: p.x, y: p.y, dir: p.dir, age: 0 });
+            p._lastStutterX = nx;
+            if (prog > 0.05) spawnParticles(nx, GROUND_Y - 50, 5, '#6fd0ff');
+        }
+        p.x = nx; p.state = 'IDLE';
+    } else if (k === 'cartwheel') { // Twins: both flip in, the partner overtaking the lead
+        let pr = Math.min(1, prog / 0.7);
+        p.x = from + (to - from) * pr;
+        if (prog < 0.7) {
+            p.tumbleTimer = 0.2; p._tumbleAngle += dt * 10 * p.dir; p.state = 'JUMP';
+            p.y = GROUND_Y - Math.abs(Math.sin(prog * 12)) * 24;
+        } else { p.tumbleTimer = 0; p._tumbleAngle = 0; p.state = 'IDLE'; p.y = GROUND_Y; }
+        if (p.partner) {
+            let pf = from - p.dir * 46, pt = to + p.dir * 60;
+            p.partner.x = pf + (pt - pf) * pr;
+            p.partner.y = prog < 0.7 ? GROUND_Y - Math.abs(Math.cos(prog * 12)) * 24 : GROUND_Y;
+            p.partner.state = p.state; p.partner.animTimer = p.animTimer; p.partner.dir = p.dir;
+            p.partner.tumbleTimer = p.tumbleTimer; p.partner._tumbleAngle = -p._tumbleAngle;
+        }
+    } else { // walk-class entrances: jog / spinblade / stride / whip / procession
+        p.x = from + (to - from) * Math.min(1, prog / 0.82);
+        p.state = prog < 0.82 ? 'WALK' : 'IDLE';
+        if (k === 'procession' && prog < 0.78 && Math.random() < 0.09) spawnCultists(p.x, GROUND_Y, p.dir, 1, 'march');
+        if (k === 'stride' && prog < 0.82 && Math.random() < 0.4) spawnParticles(p.x - p.dir * 30, GROUND_Y - 5, 1, '#ff0033'); // dragged blade sparks
+    }
+}
+
+function finishEntranceSeq() {
+    let s = entranceSeq;
+    if (!s) return;
+    [players[0], players[1]].forEach((p, i) => {
+        if (!p) return;
+        p.x = s.targets[i]; p.y = GROUND_Y; p.vx = 0; p.vy = 0; p.state = 'IDLE'; p.stateTimer = 0;
+        p._entProg = null; p._entAlpha = null; p._lastStutterX = null;
+        p.tumbleTimer = 0; p._tumbleAngle = 0;
+        if (p.charType === 'TWINS' && p.partner) {
+            p.twinOffset = 60;
+            p.partner.x = p.x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE';
+            p.partner.tumbleTimer = 0; p.partner._tumbleAngle = 0;
+        }
+    });
+    if (players[0]) players[0].dir = 1;
+    if (players[1]) players[1].dir = -1;
+    entranceSeq = null;
+    ultCamera = null; // pan back out from the speaker to the full arena
+    if (s.showRound) roundAnnounce = { text: 'ROUND 1', t: 0, dur: 1.4 };
+    beginIntroSequence('round1'); // now the announcer takes the stage
+}
+
+// The typed speech bubble above whoever is talking
+function drawEntranceDialogue(c) {
+    if (!entranceSeq || entranceSeq.phase !== 'line' || !entranceSeq.script) return;
+    let s = entranceSeq;
+    let line = s.script[s.lineIdx];
+    let shown = line[1].slice(0, s.charIdx);
+    if (!shown.length) return;
+    // speaker is in world space; the camera is zoomed in on them — map to screen coords
+    let pos = entranceSpeakerPos(line);
+    let bx = (pos.x - camNow.x) * camNow.zoom + WIDTH / 2;
+    let by = (pos.y - camNow.y) * camNow.zoom + HEIGHT / 2;
+
+    c.save();
+    c.font = '15px Courier New';
+    // wrap the visible text at ~30 chars
+    let words = shown.split(' '), lines = [''], li = 0;
+    for (let w of words) {
+        if ((lines[li] + ' ' + w).trim().length > 30) { lines.push(w); li++; }
+        else lines[li] = (lines[li] + ' ' + w).trim();
+    }
+    let boxW = Math.max(...lines.map(l => c.measureText(l).width)) + 22;
+    let boxH = lines.length * 18 + 14;
+    let x = Math.max(12, Math.min(WIDTH - boxW - 12, bx - boxW / 2));
+    let y = Math.max(10, by - 118 * camNow.zoom - boxH); // clear the (zoomed) fighter's head
+    // bubble
+    c.fillStyle = 'rgba(6, 8, 12, 0.92)';
+    c.strokeStyle = '#fff'; c.lineWidth = 2;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, boxW, boxH, 7); else c.rect(x, y, boxW, boxH);
+    c.fill(); c.stroke();
+    // the little tail down toward the speaker
+    let tx = Math.max(x + 12, Math.min(x + boxW - 12, bx));
+    c.beginPath(); c.moveTo(tx - 7, y + boxH); c.lineTo(tx + 7, y + boxH); c.lineTo(tx, y + boxH + 10); c.closePath();
+    c.fillStyle = 'rgba(6, 8, 12, 0.92)'; c.fill(); c.stroke();
+    // text
+    c.fillStyle = '#fff'; c.textAlign = 'left'; c.textBaseline = 'top';
+    lines.forEach((l, i) => c.fillText(l, x + 11, y + 8 + i * 18));
+    c.restore();
+}
+
 function drawIntroText(ctx) {
     if (!introSequence || introSequence.done || !introSequence.text) return;
     let p = introSequence.phase === 'ready' ? introSequence.t / 1.45 : introSequence.t / 0.85;
@@ -1071,6 +1284,14 @@ function updateGameplay(dt) {
         return;
     }
     if (gameState !== 'PLAYING') return;
+    if (entranceSeq) { // pre-fight walk-ons + dialogue: the world waits while they talk
+        updateEntranceSeq(dt);
+        particles.forEach(p => p.update(dt));
+        particles = particles.filter(p => p.life > 0);
+        updateCultSummons(dt); // the Cult's procession files in during its entrance
+        Object.assign(previousKeys, keys);
+        return;
+    }
     if (introSequence && !introSequence.done) {
         particles.forEach(p => p.update(dt));
         particles = particles.filter(p => p.life > 0);
@@ -2084,6 +2305,7 @@ function draw() {
     drawUltBanner(ctx);
     drawRoundAnnounce(ctx);
     drawIntroText(ctx);
+    drawEntranceDialogue(ctx); // pre-fight banter bubbles
 }
 
 // Grave Grasp: clawed spectral hands clamped straight up around a rooted foe's legs.

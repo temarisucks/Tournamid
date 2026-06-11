@@ -3518,6 +3518,7 @@ class Fighter {
             ctx.globalAlpha = this._fadeIntangible ? 0.3 : flicker;
             if (!this.overkillRed && this.state !== 'HITSTUN') ctx.strokeStyle = '#dfe4f2';
         }
+        if (this._entAlpha != null) ctx.globalAlpha = (ctx.globalAlpha || 1) * this._entAlpha; // entrance materialisation
 
         if (this.beastMarkedTimer > 0) {
             let pulse = 1 + Math.sin(this.animTimer * 10) * 0.12;
@@ -5028,6 +5029,59 @@ class Fighter {
         ctx.moveTo(0, neckY);
         ctx.lineTo(0, pelvisY);
 
+        // --- PRE-FIGHT ENTRANCE FLOURISHES ---
+        // Applied over the base pose while walking on, easing out so every character
+        // settles smoothly into their idle by the time the banter starts.
+        if (this._entProg != null && this._entProg < 1 && this.state !== 'ATTACK') {
+            const ew = this._entProg < 0.68 ? 1 : Math.max(0, 1 - (this._entProg - 0.68) / 0.26); // fade into idle
+            const lerpE = (cur, tgt) => cur + (tgt - cur) * ew;
+            if (this.charType === 'BRAWLER') { // shadow-boxing the whole way in
+                let pn = Math.sin(t * 11);
+                rightArmAngle = lerpE(rightArmAngle, pn > 0 ? 1.55 : 2.35); rightArmBend = lerpE(rightArmBend, pn > 0 ? 0.05 : -0.95);
+                leftArmAngle = lerpE(leftArmAngle, pn > 0 ? 2.35 : 1.55); leftArmBend = lerpE(leftArmBend, pn > 0 ? -0.95 : 0.05);
+                headY += Math.abs(pn) * 1.5 * ew;
+            } else if (this.charType === 'SWORDSMAN') { // arm out, blade spinning (spin drawn at the weapon)
+                rightArmAngle = lerpE(rightArmAngle, 1.25); rightArmBend = lerpE(rightArmBend, 0.15);
+            } else if (this.charType === 'MAGE') { // juggling sparks overhead
+                let jg = Math.sin(t * 6);
+                rightArmAngle = lerpE(rightArmAngle, 1.8 + jg * 0.35); rightArmBend = lerpE(rightArmBend, 0.1);
+                leftArmAngle = lerpE(leftArmAngle, 1.95 - jg * 0.35); leftArmBend = lerpE(leftArmBend, -0.1);
+            } else if (this.charType === 'RANGER' && this._entProg > 0.45) { // up from the roll, pistol twirling
+                leftArmAngle = lerpE(leftArmAngle, 1.45); leftArmBend = lerpE(leftArmBend, -0.15);
+                rightArmAngle = lerpE(rightArmAngle, 0.5); rightArmBend = lerpE(rightArmBend, 0.6);
+            } else if (this.charType === 'DARK_RULER') { // greatsword dragged low behind him
+                rightArmAngle = lerpE(rightArmAngle, -1.15); rightArmBend = lerpE(rightArmBend, -0.2);
+                leftArmAngle = lerpE(leftArmAngle, 0.85); leftArmBend = lerpE(leftArmBend, 0.4);
+                torsoLean = lerpE(torsoLean, 0.14);
+            } else if (this.charType === 'TELEPATH') { // descending cross-legged, meditative
+                leftLegAngle = lerpE(leftLegAngle, -0.55); rightLegAngle = lerpE(rightLegAngle, 0.6);
+                leftLegBend = lerpE(leftLegBend, 1.15); rightLegBend = lerpE(rightLegBend, 1.1);
+                leftArmAngle = lerpE(leftArmAngle, 0.95); leftArmBend = lerpE(leftArmBend, 0.55);
+                rightArmAngle = lerpE(rightArmAngle, 1.0); rightArmBend = lerpE(rightArmBend, 0.5);
+            } else if (this.charType === 'BEAST_TAMER') { // one sharp whip crack on the way in
+                let ph2 = this._entProg;
+                if (ph2 > 0.45 && ph2 < 0.8) {
+                    let cr = (ph2 - 0.45) / 0.35;
+                    rightArmAngle = lerpE(rightArmAngle, 2.7 - cr * 1.7); rightArmBend = lerpE(rightArmBend, -0.7 + cr * 0.6);
+                }
+            } else if (this.charType === 'PHANTOM') { // arms drifting up as he surfaces
+                leftArmAngle = lerpE(leftArmAngle, 1.3 + Math.sin(t * 2) * 0.1); leftArmBend = lerpE(leftArmBend, 0.4);
+                rightArmAngle = lerpE(rightArmAngle, -1.2); rightArmBend = lerpE(rightArmBend, -0.4);
+            } else if (this.charType === 'COPYCAT') {
+                if (this._entProg < 0.55) { // sprinting on all fours
+                    leftArmAngle = lerpE(leftArmAngle, 1.5); leftArmBend = lerpE(leftArmBend, -0.25);
+                    rightArmAngle = lerpE(rightArmAngle, 1.65); rightArmBend = lerpE(rightArmBend, -0.2);
+                    torsoLean = lerpE(torsoLean, 0.55); headY += 10 * ew;
+                } else { // the big stand-up stretch
+                    leftArmAngle = lerpE(leftArmAngle, -3.0); leftArmBend = lerpE(leftArmBend, -0.15);
+                    rightArmAngle = lerpE(rightArmAngle, 3.0); rightArmBend = lerpE(rightArmBend, 0.15);
+                    torsoLean = lerpE(torsoLean, -0.08); headY -= 3 * ew;
+                }
+            }
+            // CULT keeps its clasped processional walk; TWINS cartwheel via the tumble;
+            // TRAVELER's stutter-skips + watch-check idle carry themselves.
+        }
+
         // Two-bone limb with real, fixed-length bones. `angle` is the overall
         // reach direction (0 = straight down, +angle = toward the facing side),
         // `bend` flexes the joint: the upper bone rotates by +bend and the lower
@@ -5541,11 +5595,14 @@ class Fighter {
         } else if (this.charType === 'DARK_RULER') {
             if (this.stageSeat) {
                 drawBigSword(rHandX + 9, rHandY + 54, -Math.PI / 2);
+            } else if (this._entProg != null && this._entProg < 0.8) {
+                drawBigSword(rHandX, rHandY, 2.62); // dragged low behind him, tip scoring the floor
             } else {
                 drawBigSword(rHandX, rHandY, rForeAng);
             }
         } else if (this.charType === 'SWORDSMAN') {
-            drawSword(rHandX, rHandY, rForeAng);
+            // entrance: the blade twirls in his grip on the walk-in, then settles to the forearm
+            drawSword(rHandX, rHandY, (this._entProg != null && this._entProg < 0.8) ? this.animTimer * 13 : rForeAng);
             // Rising Crescent: trace the vertical half-circle the blade sweeps
             if (this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'risingSlash') {
                 let a = this.currentAttack;
@@ -5564,7 +5621,8 @@ class Fighter {
             // Dual wield: gun + knife are always both shown. The firing hand holds
             // the gun during gun attacks; otherwise the lead hand slashes the knife.
             drawKnife(rHandX, rHandY, rForeAng);
-            drawGun(lHandX, lHandY, lForeAng);
+            // entrance: comes up from the roll twirling the pistol, then it settles in-hand (never holstered)
+            drawGun(lHandX, lHandY, (this._entProg != null && this._entProg > 0.45 && this._entProg < 0.88) ? this.animTimer * 15 : lForeAng);
         } else if (this.charType === 'TRAVELER' && this.state === 'ATTACK' && this.currentAttack &&
                    (this.currentAttack.type === 'phaseJab' || this.currentAttack.type === 'flashKick')) {
             // Skipped-frame ghosts: the strike positions he edited out, hanging in the air

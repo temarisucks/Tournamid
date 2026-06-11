@@ -849,6 +849,7 @@ function startGame() {
     document.querySelectorAll('.round-pips').forEach(el => el.classList.toggle('hidden', !showRounds));
     if (showRounds) { renderRoundPips(); roundAnnounce = { text: "ROUND 1", t: 0, dur: 1.4 }; }
     beginIntroSequence('round1');
+    startEntranceSequence(); // walk-ons + banter before the announcer (skippable)
 
     updateHUD();
     gameState = 'PLAYING';
@@ -979,6 +980,7 @@ function startLadderBattle(index) {
     if (!teamFight) renderRoundPips();
     roundAnnounce = { text: "ROUND 1", t: 0, dur: 1.4 };
     beginIntroSequence('round1');
+    startEntranceSequence(); // walk-ons + banter before the announcer (skippable)
     updateHUD();
     gameState = 'PLAYING';
     music.resetFightPick();
