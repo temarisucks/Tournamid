@@ -2853,7 +2853,7 @@ class Fighter {
             proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
         }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
-        if (subtype === 'vortex') { proj.benign = true; this.vortexCd = 5; } // never strikes on contact — its pull/core does the work; 5s before the next one
+        if (subtype === 'vortex') { proj.benign = true; this.vortexCd = 1.5; } // never strikes on contact — its pull/core does the work; brief breather before the next one
         // Grave Drag (mistChain) is blockable — a guarded hit returns false from takeDamage, so the yank won't fire
         projectiles.push(proj);
     }
