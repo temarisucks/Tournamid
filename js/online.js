@@ -555,6 +555,18 @@ function onlineFixedUpdate(realDt) {
         // HOST — the one true simulation, identical to offline play
         onlineHostConsumeGuestInput();
         updateGameplay(realDt * timeScale);
+        // impact-triggered snapshot: the moment any HP changes, ship the state NOW
+        // instead of waiting for the next 33ms tick — hits land visibly sooner
+        let hpSig = players.map(p => (p ? Math.round(p.hp) : 0)).join(',');
+        if (hpSig !== onlineState.lastHpSig) {
+            onlineState.lastHpSig = hpSig;
+            // ROUND_END / END included: the killing blow flips the state in the SAME frame,
+            // and without this final snapshot the guest never saw hp hit 0 or the loser fall
+            if (gameState === 'PLAYING' || gameState === 'ROUND_END' || gameState === 'END') {
+                onlineState.snapTimer = 0;
+                onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
+            }
+        }
     } else {
         // GUEST — thin client: report inputs, animate the last snapshot forward
         if (gameState === 'PLAYING') onlineGuestSendInput(realDt);
@@ -630,7 +642,7 @@ function onlineHostCaptureSnapshot() {
 // ---------------- GUEST: SNAPSHOT APPLY + LOCAL FX ----------------
 function onlineGuestApplySnapshot(snap) {
     if (onlineState.slot !== 1 || !snap || !Array.isArray(snap.players)) return;
-    if (gameState !== 'PLAYING' && gameState !== 'ROUND_END') return;
+    if (gameState !== 'PLAYING' && gameState !== 'ROUND_END' && gameState !== 'END') return;
     onlineState.lastSnapAt = performance.now();
     onlineState.snapAgeMs = 0;
 
