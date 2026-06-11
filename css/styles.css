@@ -268,3 +268,56 @@
         .info-card li { font-size: 0.8rem; color: #ddd; margin-bottom: 6px; line-height: 1.4; }
         .info-card li b { color: #fff; }
         .info-card li .dir { display: inline-block; min-width: 60px; color: #ff6680; font-weight: bold; }
+
+        /* ==================== UI OVERHAUL: FIGHT-POSTER MENUS ==================== */
+        /* Type system: tall condensed display type for anything loud, a sharp
+           athletic sans for everything readable. */
+        body, button, input, select { font-family: 'Rajdhani', 'Courier New', monospace; }
+        h1, h2, h3, .btn, .menu-btn, .train-toggle, .dummy-btn, #boot-enter, .char-name, #timer, .menu-sub-title { font-family: 'Bebas Neue', 'Courier New', monospace; letter-spacing: 3px; font-weight: normal; }
+
+        /* Angular ticket-stub buttons: slanted ends, thick red spine, slide-fill hover */
+        .btn { clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%); border: none; border-left: 5px solid #ff0033; background: #121212; color: #eee; padding: 10px 36px; font-size: 1.3rem; letter-spacing: 4px; transition: 0.14s; }
+        .btn:hover { background: #ff0033; color: #000; transform: translateX(8px) skewX(-2deg); font-weight: normal; }
+        .btn:disabled { background: #0c0c0c; border-left-color: #444; transform: none; }
+
+        /* Section headers read like fight-card listings */
+        h2 { letter-spacing: 6px; }
+        h2::before { content: "// "; color: #ff0033; }
+        h2::after { content: " //"; color: #ff0033; }
+
+        /* MAIN MENU — left-aligned poster layout over the blood splatter */
+        #menu-screen { align-items: flex-start; padding-left: 86px; background: linear-gradient(115deg, transparent 54%, rgba(255,0,51,0.08) 54%, rgba(255,0,51,0.08) 74%, transparent 74%), radial-gradient(circle at 32% 40%, #181818 0%, #070707 45%, #000 78%); }
+        #menu-blood { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.5; z-index: 0; pointer-events: none; }
+        #menu-screen .title-glitch { font-size: 6.4rem; letter-spacing: 10px; line-height: 0.92; text-align: left; margin-bottom: 2px; text-shadow: 6px 6px 0 #ff0033; }
+        #menu-screen .tagline { margin: 8px 0 34px 4px; font-size: 0.95rem; letter-spacing: 5px; }
+        #menu-screen .tagline::before { width: 40px; margin: 0 12px 0 0; }
+        #menu-screen .tagline::after { width: 40px; margin: 0 0 0 12px; }
+        .menu-buttons { display: flex; flex-direction: column; gap: 12px; align-items: stretch; width: 360px; counter-reset: menuidx; }
+        .menu-btn { counter-increment: menuidx; display: flex; align-items: baseline; text-align: left; font-size: 1.5rem; }
+        .menu-btn::before { content: "0" counter(menuidx); color: #ff0033; font-size: 0.95rem; margin-right: 16px; letter-spacing: 1px; }
+        .menu-btn:hover::before { color: #000; }
+        .menu-btn.primary { font-size: 1.9rem; border-left-width: 8px; }
+        .menu-version { font-family: 'Rajdhani', monospace; letter-spacing: 2px; }
+
+        /* Cards get clipped corners + red glow (filter, so the glow survives the clip) */
+        .char-card, .stage-card { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); transition: 0.15s; }
+        .char-card:hover, .stage-card:hover, .char-card.selected, .stage-card.selected { transform: translateY(-4px); border-color: #ff0033; box-shadow: none; filter: drop-shadow(0 0 14px rgba(255,0,51,0.5)); }
+
+        /* ==================== BOOT SEQUENCE ==================== */
+        #boot-screen { position: absolute; inset: 0; z-index: 80; background: #040404; display: flex; align-items: center; justify-content: center; transition: opacity 0.7s ease 0.5s; }
+        #boot-screen.revealing { opacity: 0; pointer-events: none; }
+        #boot-screen.boot-done { display: none; }
+        #boot-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #boot-enter { position: relative; z-index: 2; font-size: 3rem; letter-spacing: 14px; padding: 18px 64px 14px 78px; background: transparent; color: #fff; border: 2px solid #fff; cursor: pointer; transition: 0.2s; animation: bootPulse 1.6s ease-in-out infinite; }
+        #boot-enter:hover { background: #ff0033; border-color: #ff0033; color: #000; }
+        #boot-enter.gone { opacity: 0; pointer-events: none; transition: opacity 0.25s; animation: none; }
+        @keyframes bootPulse { 0%, 100% { box-shadow: 0 0 0 rgba(255,0,51,0); } 50% { box-shadow: 0 0 34px rgba(255,0,51,0.55); } }
+        #boot-screen.punched { animation: bootShake 0.2s; }
+        @keyframes bootShake { 0% { transform: translate(0, 0); } 25% { transform: translate(-13px, 9px); } 50% { transform: translate(10px, -7px); } 75% { transform: translate(-6px, 4px); } 100% { transform: translate(0, 0); } }
+        #boot-screen.punched::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at var(--fx, 50%) var(--fy, 50%), rgba(255,255,255,0.9), rgba(255,255,255,0) 42%); animation: bootFlash 0.24s forwards; }
+        @keyframes bootFlash { to { opacity: 0; } }
+
+        /* Fix: the legacy sheen effect also used .menu-btn::before (absolutely positioned
+           off-screen) — fully reset it so the index number renders inline instead. */
+        .menu-btn::before { position: static; left: auto; top: auto; width: auto; height: auto; transform: none; background: none; transition: none; }
+        .menu-btn { min-width: 0; backdrop-filter: none; }

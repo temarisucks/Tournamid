@@ -1,5 +1,70 @@
 // --- MENU & FLOW CONTROLLERS ---
 
+// ---------------- BOOT SEQUENCE ----------------
+// ENTER → three punches land on the screen (shake + flash), and on the third a
+// blood splatter erupts across the background as the menu reveals itself.
+let bootStarted = false;
+function startBootSequence() {
+    if (bootStarted) return;
+    bootStarted = true;
+    sfx.init(); // the ENTER click is the user gesture that unlocks audio
+    let boot = document.getElementById('boot-screen');
+    let btn = document.getElementById('boot-enter');
+    if (btn) btn.classList.add('gone');
+    const punch = n => {
+        playAudio(attackSfx.punch);
+        // each punch lands somewhere new — flash there + shake the whole screen
+        boot.style.setProperty('--fx', (30 + Math.random() * 40) + '%');
+        boot.style.setProperty('--fy', (30 + Math.random() * 40) + '%');
+        boot.classList.remove('punched');
+        void boot.offsetWidth; // restart the shake/flash animations
+        boot.classList.add('punched');
+        if (n === 3) {
+            let cv = document.getElementById('boot-canvas');
+            if (cv) paintBloodSplats(cv.getContext('2d'), 26);
+            paintMenuBlood(); // the splatter stays on the menu behind everything
+            boot.classList.add('revealing');
+            setTimeout(() => boot.classList.add('boot-done'), 1300);
+        }
+    };
+    setTimeout(() => punch(1), 380);
+    setTimeout(() => punch(2), 860);
+    setTimeout(() => punch(3), 1340);
+}
+
+// Random gore: splat blobs, satellite droplets, and the occasional drip run
+function paintBloodSplats(c2, count) {
+    for (let i = 0; i < count; i++) {
+        let x = Math.random() * 1024, y = Math.random() * 576;
+        let r = 8 + Math.random() * 46;
+        c2.fillStyle = Math.random() < 0.5 ? '#ff0033' : '#a40022';
+        c2.globalAlpha = 0.6 + Math.random() * 0.4;
+        c2.beginPath();
+        c2.ellipse(x, y, r, r * (0.55 + Math.random() * 0.55), Math.random() * Math.PI, 0, Math.PI * 2);
+        c2.fill();
+        for (let d = 0; d < 6; d++) { // satellite droplets flung outward
+            let a = Math.random() * Math.PI * 2, dist = r + Math.random() * r * 2.4;
+            c2.beginPath();
+            c2.arc(x + Math.cos(a) * dist, y + Math.sin(a) * dist, 1.4 + Math.random() * 5, 0, Math.PI * 2);
+            c2.fill();
+        }
+        if (Math.random() < 0.4) c2.fillRect(x - 2, y, 4, r * 2 + Math.random() * 70); // drip run
+    }
+    c2.globalAlpha = 1;
+}
+
+// A lighter copy of the splatter lives permanently behind the main menu
+function paintMenuBlood() {
+    let menu = document.getElementById('menu-screen');
+    if (!menu || document.getElementById('menu-blood')) return;
+    let cv = document.createElement('canvas');
+    cv.id = 'menu-blood';
+    cv.width = 1024; cv.height = 576;
+    menu.prepend(cv);
+    let c2 = cv.getContext('2d');
+    paintBloodSplats(c2, 14);
+}
+
 function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     if (id) document.getElementById(id).classList.remove('hidden');
