@@ -174,7 +174,10 @@ const music = {
         pStreet: makeMusic('audio/music/Tournamid - P Street.wav'),
         championsArena: makeMusic('audio/music/Tournamid - Champions Arena.wav'),
         livingGraveyard: makeMusic('audio/music/Tournamid - Living Graveyard.wav'),
-        darkCastle: makeMusic('audio/music/Tournamid - Dark Castle.wav')
+        darkCastle: makeMusic('audio/music/Tournamid - Dark Castle.wav'),
+        clockworkTower: makeMusic('audio/music/Tournamid - Clockworkx Tower.wav'),
+        endWorld: makeMusic('audio/music/Tournamid - End of the World.wav'),
+        megaMansion: makeMusic('audio/music/Tournamid - Mega Mansion.wav')
     },
     fallbackStages: ['dojo', 'moonBridge', 'bloodBall', 'pStreet'],
     fallbackPick: null,
@@ -587,7 +590,10 @@ const STAGES = {
     bloodBall: { name: 'Blood Ball' },
     championsArena: { name: "Champions Arena" },
     livingGraveyard: { name: 'Living Graveyard' },
-    darkCastle: { name: "Dark King's Castle" }
+    darkCastle: { name: "Dark King's Castle" },
+    clockworkTower: { name: 'Clockworkx Tower' },
+    endWorld: { name: 'The End of the World' },
+    megaMansion: { name: 'Mega Mansion' }
 };
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)
@@ -624,6 +630,13 @@ function stagePlatformLayout(w, gy, h) {
 }
 function stageGeometry(stageId, w, gy, h) {
     if (stageId === 'platform') return stagePlatformLayout(w, gy, h);
+    if (stageId === 'endWorld') {
+        return {
+            ringOut: true,
+            main: { left: w * 0.18, right: w * 0.82, top: gy - h * 0.08 },
+            platforms: []
+        };
+    }
     // Default stages: one solid full-width floor, no ring-out
     return { ringOut: false, main: { left: 0, right: w, top: gy }, platforms: [] };
 }
@@ -631,6 +644,25 @@ let _geoCache = {};
 function getStageGeo() {
     if (!_geoCache[selectedStage]) _geoCache[selectedStage] = stageGeometry(selectedStage, WIDTH, GROUND_Y, HEIGHT);
     return _geoCache[selectedStage];
+}
+
+function stageFloorAt(x) {
+    let g = getStageGeo();
+    let best = null;
+    if (x >= g.main.left && x <= g.main.right) best = g.main.top;
+    for (let pl of g.platforms) {
+        if (x >= pl.left && x <= pl.right) {
+            if (best === null || pl.top < best) best = pl.top;
+        }
+    }
+    return best;
+}
+
+function stageGroundYAt(x, fallback = GROUND_Y) {
+    let y = stageFloorAt(x);
+    if (y !== null) return y;
+    let g = getStageGeo();
+    return g.ringOut ? g.main.top : fallback;
 }
 
 // Audio Setup using Tone.js

@@ -143,9 +143,10 @@ function updateConsecrateZones(dt) {
         if (z.t >= z.life) continue;
         if (z.tick <= 0) {
             z.tick = 0.4;
+            let zy = z.y == null ? stageGroundYAt(z.x) : z.y;
             for (let p of players) {
                 if (!p || p.team === z.team || p.state === 'DEAD') continue;
-                if (Math.abs(p.x - z.x) <= z.radius && p.y >= GROUND_Y - 4) {
+                if (Math.abs(p.x - z.x) <= z.radius && Math.abs(p.y - zy) <= 42) {
                     p.takeDamage(2, { x: 0, y: 0 }, 0.12, z.owner, { unblockable: true }); // chip
                     p.meter = Math.max(0, p.meter - 6); // siphon their meter
                     if (z.owner && !z.owner.lumActive) z.owner.meter = Math.min(z.owner.meterMax, z.owner.meter + 3); // feed the install
@@ -160,14 +161,15 @@ function drawConsecrateZones(c) {
     for (let z of consecrateZones) {
         let life = 1 - z.t / z.life;
         let pulse = 0.5 + 0.5 * Math.sin(performance.now() / 140);
+        let zy = z.y == null ? stageGroundYAt(z.x) : z.y;
         c.save();
         c.globalAlpha = Math.min(1, life * 1.5);
         c.strokeStyle = '#ff0033'; c.lineWidth = 2; c.shadowBlur = 12; c.shadowColor = '#ff0033';
-        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius, 14 + pulse * 3, 0, 0, Math.PI * 2); c.stroke();
-        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius * 0.6, 9 + pulse * 2, 0, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.ellipse(z.x, zy - 2, z.radius, 14 + pulse * 3, 0, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.ellipse(z.x, zy - 2, z.radius * 0.6, 9 + pulse * 2, 0, 0, Math.PI * 2); c.stroke();
         // a ring of ritual ticks
         c.strokeStyle = 'rgba(255,255,255,0.5)';
-        for (let i = 0; i < 8; i++) { let a = i / 8 * Math.PI * 2 + z.t; let ex = z.x + Math.cos(a) * z.radius, ey = GROUND_Y - 2 + Math.sin(a) * (14 + pulse * 3); c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex, ey - 10); c.stroke(); }
+        for (let i = 0; i < 8; i++) { let a = i / 8 * Math.PI * 2 + z.t; let ex = z.x + Math.cos(a) * z.radius, ey = zy - 2 + Math.sin(a) * (14 + pulse * 3); c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex, ey - 10); c.stroke(); }
         c.restore();
     }
 }
@@ -177,12 +179,13 @@ function updateCultTraps(dt) {
     for (let z of cultTraps) {
         z.t += dt;
         if (z.triggered || z.t < z.arm || z.t >= z.life) continue;
+        let zy = z.y == null ? stageGroundYAt(z.x) : z.y;
         for (let p of players) {
             if (!p || p.team === z.team || p.state === 'DEAD') continue;
-            if (Math.abs(p.x - z.x) <= z.radius && p.y >= GROUND_Y - 30) {
+            if (Math.abs(p.x - z.x) <= z.radius && Math.abs(p.y - zy) <= 54) {
                 z.triggered = true;
                 p.takeDamage(12, { x: 0, y: -380 }, 0.6, z.owner, { unblockable: true }); // snap shut + pop up
-                spawnParticles(z.x, GROUND_Y - 10, 24, '#ff0033'); spawnParticles(z.x, GROUND_Y - 10, 12, '#fff');
+                spawnParticles(z.x, zy - 10, 24, '#ff0033'); spawnParticles(z.x, zy - 10, 12, '#fff');
                 break;
             }
         }
@@ -193,13 +196,14 @@ function drawCultTraps(c) {
     for (let z of cultTraps) {
         let armed = z.t >= z.arm;
         let pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+        let zy = z.y == null ? stageGroundYAt(z.x) : z.y;
         c.save();
         c.globalAlpha = z.t > z.life - 0.6 ? Math.max(0, (z.life - z.t) / 0.6) : (armed ? 1 : 0.55);
         c.strokeStyle = armed ? '#ff0033' : '#888'; c.lineWidth = 2; c.shadowBlur = armed ? 10 : 0; c.shadowColor = '#ff0033';
-        c.beginPath(); c.ellipse(z.x, GROUND_Y - 2, z.radius, 10, 0, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.ellipse(z.x, zy - 2, z.radius, 10, 0, 0, Math.PI * 2); c.stroke();
         c.fillStyle = armed ? '#ff0033' : '#666';
         for (let i = 0; i < 8; i++) { // jagged snare teeth
-            let a = i / 8 * Math.PI * 2, ex = z.x + Math.cos(a) * z.radius, ey = GROUND_Y - 2 + Math.sin(a) * 10;
+            let a = i / 8 * Math.PI * 2, ex = z.x + Math.cos(a) * z.radius, ey = zy - 2 + Math.sin(a) * 10;
             c.beginPath(); c.moveTo(ex - 3, ey); c.lineTo(ex + 3, ey); c.lineTo(ex, ey - 7 - (armed ? pulse * 3 : 0)); c.closePath(); c.fill();
         }
         c.restore();
@@ -1428,6 +1432,132 @@ function drawThroneDarkRuler(c, x, y, scale) {
     c.restore();
 }
 
+function getNewYorkClockParts() {
+    try {
+        let parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour12: false,
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric'
+        }).formatToParts(new Date());
+        let value = type => Number((parts.find(p => p.type === type) || {}).value || 0);
+        return { hour: value('hour') % 12, minute: value('minute'), second: value('second') };
+    } catch (e) {
+        let now = new Date();
+        return { hour: now.getHours() % 12, minute: now.getMinutes(), second: now.getSeconds() };
+    }
+}
+
+function drawReversedClock(c, cx, cy, r) {
+    let time = getNewYorkClockParts();
+    c.save();
+    c.translate(cx, cy);
+    c.fillStyle = '#050505';
+    c.strokeStyle = '#9a9a9a';
+    c.lineWidth = Math.max(2, r * 0.018);
+    c.shadowBlur = r * 0.18;
+    c.shadowColor = 'rgba(255,255,255,0.28)';
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.shadowBlur = 0;
+
+    c.strokeStyle = 'rgba(255,255,255,0.24)';
+    for (let i = 0; i < 60; i++) {
+        let a = -(i / 60 * Math.PI * 2 - Math.PI / 2);
+        let inner = i % 5 === 0 ? r * 0.83 : r * 0.9;
+        c.lineWidth = i % 5 === 0 ? Math.max(2, r * 0.012) : 1;
+        c.beginPath();
+        c.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+        c.lineTo(Math.cos(a) * r * 0.95, Math.sin(a) * r * 0.95);
+        c.stroke();
+    }
+
+    c.strokeStyle = 'rgba(255,255,255,0.11)';
+    c.lineWidth = Math.max(1, r * 0.008);
+    for (let ring = 0; ring < 4; ring++) {
+        c.beginPath();
+        c.arc(0, 0, r * (0.32 + ring * 0.14), 0, Math.PI * 2);
+        c.stroke();
+    }
+    c.strokeStyle = 'rgba(255,0,51,0.24)';
+    for (let i = 0; i < 5; i++) {
+        let a = -0.9 + i * 0.42;
+        c.beginPath();
+        c.moveTo(Math.cos(a) * r * 0.18, Math.sin(a) * r * 0.18);
+        c.lineTo(Math.cos(a + 0.08) * r * (0.58 + i * 0.04), Math.sin(a + 0.08) * r * (0.58 + i * 0.04));
+        c.lineTo(Math.cos(a - 0.22) * r * (0.72 - i * 0.03), Math.sin(a - 0.22) * r * (0.72 - i * 0.03));
+        c.stroke();
+    }
+
+    const hand = (angle, len, color, width) => {
+        c.strokeStyle = color;
+        c.lineWidth = width;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.moveTo(0, 0);
+        c.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+        c.stroke();
+    };
+    let secA = -(time.second / 60 * Math.PI * 2 - Math.PI / 2);
+    let minA = -(((time.minute + time.second / 60) / 60) * Math.PI * 2 - Math.PI / 2);
+    let hourA = -(((time.hour + time.minute / 60) / 12) * Math.PI * 2 - Math.PI / 2);
+    hand(hourA, r * 0.42, '#f1f1f1', Math.max(4, r * 0.035));
+    hand(minA, r * 0.61, '#cfcfcf', Math.max(3, r * 0.025));
+    hand(secA, r * 0.74, '#ff0033', Math.max(1.5, r * 0.012));
+    c.fillStyle = '#fff';
+    c.beginPath();
+    c.arc(0, 0, r * 0.035, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+}
+
+function drawClockGear(c, x, y, r, teeth, rot, alpha) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.globalAlpha = alpha;
+    c.strokeStyle = '#5a5a5a';
+    c.fillStyle = '#090909';
+    c.lineWidth = Math.max(1.5, r * 0.07);
+    c.beginPath();
+    for (let i = 0; i < teeth * 2; i++) {
+        let a = i / (teeth * 2) * Math.PI * 2;
+        let rr = i % 2 ? r * 0.92 : r * 1.1;
+        let px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 0, r * 0.48, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
+}
+
+function drawMansionPortrait(c, x, y, w, h, label) {
+    c.save();
+    c.fillStyle = '#080808';
+    c.strokeStyle = '#777';
+    c.lineWidth = 2;
+    c.fillRect(x, y, w, h);
+    c.strokeRect(x, y, w, h);
+    c.strokeStyle = 'rgba(255,255,255,0.25)';
+    c.beginPath();
+    c.arc(x + w * 0.5, y + h * 0.36, w * 0.16, 0, Math.PI * 2);
+    c.moveTo(x + w * 0.28, y + h * 0.78);
+    c.quadraticCurveTo(x + w * 0.5, y + h * 0.52, x + w * 0.72, y + h * 0.78);
+    c.stroke();
+    c.fillStyle = '#aaa';
+    c.font = `bold ${Math.max(7, h * 0.09)}px Courier New`;
+    c.textAlign = 'center';
+    c.fillText(label, x + w * 0.5, y + h * 0.94);
+    c.restore();
+}
+
 function drawStage(targetCtx, stageId, width, height, groundY) {
     targetCtx.fillStyle = '#050505';
     targetCtx.fillRect(0, 0, width, height);
@@ -1519,6 +1649,395 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         // main island (deep) then the floating platforms
         slab(lay.main.left, lay.main.right, lay.main.top, Math.max(34, height * 0.13), '#e8e8e8');
         lay.platforms.forEach(p => slab(p.left, p.right, p.top, Math.max(14, height * 0.05), '#9ad8ff'));
+    } else if (stageId === 'clockworkTower') {
+        let t = performance.now() / 1000;
+        let sky = targetCtx.createRadialGradient(width * 0.5, height * 0.35, height * 0.08, width * 0.5, height * 0.4, height * 0.75);
+        sky.addColorStop(0, '#303030');
+        sky.addColorStop(0.52, '#070707');
+        sky.addColorStop(1, '#010101');
+        targetCtx.fillStyle = sky;
+        targetCtx.fillRect(0, 0, width, height);
+
+        // timber ribs, hanging chains, and the inner shell of the tower.
+        targetCtx.strokeStyle = '#202020';
+        targetCtx.lineWidth = Math.max(7, width * 0.009);
+        for (let i = 0; i < 8; i++) {
+            let x = width * (0.02 + i * 0.14);
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, 0);
+            targetCtx.lineTo(width * 0.5 + (x - width * 0.5) * 0.28, groundY);
+            targetCtx.stroke();
+        }
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.13)';
+        targetCtx.lineWidth = 1;
+        for (let i = 0; i < 7; i++) {
+            let x = width * (0.11 + i * 0.13);
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, 0);
+            for (let y = 12; y < groundY - height * 0.08; y += height * 0.045) {
+                targetCtx.lineTo(x + Math.sin(y * 0.05 + i) * width * 0.006, y);
+            }
+            targetCtx.stroke();
+        }
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.07)';
+        targetCtx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+            let y = height * (0.1 + i * 0.075);
+            targetCtx.beginPath();
+            targetCtx.ellipse(width * 0.5, y, width * (0.48 - i * 0.025), height * 0.055, 0, 0, Math.PI * 2);
+            targetCtx.stroke();
+        }
+
+        drawClockGear(targetCtx, width * 0.22, height * 0.26, height * 0.075, 12, -t * 0.22, 0.5);
+        drawClockGear(targetCtx, width * 0.77, height * 0.31, height * 0.095, 16, t * 0.18, 0.45);
+        drawClockGear(targetCtx, width * 0.32, height * 0.57, height * 0.06, 10, t * 0.28, 0.35);
+        drawClockGear(targetCtx, width * 0.68, height * 0.56, height * 0.07, 14, -t * 0.24, 0.35);
+        drawClockGear(targetCtx, width * 0.5, height * 0.62, height * 0.08, 18, t * 0.16, 0.26);
+        drawReversedClock(targetCtx, width * 0.5, height * 0.33, height * 0.22);
+        targetCtx.save();
+        targetCtx.globalAlpha = 0.34 + Math.sin(t * 1.5) * 0.08;
+        targetCtx.strokeStyle = '#ff0033';
+        targetCtx.shadowBlur = 18;
+        targetCtx.shadowColor = '#ff0033';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.5, height * 0.55);
+        targetCtx.bezierCurveTo(width * 0.43, height * 0.58, width * 0.57, height * 0.64, width * 0.49, height * 0.69);
+        targetCtx.stroke();
+        targetCtx.restore();
+
+        // catwalk floor
+        targetCtx.fillStyle = '#070707';
+        targetCtx.fillRect(0, groundY - height * 0.035, width, height * 0.035);
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        targetCtx.strokeStyle = '#8c8c8c';
+        targetCtx.lineWidth = 2.5;
+        targetCtx.beginPath();
+        targetCtx.moveTo(0, groundY);
+        targetCtx.lineTo(width, groundY);
+        targetCtx.stroke();
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+        targetCtx.lineWidth = 1;
+        for (let x = -20; x < width + 30; x += width * 0.055) {
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, groundY);
+            targetCtx.lineTo(x + width * 0.04, groundY - height * 0.035);
+            targetCtx.stroke();
+        }
+    } else if (stageId === 'endWorld') {
+        let t = performance.now() / 1000;
+        let geo = stageGeometry(stageId, width, groundY, height);
+        let sky = targetCtx.createLinearGradient(0, 0, 0, height);
+        sky.addColorStop(0, '#232323');
+        sky.addColorStop(0.32, '#080808');
+        sky.addColorStop(0.68, '#020202');
+        sky.addColorStop(1, '#000');
+        targetCtx.fillStyle = sky;
+        targetCtx.fillRect(0, 0, width, height);
+
+        // Fast downward-moving debris sells that the battlefield is rising hard.
+        for (let i = 0; i < 58; i++) {
+            let seed = i * 97.13;
+            let x = (Math.sin(seed) * 0.5 + 0.5) * width;
+            let y = ((t * (92 + i % 7 * 21) + seed) % (height + 150)) - 75;
+            let s = height * (0.006 + (i % 6) * 0.004);
+            targetCtx.save();
+            targetCtx.translate(x, y);
+            targetCtx.rotate(seed + t * (0.8 + (i % 5) * 0.18));
+            targetCtx.fillStyle = i % 6 === 0 ? 'rgba(255,0,51,0.32)' : 'rgba(230,230,230,0.16)';
+            targetCtx.beginPath();
+            targetCtx.moveTo(-s, -s * 0.5);
+            targetCtx.lineTo(s * 0.8, -s);
+            targetCtx.lineTo(s * 0.45, s);
+            targetCtx.lineTo(-s * 0.8, s * 0.7);
+            targetCtx.closePath();
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        // broken horizon, cracked red moon, and reality scars
+        targetCtx.save();
+        targetCtx.globalAlpha = 0.85;
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+        targetCtx.lineWidth = 2;
+        for (let i = 0; i < 10; i++) {
+            let x = width * (0.12 + i * 0.13);
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, height * 0.04);
+            targetCtx.lineTo(x + Math.sin(i) * width * 0.05, height * (0.24 + (i % 3) * 0.05));
+            targetCtx.lineTo(x - width * 0.035, height * (0.38 + (i % 2) * 0.07));
+            targetCtx.stroke();
+        }
+        let moonX = width * 0.78, moonY = height * 0.18, moonR = height * 0.19;
+        targetCtx.globalAlpha = 1;
+        targetCtx.shadowBlur = 72;
+        targetCtx.shadowColor = '#ff0033';
+        targetCtx.fillStyle = 'rgba(255,0,51,0.26)';
+        targetCtx.strokeStyle = 'rgba(255,0,51,0.95)';
+        targetCtx.lineWidth = Math.max(3, width * 0.004);
+        targetCtx.beginPath();
+        targetCtx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.stroke();
+        targetCtx.shadowBlur = 28;
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.46)';
+        for (let i = 0; i < 7; i++) {
+            let a = -1.1 + i * 0.34 + Math.sin(t * 0.5 + i) * 0.03;
+            targetCtx.beginPath();
+            targetCtx.moveTo(moonX + Math.cos(a) * moonR * 0.2, moonY + Math.sin(a) * moonR * 0.2);
+            targetCtx.lineTo(moonX + Math.cos(a + 0.18) * moonR * (0.55 + i * 0.04), moonY + Math.sin(a + 0.18) * moonR * (0.55 + i * 0.04));
+            targetCtx.lineTo(moonX + Math.cos(a - 0.14) * moonR * 0.92, moonY + Math.sin(a - 0.14) * moonR * 0.92);
+            targetCtx.stroke();
+        }
+        targetCtx.shadowBlur = 18;
+        targetCtx.strokeStyle = '#ff0033';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath();
+        targetCtx.arc(moonX - moonR * 0.08, moonY + moonR * 0.04, moonR * 1.22, 0.38, Math.PI * 1.28);
+        targetCtx.stroke();
+        targetCtx.restore();
+
+        // Event bursts: a falling city slab, a beam, and a giant eye flare cycle in and out.
+        let eventPhase = (t % 9) / 9;
+        if (eventPhase < 0.28) {
+            let p = eventPhase / 0.28;
+            targetCtx.save();
+            targetCtx.translate(width * (0.15 + p * 0.5), height * (-0.12 + p * 0.55));
+            targetCtx.rotate(-0.7 + p * 0.6);
+            targetCtx.fillStyle = 'rgba(28,28,28,0.9)';
+            targetCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+            targetCtx.lineWidth = 2;
+            targetCtx.fillRect(-width * 0.09, -height * 0.035, width * 0.18, height * 0.07);
+            targetCtx.strokeRect(-width * 0.09, -height * 0.035, width * 0.18, height * 0.07);
+            for (let i = 0; i < 7; i++) {
+                targetCtx.fillStyle = i % 3 === 0 ? 'rgba(255,0,51,0.4)' : 'rgba(255,255,255,0.12)';
+                targetCtx.fillRect(-width * 0.075 + i * width * 0.022, -height * 0.018, width * 0.01, height * 0.014);
+            }
+            targetCtx.restore();
+        } else if (eventPhase > 0.42 && eventPhase < 0.58) {
+            let p = Math.sin((eventPhase - 0.42) / 0.16 * Math.PI);
+            targetCtx.save();
+            targetCtx.globalAlpha = p * 0.65;
+            targetCtx.strokeStyle = '#fff';
+            targetCtx.shadowBlur = 28;
+            targetCtx.shadowColor = '#ff0033';
+            targetCtx.lineWidth = width * 0.018;
+            targetCtx.beginPath();
+            targetCtx.moveTo(width * 0.08, 0);
+            targetCtx.lineTo(width * 0.52, groundY);
+            targetCtx.stroke();
+            targetCtx.restore();
+        } else if (eventPhase > 0.72) {
+            let p = Math.sin((eventPhase - 0.72) / 0.28 * Math.PI);
+            targetCtx.save();
+            targetCtx.globalAlpha = p * 0.5;
+            targetCtx.strokeStyle = '#ff0033';
+            targetCtx.fillStyle = 'rgba(255,0,51,0.08)';
+            targetCtx.shadowBlur = 30;
+            targetCtx.shadowColor = '#ff0033';
+            targetCtx.beginPath();
+            targetCtx.ellipse(width * 0.27, height * 0.17, width * 0.11, height * 0.045, 0.12, 0, Math.PI * 2);
+            targetCtx.fill(); targetCtx.stroke();
+            targetCtx.beginPath();
+            targetCtx.arc(width * 0.27, height * 0.17, height * 0.018, 0, Math.PI * 2);
+            targetCtx.fillStyle = '#fff';
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        let pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
+        targetCtx.fillStyle = `rgba(255,0,51,${0.08 + pulse * 0.08})`;
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.04, height * 0.2);
+        targetCtx.lineTo(width * 0.34, height * 0.48);
+        targetCtx.lineTo(width * 0.21, groundY);
+        targetCtx.closePath();
+        targetCtx.fill();
+        for (let i = 0; i < 7; i++) {
+            let y = ((t * (160 + i * 18) + i * 90) % height) - height * 0.05;
+            targetCtx.strokeStyle = `rgba(255,255,255,${0.08 + i * 0.01})`;
+            targetCtx.lineWidth = 1 + (i % 3);
+            targetCtx.beginPath();
+            targetCtx.moveTo(width * (0.04 + i * 0.15), y);
+            targetCtx.lineTo(width * (0.1 + i * 0.15), y + height * 0.22);
+            targetCtx.stroke();
+        }
+
+        // floating rock: this is the actual ring-out floor span.
+        let L = geo.main.left, R = geo.main.right, T = geo.main.top;
+        targetCtx.fillStyle = '#111';
+        targetCtx.beginPath();
+        targetCtx.moveTo(L, T);
+        targetCtx.lineTo(R, T);
+        targetCtx.lineTo(R - width * 0.12, T + height * 0.16);
+        targetCtx.lineTo(width * 0.5, T + height * 0.23);
+        targetCtx.lineTo(L + width * 0.12, T + height * 0.16);
+        targetCtx.closePath();
+        targetCtx.fill();
+        targetCtx.fillStyle = 'rgba(0,0,0,0.5)';
+        targetCtx.beginPath();
+        targetCtx.ellipse(width * 0.5, T + height * 0.25, (R - L) * 0.35, height * 0.04, 0, 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.strokeStyle = '#e7e7e7';
+        targetCtx.lineWidth = 3;
+        targetCtx.shadowBlur = 16;
+        targetCtx.shadowColor = '#fff';
+        targetCtx.beginPath();
+        targetCtx.moveTo(L, T);
+        targetCtx.lineTo(R, T);
+        targetCtx.stroke();
+        targetCtx.shadowBlur = 0;
+        targetCtx.strokeStyle = 'rgba(255,0,51,0.55)';
+        targetCtx.lineWidth = 2;
+        for (let i = 0; i < 6; i++) {
+            let x = L + (R - L) * (0.15 + i * 0.13);
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, T + 4);
+            targetCtx.lineTo(x + Math.sin(t + i) * width * 0.025, T + height * (0.08 + (i % 3) * 0.025));
+            targetCtx.stroke();
+        }
+    } else if (stageId === 'megaMansion') {
+        let t = performance.now() / 1000;
+        let room = targetCtx.createRadialGradient(width * 0.5, height * 0.22, height * 0.05, width * 0.5, height * 0.42, height * 0.92);
+        room.addColorStop(0, '#343434');
+        room.addColorStop(0.55, '#080808');
+        room.addColorStop(1, '#010101');
+        targetCtx.fillStyle = room;
+        targetCtx.fillRect(0, 0, width, height);
+
+        // towering windows and city lights beyond the estate
+        for (let i = 0; i < 7; i++) {
+            let x = width * (0.08 + i * 0.14), ww = width * 0.085, y = height * 0.07, h = height * 0.43;
+            targetCtx.fillStyle = '#050505';
+            targetCtx.strokeStyle = '#555';
+            targetCtx.lineWidth = 2;
+            targetCtx.fillRect(x - ww / 2, y, ww, h);
+            targetCtx.strokeRect(x - ww / 2, y, ww, h);
+            targetCtx.strokeStyle = 'rgba(255,255,255,0.13)';
+            targetCtx.beginPath();
+            targetCtx.moveTo(x, y);
+            targetCtx.lineTo(x, y + h);
+            targetCtx.moveTo(x - ww / 2, y + h * 0.5);
+            targetCtx.lineTo(x + ww / 2, y + h * 0.5);
+            targetCtx.stroke();
+            for (let k = 0; k < 9; k++) {
+                let lx = x - ww * 0.38 + (k % 3) * ww * 0.28;
+                let ly = y + h * 0.58 + Math.floor(k / 3) * h * 0.1;
+                targetCtx.fillStyle = k % 4 === 0 ? 'rgba(255,0,51,0.24)' : 'rgba(230,230,230,0.16)';
+                targetCtx.fillRect(lx, ly, ww * 0.08, h * 0.035);
+            }
+        }
+
+        // columns, balcony, and a private trophy mezzanine.
+        targetCtx.fillStyle = '#060606';
+        targetCtx.strokeStyle = '#444';
+        targetCtx.lineWidth = 2;
+        targetCtx.fillRect(0, height * 0.48, width, height * 0.055);
+        targetCtx.strokeRect(0, height * 0.48, width, height * 0.055);
+        for (let i = 0; i < 6; i++) {
+            let x = width * (0.08 + i * 0.17);
+            targetCtx.fillStyle = '#0d0d0d';
+            targetCtx.fillRect(x - width * 0.015, height * 0.2, width * 0.03, groundY - height * 0.2);
+            targetCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+            targetCtx.strokeRect(x - width * 0.015, height * 0.2, width * 0.03, groundY - height * 0.2);
+            targetCtx.fillStyle = '#171717';
+            targetCtx.fillRect(x - width * 0.028, height * 0.49, width * 0.056, height * 0.018);
+        }
+
+        // grand split staircase
+        targetCtx.strokeStyle = '#4b4b4b';
+        targetCtx.fillStyle = '#0c0c0c';
+        targetCtx.lineWidth = 3;
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.18, groundY - height * 0.03);
+        targetCtx.quadraticCurveTo(width * 0.32, height * 0.58, width * 0.48, height * 0.43);
+        targetCtx.lineTo(width * 0.52, height * 0.43);
+        targetCtx.quadraticCurveTo(width * 0.68, height * 0.58, width * 0.82, groundY - height * 0.03);
+        targetCtx.lineTo(width * 0.72, groundY - height * 0.03);
+        targetCtx.quadraticCurveTo(width * 0.62, height * 0.66, width * 0.5, height * 0.52);
+        targetCtx.quadraticCurveTo(width * 0.38, height * 0.66, width * 0.28, groundY - height * 0.03);
+        targetCtx.closePath();
+        targetCtx.fill();
+        targetCtx.stroke();
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+        targetCtx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+            targetCtx.beginPath();
+            targetCtx.moveTo(width * (0.23 + i * 0.035), groundY - height * (0.035 + i * 0.035));
+            targetCtx.lineTo(width * (0.77 - i * 0.035), groundY - height * (0.035 + i * 0.035));
+            targetCtx.stroke();
+        }
+
+        // chandelier and trophy portraits
+        targetCtx.save();
+        targetCtx.translate(width * 0.5, height * 0.16);
+        targetCtx.strokeStyle = '#d4d4d4';
+        targetCtx.fillStyle = '#111';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, -height * 0.16); targetCtx.lineTo(0, 0); targetCtx.stroke();
+        targetCtx.beginPath(); targetCtx.ellipse(0, 0, width * 0.09, height * 0.025, 0, 0, Math.PI * 2); targetCtx.stroke();
+        targetCtx.beginPath(); targetCtx.ellipse(0, height * 0.025, width * 0.14, height * 0.018, 0, 0, Math.PI * 2); targetCtx.stroke();
+        for (let i = -3; i <= 3; i++) {
+            let flame = 0.5 + 0.5 * Math.sin(t * 4 + i);
+            targetCtx.fillStyle = `rgba(255,${80 + flame * 120},${90 + flame * 90},0.75)`;
+            targetCtx.beginPath();
+            targetCtx.arc(i * width * 0.025, height * 0.01, 3 + flame * 2, 0, Math.PI * 2);
+            targetCtx.fill();
+        }
+        targetCtx.restore();
+        drawMansionPortrait(targetCtx, width * 0.055, height * 0.2, width * 0.1, height * 0.19, 'HEIR');
+        drawMansionPortrait(targetCtx, width * 0.845, height * 0.2, width * 0.1, height * 0.19, 'HOST');
+
+        // Indoor fountain and velvet carpet to give the stage a centerpiece.
+        targetCtx.save();
+        targetCtx.translate(width * 0.5, groundY - height * 0.07);
+        targetCtx.fillStyle = '#060606';
+        targetCtx.strokeStyle = '#777';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath();
+        targetCtx.ellipse(0, 0, width * 0.13, height * 0.028, 0, 0, Math.PI * 2);
+        targetCtx.fill(); targetCtx.stroke();
+        targetCtx.beginPath();
+        targetCtx.moveTo(-width * 0.045, 0);
+        targetCtx.quadraticCurveTo(0, -height * 0.085, width * 0.045, 0);
+        targetCtx.stroke();
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.34)';
+        for (let i = -2; i <= 2; i++) {
+            targetCtx.beginPath();
+            targetCtx.moveTo(i * width * 0.018, -height * 0.075);
+            targetCtx.quadraticCurveTo(i * width * 0.035, -height * (0.045 + Math.sin(t * 2 + i) * 0.008), i * width * 0.055, -height * 0.006);
+            targetCtx.stroke();
+        }
+        targetCtx.restore();
+        targetCtx.fillStyle = 'rgba(255,0,51,0.16)';
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.43, groundY);
+        targetCtx.lineTo(width * 0.57, groundY);
+        targetCtx.lineTo(width * 0.68, height);
+        targetCtx.lineTo(width * 0.32, height);
+        targetCtx.closePath();
+        targetCtx.fill();
+
+        // polished marble arena floor
+        targetCtx.fillStyle = '#080808';
+        targetCtx.fillRect(0, groundY - height * 0.025, width, height * 0.025);
+        targetCtx.fillRect(0, groundY, width, height - groundY);
+        targetCtx.fillStyle = 'rgba(255,0,51,0.2)';
+        targetCtx.beginPath();
+        targetCtx.moveTo(width * 0.42, groundY);
+        targetCtx.lineTo(width * 0.58, groundY);
+        targetCtx.lineTo(width * 0.72, height);
+        targetCtx.lineTo(width * 0.28, height);
+        targetCtx.closePath();
+        targetCtx.fill();
+        targetCtx.strokeStyle = '#888';
+        targetCtx.lineWidth = 2;
+        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
+        targetCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+        for (let i = 0; i < 9; i++) {
+            let x = i * width / 8;
+            targetCtx.beginPath(); targetCtx.moveTo(x, groundY); targetCtx.lineTo(width * 0.5 + (x - width * 0.5) * 0.25, groundY - height * 0.12); targetCtx.stroke();
+        }
     } else if (stageId === 'livingGraveyard') {
         let t = performance.now() / 1000;
         let sky = targetCtx.createRadialGradient(width * 0.52, height * 0.16, 10, width * 0.52, height * 0.28, height * 0.9);

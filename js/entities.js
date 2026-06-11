@@ -649,10 +649,11 @@ class Fighter {
                 }
             }
         }
-        if (this._portalSlam && this.y >= GROUND_Y) {       // foe slams down out of a drop-portal
+        if (this._portalSlam && this.isGrounded()) {       // foe slams down out of a drop-portal
             let ps = this._portalSlam; this._portalSlam = null;
             this.takeDamage(ps.dmg, { x: 0, y: 0 }, 0.5, ps.owner, { unblockable: true });
-            spawnParticles(this.x, GROUND_Y - 10, 26, '#ff0033'); spawnParticles(this.x, GROUND_Y - 10, 14, '#fff');
+            let floorY = stageGroundYAt(this.x);
+            spawnParticles(this.x, floorY - 10, 26, '#ff0033'); spawnParticles(this.x, floorY - 10, 14, '#fff');
         }
         if (this.lumActive) { // Lumatrossia install — the bar steadily empties, then desummons
             this.lumTimer -= dt;
@@ -666,7 +667,7 @@ class Fighter {
             if (this.rootTimer > 0 && this.state !== 'DEAD') {
                 if (this.state !== 'HITSTUN') this.changeState('HITSTUN');
                 if (this.stateTimer < 0.15) this.stateTimer = 0.15; // stay held
-                this.vx = 0; this.vy = 0; this.y = GROUND_Y;
+                this.vx = 0; this.vy = 0; this.y = this.floorY();
             }
         }
 
@@ -812,6 +813,15 @@ class Fighter {
             }
         }
         return best;
+    }
+
+    floorY(fallback = GROUND_Y) {
+        return stageGroundYAt(this.x, fallback);
+    }
+
+    isGrounded(tolerance = 3) {
+        let y = stageFloorAt(this.x);
+        return y !== null && Math.abs(this.y - y) <= tolerance && this.vy >= -1;
     }
 
     // Falling near a stage edge -> grip the lip instead of plummeting.
@@ -999,16 +1009,17 @@ class Fighter {
     spawnConsecrate() {
         let tier = this.cultTier();
         let x = Math.max(70, Math.min(WIDTH - 70, this.x + this.dir * 64));
-        consecrateZones.push({ x, owner: this, team: this.team, t: 0, life: 5 + tier * 1.6, radius: 70 + tier * 26, tick: 0 });
-        spawnParticles(x, GROUND_Y - 8, 22, '#ff0033');
-        spawnParticles(x, GROUND_Y - 8, 10, '#fff');
+        let y = stageGroundYAt(x);
+        consecrateZones.push({ x, y, owner: this, team: this.team, t: 0, life: 5 + tier * 1.6, radius: 70 + tier * 26, tick: 0 });
+        spawnParticles(x, y - 8, 22, '#ff0033');
+        spawnParticles(x, y - 8, 10, '#fff');
         playAudio(attackSfx.magic);
     }
 
     // Side — The Procession: cultists run out and plant a snare-trap ahead of the leader.
     spawnProcessionTrap() {
         let x = Math.max(70, Math.min(WIDTH - 70, this.x + this.dir * 190));
-        cultTraps.push({ x, owner: this, team: this.team, t: 0, arm: 0.42, life: 7 + this.cultTier(), triggered: false, radius: 44 });
+        cultTraps.push({ x, y: stageGroundYAt(x), owner: this, team: this.team, t: 0, arm: 0.42, life: 7 + this.cultTier(), triggered: false, radius: 44 });
         playAudio(attackSfx.magic);
     }
 
@@ -1064,12 +1075,13 @@ class Fighter {
         if (!foe || foe.state === 'DEAD' || foe.invulnTimer > 0) return;
         this.portalCd = 6;
         let fx = foe.x;
-        lumPortalFx.push({ x: fx, y: GROUND_Y - 6, t: 0, life: 0.95 });  // ground portal they fall into
+        let floorY = stageGroundYAt(fx);
+        lumPortalFx.push({ x: fx, y: floorY - 6, t: 0, life: 0.95 });  // ground portal they fall into
         lumPortalFx.push({ x: fx, y: 80, t: 0, life: 0.95 });            // sky portal they emerge from
         foe.x = fx; foe.y = 80; foe.vy = 120; foe.vx = 0;
         foe.state = 'HITSTUN'; foe.stateTimer = 2.2;
         foe._portalSlam = { owner: this, dmg: 18 };
-        spawnParticles(fx, GROUND_Y - 8, 20, '#ff0033');
+        spawnParticles(fx, floorY - 8, 20, '#ff0033');
         playAudio(attackSfx.magic);
     }
 
@@ -2033,6 +2045,7 @@ class Fighter {
     handleInput() {
         if (this.catPin) return; // locked while pinning a foe with Cat Dash
         let controls = this.playerControls();
+        let grounded = this.isGrounded();
 
         // Tag out to the benched team-mate (2v2)
         if (teamBattle && controls.tag && keyPressed(controls.tag)) { if (switchActive(this.team, false)) return; }
@@ -2041,14 +2054,14 @@ class Fighter {
         if (keyPressed(controls.ult)) { this.tryUltimate(); return; }
 
         // Blocking
-        if (keys[controls.block] && this.y === GROUND_Y && !this.lumActive) { // Lumatrossia cannot block
+        if (keys[controls.block] && grounded && !this.lumActive) { // Lumatrossia cannot block
             this.changeState('BLOCK');
             return;
         } else if (this.state === 'BLOCK') {
             this.changeState('IDLE');
         }
 
-        let crouching = keys[controls.d] && this.y === GROUND_Y;
+        let crouching = keys[controls.d] && grounded;
 
         // Movement (Frost / tar runes slow the fighter)
         let spd = this.slowTimer > 0 ? this.speed * (this.slowFactor || 0.45) : this.speed;
@@ -2063,17 +2076,17 @@ class Fighter {
             this.changeState('CROUCH');
         } else if (this.state === 'CROUCH') {
             this.changeState('IDLE');
-        } else if (moving && this.y === GROUND_Y && this.state !== 'BLOCK') {
+        } else if (moving && grounded && this.state !== 'BLOCK') {
             this.changeState('WALK');
             // Ranger passive
             if (this.charType === 'RANGER' && onlineDeterministicRandom('rangerTacticalReload', this) < 0.02) this.tacticalReload = true;
-        } else if (!moving && this.y === GROUND_Y && this.state === 'WALK') {
+        } else if (!moving && grounded && this.state === 'WALK') {
             this.changeState('IDLE');
         }
 
         // Jump — from the main floor OR while standing on a platform (so raised
         // platforms can be climbed by hopping ledge to ledge)
-        if (!crouching && keyPressed(controls.u) && (this.y === GROUND_Y || this._onSurface)) {
+        if (!crouching && keyPressed(controls.u) && grounded) {
             this.vy = this.jumpForce;
             this._onSurface = false;
             this.changeState('JUMP');
@@ -2093,7 +2106,7 @@ class Fighter {
     }
 
     startPlayerAttack(input, crouching) {
-        if (this.y < GROUND_Y) {
+        if (!this.isGrounded()) {
             this.startAttack(input === 'L' ? 'airLight' : 'airHeavy');
             return;
         }
@@ -2124,14 +2137,14 @@ class Fighter {
         const target = this.getClosestEnemy();
         if (!target) {
             this.vx *= 0.8;
-            if (this.y >= GROUND_Y && this.state === 'WALK') this.changeState('IDLE');
+            if (this.isGrounded() && this.state === 'WALK') this.changeState('IDLE');
             return;
         }
 
         const dx = target.x - this.x;
         const dist = Math.abs(dx);
         const toward = dx >= 0 ? 1 : -1;
-        const onGround = this.y >= GROUND_Y;
+        const onGround = this.isGrounded();
         const spd = this.slowTimer > 0 ? this.speed * (this.slowFactor || 0.45) : this.speed;
 
         // AI pacing timers + difficulty scalar (0..1). These throttle reactive defense
@@ -2681,10 +2694,11 @@ class Fighter {
 
     spawnBeastVenom(dmgMod) {
         let px = this.x + this.dir * 72 - (this.dir < 0 ? 132 : 0);
-        let p = new Projectile(px, GROUND_Y - 22, 0, 0, 132, 22, 4 * dmgMod, { x: 35 * this.dir, y: -70 }, 0.2, this, 4.2, null);
+        let py = stageGroundYAt(px) - 22;
+        let p = new Projectile(px, py, 0, 0, 132, 22, 4 * dmgMod, { x: 35 * this.dir, y: -70 }, 0.2, this, 4.2, null);
         p.subtype = 'venom'; p.slow = 2.8; p.slowFactor = 0.28; p.venom = 2.2; p.pierce = true; p.unblockable = true;
         projectiles.push(p);
-        spawnParticles(px + p.w / 2, GROUND_Y - 18, 14, '#fff');
+        spawnParticles(px + p.w / 2, py + 4, 14, '#fff');
         playAudio(attackSfx.snake);
     }
 
@@ -2733,7 +2747,7 @@ class Fighter {
         playAudio(attackSfx.magic);
         let r = onlineEventRandom('mageBlinkKicker', this);
         if (r < 0.4) {
-            this.spawnRune(oldX, GROUND_Y - 20, 10, 'explosive'); // leave a parting gift
+            this.spawnRune(oldX, stageGroundYAt(oldX) - 20, 10, 'explosive'); // leave a parting gift
         } else if (r < 0.75) {
             hitboxes.push(new Hitbox(this.x - 42, this.y - 72, 84, 72, 9, {x: 220 * this.dir, y: -220}, 0.3, this, 0.12)); // arrival burst
             spawnParticles(this.x, this.y - 40, 16, '#fff');
@@ -2774,7 +2788,7 @@ class Fighter {
     spawnRune(x, y, dmg, forced) {
         let types = ['explosive', 'slow', 'launch', 'manaFont'];
         let rt = forced || types[Math.floor(onlineEventRandom('mageRuneType', this) * types.length)];
-        let p = new Projectile(x, GROUND_Y - 20, 0, 0, 40, 20, dmg, {x: 100 * this.dir, y: -300}, 0.5, this, 6.0, null);
+        let p = new Projectile(x, y == null ? stageGroundYAt(x) - 20 : y, 0, 0, 40, 20, dmg, {x: 100 * this.dir, y: -300}, 0.5, this, 6.0, null);
         p.subtype = 'rune'; p.runeType = rt;
         if (rt === 'slow') p.slow = 2.0;
         if (rt === 'launch') p.knockback = { x: 60 * this.dir, y: -540 };
@@ -2801,7 +2815,8 @@ class Fighter {
             else if (roll === 3) { subtype = 'homing'; homing = true; vx *= 0.7; w = 18; h = 18; dmg = 9; }              // gravity wisp
             else                 { subtype = 'split'; w = 20; h = 20; dmg = 7; logic = splitLogic; }                     // shatters midair
         } else if (atk.type === 'runeTrap') {
-            this.spawnRune(this.x + atk.ox * this.dir, GROUND_Y - 20, dmg * dmgMod);
+            let rx = this.x + atk.ox * this.dir;
+            this.spawnRune(rx, stageGroundYAt(rx) - 20, dmg * dmgMod);
             return;
         } else if (atk.type === 'vacuumSlash') {
             subtype = 'slash';
@@ -3117,7 +3132,7 @@ class Fighter {
         if (mode === 'cpu') { this.handleAI(dt); return; } // "fight back" — full CPU
         let foe = this.getClosestEnemy();
         let neutral = (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'BLOCK');
-        let grounded = this.y === GROUND_Y;
+        let grounded = this.isGrounded();
 
         if (mode === 'idle') {
             if (foe) this.dir = (foe.x > this.x) ? 1 : -1;
