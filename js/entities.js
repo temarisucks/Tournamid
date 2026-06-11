@@ -1553,6 +1553,7 @@ class Fighter {
                 if (u.dodgeIdx !== u._lastDodge) {
                     u._lastDodge = u.dodgeIdx;
                     spawnParticles(this.x - this.dir * 10, this.y - 50, 8, '#6fd0ff'); // whiff blur
+                    playAudio(attackSfx.timeHit); // each dodge rings out (pitch-wobbled per play)
                 }
                 ultCamera = { fx: (this.x + tg.x) / 2, fy: GROUND_Y - 70, zoom: 1.8 };
                 if (u.t > 2.1) { u.phase = 'freeze'; u.t = 0; u.hits = 0; u.stored = 0; tg.state = 'HITSTUN'; tg.stateTimer = 5; tg.vx = 0; tg.vy = 0; sfx.playDeath(); }
@@ -1565,7 +1566,7 @@ class Fighter {
                 ultCamera = { fx: tg.x, fy: GROUND_Y - 75, zoom: 1.7 };
                 if (u.hits < 6 && u.t > 0.25 + u.hits * 0.24) {
                     u.hits++;
-                    u.stored += 4; // damage is STORED, not dealt — it all lands at the wave
+                    u.stored += 5; // damage is STORED, not dealt — it all lands at the wave
                     // teleport to a new angle around the foe for each frozen strike
                     let ang = [1, -1, 1, -1, 1, -1][u.hits - 1];
                     this.x = Math.max(40, Math.min(WIDTH - 40, tg.x + ang * (44 + (u.hits % 3) * 18)));
@@ -1596,7 +1597,7 @@ class Fighter {
                     u.waved = true;
                     timeScale = 0.5;
                     let away = tg.x >= this.x ? 1 : -1;
-                    tg.takeDamage((u.stored || 24) + 10, { x: 460 * away, y: -340 }, 0.9, this, { isUlt: true, unblockable: true });
+                    tg.takeDamage((u.stored || 30) + 10, { x: 460 * away, y: -340 }, 0.9, this, { isUlt: true, unblockable: true });
                     tg.tumbleTimer = 0.7; tg._tumbleAngle = 0; tg._tumbleDir = away;
                     spawnParticles(tg.x, tg.y - 45, 44, '#fff');
                     spawnParticles(tg.x, tg.y - 45, 26, '#6fd0ff');

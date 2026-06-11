@@ -133,7 +133,7 @@ const ULT_DAMAGE = {
     BEAST_TAMER: 66,// snare 4 + bind 6 + brute 18 + raven 14 + whip 24
     PHANTOM: 43,    // claw 4 + seize 3 + void chips 12 + smash 24
     TWINS: 28,      // Eclipse — both twins collide on the centered foe
-    TRAVELER: 34    // chronostop — 6 stored flurry hits (24) + the detonation finale 10
+    TRAVELER: 40    // chronostop — 6 stored flurry hits (30) + the detonation finale 10
 };
 
 // Ultimate voice lines (played when an ultimate is activated)
