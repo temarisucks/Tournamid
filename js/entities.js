@@ -485,6 +485,12 @@ class Fighter {
         // The Traveler — chrono kit
         this.slipCd = 0;              // Temporal Slip passive: auto-phase one hit, then recharge
         this.rewindCd = 0;            // Down — Rewind cooldown
+        this.vortexCd = 0;            // Neutral — Time Vortex cooldown (no infinite spam)
+
+        // Universal combo counter (consecutive hits while the foe can't recover)
+        this.comboHits = 0;
+        this.comboHitTimer = 0;
+        this._comboPop = 0;           // brief scale-pop when the count ticks up
         this.posHistory = [];         // rolling 3s record of {x, y, hp} for Rewind + the after-echo
         this._echoHit = null;         // Tachyon Echo re-hit pending on this fighter { t, dmg, owner }
         this._skipHide = 0;           // Time Skip: brief edit-out-of-the-timeline invisibility
@@ -617,6 +623,9 @@ class Fighter {
         if (this.fastball) this.updateFastball(dt); // the thrown twin sails across the map
         if (this.slipCd > 0) this.slipCd -= dt;     // Temporal Slip recharging
         if (this.rewindCd > 0) this.rewindCd -= dt;
+        if (this.vortexCd > 0) this.vortexCd -= dt;
+        if (this.comboHitTimer > 0) { this.comboHitTimer -= dt; if (this.comboHitTimer <= 0) this.comboHits = 0; } // combo window lapsed
+        if (this._comboPop > 0) this._comboPop -= dt;
         if (this._skipHide > 0) this._skipHide -= dt;
         if (this.charType === 'TRAVELER') {
             // rolling 3s record for Rewind (and its on-stage after-echo)
@@ -2370,6 +2379,7 @@ class Fighter {
 
         let atk = overrideAtk || this.attacks[atkName] || createAttackVariant(this, atkName);
         if (!atk) return;
+        if (atk.type === 'timeVortex' && this.vortexCd > 0) return; // the singularity needs time to re-form
         if (!overrideAtk && this.charType === 'BEAST_TAMER') atk = this.beastAttackFor(atkName, atk);
 
         this.currentAttack = { ...atk, name: atkName };
@@ -2843,7 +2853,7 @@ class Fighter {
             proj.knockback = { x: atk.kb.x * this.dir * 2.15, y: -360 };
         }
         if (subtype === 'tether') proj.unblockable = true; // Mind Grip pulls through guard
-        if (subtype === 'vortex') proj.benign = true;      // the singularity never strikes on contact — its pull/core does the work
+        if (subtype === 'vortex') { proj.benign = true; this.vortexCd = 5; } // never strikes on contact — its pull/core does the work; 5s before the next one
         // Grave Drag (mistChain) is blockable — a guarded hit returns false from takeDamage, so the yank won't fire
         projectiles.push(proj);
     }
@@ -2974,6 +2984,11 @@ class Fighter {
             sfx.playDeath(); // shatter stinger
             spawnParticles(this.x + this.dir * 16, this.y - 46, 26, gc); // guard shards in its own colour
             spawnParticles(this.x + this.dir * 16, this.y - 46, 10, '#fff');
+            if (attacker && attacker !== this) { // a guard break keeps the combo chain alive
+                attacker.comboHits = (attacker.comboHitTimer > 0 ? attacker.comboHits : 0) + 1;
+                attacker.comboHitTimer = 1.3;
+                attacker._comboPop = 0.18;
+            }
         } else {
             this.rootTimer = 0; // being struck breaks the Grave Grasp hold
             this.catPin = null; // and breaks a Cat Dash pin if the cat gets interrupted
@@ -2987,6 +3002,12 @@ class Fighter {
             sfx.playHit();
             spawnParticles(hb.x, hb.y - 40, amount * 2, '#ff0033');
             if (attacker && attacker.charType === 'BRAWLER') { attacker.comboCount++; attacker.comboTimer = 2.0; }
+            // Combo counter: consecutive hits landed before the foe can recover keep the chain alive
+            if (attacker && attacker !== this) {
+                attacker.comboHits = (attacker.comboHitTimer > 0 ? attacker.comboHits : 0) + 1;
+                attacker.comboHitTimer = stun + 0.6; // the window to continue: their stun plus a beat
+                attacker._comboPop = 0.18;
+            }
         }
 
         // Meter charges from the exchange — more from taking than dealing

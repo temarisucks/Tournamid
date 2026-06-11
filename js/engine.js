@@ -328,6 +328,29 @@ function drawTravelerFx(c) {
     }
 }
 
+// Combo counter — "N HITS" pops up under each fighter's side of the HUD while their
+// chain is alive (2+ consecutive hits before the foe recovers), pulsing on each tick.
+function drawComboCounters(c) {
+    for (let i = 0; i < Math.min(2, players.length); i++) {
+        let p = players[i];
+        if (!p || (p.comboHits || 0) < 2 || p.comboHitTimer <= 0) continue;
+        let x = i === 0 ? 92 : WIDTH - 92;
+        let pop = 1 + Math.max(0, p._comboPop || 0) * 2.4;
+        c.save();
+        c.translate(x, 172);
+        c.scale(pop, pop);
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.font = 'bold 46px Courier New';
+        c.fillStyle = p.comboHits >= 8 ? '#ffd23f' : '#ff0033'; // gold once it gets disrespectful
+        c.shadowBlur = 14; c.shadowColor = c.fillStyle;
+        c.fillText(p.comboHits, 0, 0);
+        c.shadowBlur = 0;
+        c.fillStyle = '#fff'; c.font = 'bold 15px Courier New';
+        c.fillText('HITS', 0, 31);
+        c.restore();
+    }
+}
+
 // The Traveler's TIME STOP — the world drains of colour while he works
 function drawChronoStop(c) {
     if (!ultActive || !ultActive.ult || ultActive.ult.kind !== 'chronostop') return;
@@ -849,7 +872,8 @@ function nextRound() {
         if ('devotion' in p) p.devotion = 0;
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
         if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = GROUND_Y; p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
-        if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p._skipHide = 0; } // fresh timeline each round
+        if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; } // fresh timeline each round
+        p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
         p.x = x; p.y = GROUND_Y; p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
         p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
@@ -2054,6 +2078,7 @@ function draw() {
 
     ctx.restore();
 
+    drawComboCounters(ctx); // "N HITS" tallies under each side's HUD
     drawChronoStop(ctx); // Traveler ult: the world drained of colour under a frozen clock
     drawSoulTrain(ctx); // Phantom ult: border-shatter + void-drag full-screen cinematic
     drawUltBanner(ctx);
