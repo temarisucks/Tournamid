@@ -721,15 +721,25 @@ function onlineGuestApplyFighter(p, src, isOwn) {
             // getting hit / dying / ulting: the host's version wins outright
             p.currentAttack = src.atk || null;
         } else {
-            // keep the predicted motion/pose, softly reconciling position drift
+            // keep the predicted motion/pose, reconciling position LATENCY-AWARE:
+            // the host's view of us is ~one ping old, so during motion it always trails
+            // the prediction. Correcting that trail caused constant backward tugging
+            // (stutter) and dragged jumps down mid-rise. Grant a velocity-scaled slack
+            // and only correct the drift that latency CAN'T explain.
             p.state = keepState; p.stateTimer = keepTimer; p.currentAttack = keepAtk;
             p.vx = keepVx; p.vy = keepVy; p.dir = keepDir;
+            let latSec = ((onlineState.pingMs || 120) / 1000) + ONLINE_SNAPSHOT_RATE;
+            let allowX = Math.abs(keepVx) * latSec + 24;
+            let allowY = Math.abs(keepVy) * latSec + 24;
             let dx = src.x - keepX, dy = src.y - keepY;
-            if (Math.hypot(dx, dy) > 90) { p.x = src.x; p.y = src.y; } // way off — snap
-            else { p.x = keepX + dx * 0.22; p.y = keepY + dy * 0.22; } // gentle pull toward truth
+            if (keepY >= GROUND_Y && src.y >= GROUND_Y) dy = 0; // both grounded — y agrees
+            let exX = Math.abs(dx) > allowX ? dx - Math.sign(dx) * allowX : 0;
+            let exY = Math.abs(dy) > allowY ? dy - Math.sign(dy) * allowY : 0;
+            if (Math.hypot(exX, exY) > 140) { p.x = src.x; p.y = src.y; } // hopeless — snap
+            else { p.x = keepX + exX * 0.3; p.y = keepY + exY * 0.3; }    // ease out only the real error
             // if the host has us mid-attack and we predicted none (lost packet), adopt it
-            if ((p.state === 'IDLE' || p.state === 'WALK') && src.state === 'ATTACK') {
-                p.state = 'ATTACK'; p.stateTimer = src.stateTimer; p.currentAttack = src.atk || null;
+            if ((p.state === 'IDLE' || p.state === 'WALK') && src.state === 'ATTACK' && src.atk) {
+                p.state = 'ATTACK'; p.stateTimer = src.stateTimer; p.currentAttack = src.atk;
             }
         }
     } else {
