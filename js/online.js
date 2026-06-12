@@ -651,6 +651,9 @@ function onlineGuestApplySnapshot(snap) {
         selectedStage = snap.stage;
         if (typeof initStageActors === 'function') initStageActors();
         if (typeof music !== 'undefined' && music.resetFightPick) { music.resetFightPick(); music.play('fight'); }
+        // fresh arena — the old map's blood doesn't travel with you
+        bloodStains = [];
+        particles = particles.filter(pt => pt.color !== '#ff0033');
     }
 
     matchTimer = snap.mt;

@@ -1739,7 +1739,8 @@ class Fighter {
                 this.y = STAGE_GY;
                 spawnParticles(this.x - this.dir * 30, this.y - 50, 2, '#9aa6c8');
                 let foe = this.getClosestEnemy();
-                if (foe && foe.state !== 'DEAD' && Math.abs(foe.x - this.x) < 74) {
+                // the train runs along the ground — airborne (or platform-perched) souls are out of reach
+                if (foe && foe.state !== 'DEAD' && Math.abs(foe.x - this.x) < 74 && foe.y > this.y - 34) {
                     this.onUltConnect(foe);
                 } else if (u.t > 0.95 || (this.dir > 0 && this.x >= WIDTH - 39) || (this.dir < 0 && this.x <= 39)) {
                     this.endUlt(); // whiffed clean across the arena
@@ -1791,6 +1792,9 @@ class Fighter {
                     let stages = Object.keys(STAGES).filter(s => s !== selectedStage);
                     selectedStage = stages[Math.floor(Math.random() * stages.length)] || 'dojo';
                     if (typeof initStageActors === 'function') initStageActors();
+                    // fresh arena — the old map's blood doesn't travel with you
+                    bloodStains = [];
+                    particles = particles.filter(pt => pt.color !== '#ff0033');
                     if (typeof music !== 'undefined' && music.resetFightPick) { music.resetFightPick(); music.play('fight'); }
                     tg.x = WIDTH / 2; tg.y = STAGE_GY - 260; tg.vy = 0;
                     this.x = Math.max(60, Math.min(WIDTH - 60, WIDTH / 2 + (tg.x > WIDTH / 2 ? -130 : 130))); this.y = STAGE_GY;
@@ -4549,8 +4553,9 @@ class Fighter {
                 headY += 6; torsoLean = 0.34; // committed forward lean
             } else if (atk.type === 'updraftShot') {
                 // Point the gun straight down and ride the blast upward
-                rightArmAngle = mix(0.4, 0.05, ex); rightArmBend = 0.1; // aim down
-                leftArmAngle = 2.0; leftArmBend = -0.6;
+                // (the LEFT hand holds the gun — the knife hand stays up and clear)
+                leftArmAngle = mix(0.4, 0.05, ex); leftArmBend = 0.1; // gun aims down
+                rightArmAngle = 2.0; rightArmBend = -0.6;
                 leftLegAngle = -0.3; rightLegAngle = 0.35; leftLegBend = 0.7; rightLegBend = 0.65;
                 torsoLean = -0.04;
             } else if (atk.type === 'combatRoll') {
@@ -5728,7 +5733,12 @@ class Fighter {
         } else if (this.charType === 'RANGER') {
             // Dual wield: gun + knife are always both shown. The firing hand holds
             // the gun during gun attacks; otherwise the lead hand slashes the knife.
-            drawKnife(rHandX, rHandY, rForeAng);
+            // Reverse grip by default — the blade sits 90° to the forearm (icepick style,
+            // hanging below the fist); it only flips point-forward for actual knife swings.
+            let knifeSwing = this.state === 'ATTACK' && this.currentAttack && !this.currentAttack.isProj &&
+                !['updraftShot', 'combatRoll', 'tagIn'].includes(this.currentAttack.type);
+            if (knifeSwing) drawKnife(rHandX, rHandY, rForeAng);
+            else drawKnife(rHandX, rHandY, rForeAng + Math.PI / 2);
             // entrance: comes up from the roll twirling the pistol, then it settles in-hand (never holstered)
             drawGun(lHandX, lHandY, (this._entProg != null && this._entProg > 0.45 && this._entProg < 0.88) ? this.animTimer * 15 : lForeAng);
         } else if (this.charType === 'TRAVELER' && this.state === 'ATTACK' && this.currentAttack &&
