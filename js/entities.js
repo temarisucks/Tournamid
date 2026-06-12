@@ -2536,7 +2536,12 @@ class Fighter {
         if (t === 'parry') this.vx = 0;
         if (t === 'combatRoll') { this.vx = 680 * this.dir; this.invulnTimer = 0.32; this.tacticalReload = true; }
         if (t === 'beastBruteRush') this.vx = 780 * this.dir;
-        if (t === 'beastSerpentSwing') { this.vy = -660; this.vx = 560 * this.dir; this.beastSnakeSwingTimer = 0.9; }
+        if (t === 'beastSerpentSwing') {
+            this.vy = -660; this.vx = 560 * this.dir; this.beastSnakeSwingTimer = 0.9;
+            // the serpent bites onto a fixed point at the top of the stage, ahead of the
+            // Tamer, and he pendulums beneath it for the rest of the swing
+            this._snakeAnchorX = Math.max(30, Math.min(WIDTH - 30, this.x + this.dir * 250));
+        }
         if (t === 'beastBruteUpper') { this.vy = -520; this.vx = 70 * this.dir; }
         if (t === 'beastRavenLift') { this.vy = -720; this.vx = 130 * this.dir; this.invulnTimer = 0.16; this.beastRavenGlideTimer = 2.4; }
         if (t === 'airHeavy') this.vy = Math.max(this.vy, 120);
@@ -3422,11 +3427,19 @@ class Fighter {
                 let x = Math.cos(angle) * radius + sweep * u;
                 let y = -54 + Math.sin(angle) * 18 + Math.sin(t * 8 + u * 10) * 5;
                 if (swinging) {
-                    // a long swing-rope arcing high ahead; it lengthens as the Tamer rides it
-                    let reach = 160 + swingP * 250;
-                    let archH = 120 + swingP * 70;
-                    x = 4 + u * reach;
-                    y = -66 - Math.sin(u * Math.PI) * archH + Math.sin(t * 12 + u * 9) * (3 + u * 4);
+                    // a taut grapple-line: head (u=0) bites the top of the stage, tail (u=1)
+                    // stays in the Tamer's hand — a straight line that pivots as he swings
+                    let ax = ((this._snakeAnchorX !== undefined ? this._snakeAnchorX : this.x + this.dir * 250) - this.x) * this.dir;
+                    let ay = 6 - (this.y - (this._hover || 0)); // world top, in local draw space
+                    let hx2 = 4, hy2 = -56;                      // his lead hand
+                    x = ax + (hx2 - ax) * u;
+                    y = ay + (hy2 - ay) * u;
+                    // a faint ripple so it still reads as the living serpent, not a rope
+                    let pxd = -(hy2 - ay), pyd = (hx2 - ax);
+                    let plen = Math.hypot(pxd, pyd) || 1;
+                    let rip = Math.sin(t * 14 + u * 11) * 2.4 * Math.sin(u * Math.PI);
+                    x += (pxd / plen) * rip;
+                    y += (pyd / plen) * rip;
                 }
                 pts.push({ x, y });
             }
@@ -3435,10 +3448,9 @@ class Fighter {
             pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
             ctx.stroke();
             if (swinging) {
-                // red kick-sweep at the lashing tip of the long snake
-                let tip = pts[pts.length - 1];
+                // red kick-sweep around the Tamer himself — HE is the weapon on this one
                 ctx.strokeStyle = 'rgba(255,0,51,0.6)'; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.arc(tip.x, tip.y, 16 + swingP * 34, -2.2, 0.5); ctx.stroke();
+                ctx.beginPath(); ctx.arc(30, -58, 26 + swingP * 26, -2.2, 0.5); ctx.stroke();
             }
             ctx.fillStyle = '#fff';
             pts.forEach((p, i) => {
