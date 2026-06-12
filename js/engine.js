@@ -1074,11 +1074,12 @@ function updateEntranceSeq(dt) {
     let s = entranceSeq, a = players[0], b = players[1];
     if (!s || !a || !b) { entranceSeq = null; return; }
     // any fresh button press skips the whole ceremony (online: only LOCAL presses count,
-    // and the skip is broadcast so both peers cut to the fight together)
+    // and the skip is broadcast so both peers cut to the fight together). The skip rides
+    // on 'sync'/'input' because the relay only forwards whitelisted message types.
     for (let k in keys) {
         if (currentMode === 'ONLINE' && k.indexOf('OnlineRemote') === 0) continue;
         if (keys[k] && !previousKeys[k]) {
-            if (currentMode === 'ONLINE') onlineSend('ent-skip');
+            if (currentMode === 'ONLINE') onlineSend(onlineState.slot === 0 ? 'sync' : 'input', { entSkip: true });
             finishEntranceSeq(); return;
         }
     }

@@ -255,18 +255,20 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'sync') { // host → guest state snapshot
         onlineMarkRemoteTraffic();
+        if (msg.entSkip) { // host skipped the pre-fight ceremony — cut to the fight too
+            if (typeof entranceSeq !== 'undefined' && entranceSeq) finishEntranceSeq();
+            return;
+        }
         onlineGuestApplySnapshot(msg.snap);
-        return;
-    }
-
-    if (msg.type === 'ent-skip') { // the other side skipped the pre-fight ceremony
-        onlineMarkRemoteTraffic();
-        if (typeof entranceSeq !== 'undefined' && entranceSeq) finishEntranceSeq();
         return;
     }
 
     if (msg.type === 'input') { // guest → host input change
         onlineMarkRemoteTraffic();
+        if (msg.entSkip) { // guest skipped the pre-fight ceremony — cut to the fight too
+            if (typeof entranceSeq !== 'undefined' && entranceSeq) finishEntranceSeq();
+            return;
+        }
         if (onlineState.slot === 0) onlineState.inputQueue.push(onlineCloneInput(msg.input));
         return;
     }
