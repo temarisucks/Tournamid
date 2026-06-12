@@ -2447,18 +2447,30 @@ function initStageActors() {
     stageActors = null;
     stageDaypart = ['sunrise', 'noon', 'sunset', 'night'][Math.floor(Math.random() * 4)];
     if (selectedStage === 'tournamidGrounds') {
-        // The whole roster comes out to watch. Whoever is actually fighting (including
-        // benched tag partners) is skipped at draw time, not here — initStageActors can
-        // run before the fighters exist, and the Soul Train can swap fighters mid-match.
+        // The whole roster comes out to watch — REAL Fighter rigs in their idle poses,
+        // so every spectator reads as the actual character (sword, halo, hover and all).
+        // Whoever is actually fighting (including benched tag partners) is skipped at
+        // draw time, not here — initStageActors can run before the fighters exist, and
+        // the Soul Train can swap fighters mid-match.
         let roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH',
                       'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
         let arr = [], n = roster.length;
         roster.forEach((ct, i) => {
             let x = WIDTH * 0.055 + i * (WIDTH * 0.89) / (n - 1) + (Math.random() * 14 - 7);
-            arr.push({ x, y: GROUND_Y - HEIGHT * 0.155, charType: ct, phase: Math.random() * Math.PI * 2,
-                       rate: 1.2 + Math.random() * 1.4, scale: 0.44 + Math.random() * 0.05,
-                       shade: 120, dir: x < WIDTH / 2 ? 1 : -1,
-                       fleeing: false, gone: false });
+            let f = new Fighter('BG' + i, x, ct, false, 0);
+            // anchored at GROUND_Y in its own local space; the draw call re-bases it
+            // onto the terrace, so hover/mist logic keyed on GROUND_Y still works
+            f.isBgActor = true;
+            f.x = 0; f.y = GROUND_Y; f.vx = 0; f.vy = 0; f.state = 'IDLE';
+            f.animTimer = Math.random() * 10;
+            if (f.partner) {
+                f.partner.x = 30; f.partner.y = GROUND_Y;
+                f.partner.state = 'IDLE'; f.partner.animTimer = Math.random() * 10;
+            }
+            arr.push({ x, y: GROUND_Y - HEIGHT * 0.155, charType: ct, fighter: f,
+                       phase: Math.random() * Math.PI * 2, rate: 1,
+                       scale: 0.40 + Math.random() * 0.04, shade: 120,
+                       dir: x < WIDTH / 2 ? 1 : -1, fleeing: false, gone: false });
         });
         stageActors = { type: 'tournamidGrounds', actors: arr };
     } else if (selectedStage === 'pStreet') {
@@ -2489,6 +2501,10 @@ function updateStageActors(dt) {
     for (let a of stageActors.actors) {
         if (a.gone) continue;
         a.phase += dt * a.rate;
+        if (a.fighter) {
+            a.fighter.animTimer += dt * (a.fleeing ? 1.8 : 1);
+            if (a.fighter.partner) a.fighter.partner.animTimer += dt * (a.fleeing ? 1.8 : 1);
+        }
         if (a.fleeing) {
             a.x += a.fleeDir * 520 * dt;
             if (a.x < -50 || a.x > WIDTH + 50) a.gone = true;
@@ -2506,12 +2522,6 @@ function stageActorsFlee() {
     }
 }
 
-// Signature colors for the roster spectators on Tournamid Grounds.
-const STAGE_SPECTATOR_COLORS = {
-    BRAWLER: '#e8e8e8', SWORDSMAN: '#cfe8ff', MAGE: '#c98bff', RANGER: '#ffd27f',
-    DARK_RULER: '#ff0033', TELEPATH: '#9be3ff', BEAST_TAMER: '#d8a35e', PHANTOM: '#dfe4f2',
-    COPYCAT: '#9ef0b0', CULT: '#b48aff', TWINS: '#ffb8cf', TRAVELER: '#6fd0ff'
-};
 function stageActorIsFighting(charType) {
     if (typeof players !== 'undefined' && players.some(p => p && p.charType === charType)) return true;
     if (typeof teamBattle !== 'undefined' && teamBattle && typeof teams !== 'undefined' &&
@@ -2524,13 +2534,24 @@ function drawStageActors(c) {
     for (let a of stageActors.actors) {
         if (a.gone) continue;
         if (a.charType && stageActorIsFighting(a.charType)) continue; // fighters don't watch themselves
-        let mode = a.fleeing ? 'run' : resting;
-        let col = a.charType ? (STAGE_SPECTATOR_COLORS[a.charType] || null) : null;
-        drawBgStickman(c, a.x, a.y, a.scale, a.shade, mode, a.phase, a.fleeing ? a.fleeDir : a.dir, col);
-        // the Twins watch as a pair, naturally
-        if (a.charType === 'TWINS') {
-            drawBgStickman(c, a.x + 13, a.y, a.scale * 0.96, a.shade, mode, a.phase + 2.3, a.fleeing ? a.fleeDir : -a.dir, col);
+        if (a.fighter) {
+            // a real character rig on the terrace, idling (or bolting) at mini scale
+            let f = a.fighter;
+            f.dir = a.fleeing ? a.fleeDir : a.dir;
+            f.state = a.fleeing ? 'WALK' : 'IDLE';
+            if (f.partner) { f.partner.dir = a.fleeing ? a.fleeDir : -a.dir; f.partner.state = f.state; }
+            c.save();
+            c.translate(a.x, a.y);
+            c.scale(a.scale, a.scale);
+            c.translate(0, -GROUND_Y); // re-base the fighter's GROUND_Y anchor onto the terrace
+            c.globalAlpha = 0.92;
+            f.draw(c);
+            if (f.partner) f.partner.draw(c);
+            c.restore();
+            continue;
         }
+        let mode = a.fleeing ? 'run' : resting;
+        drawBgStickman(c, a.x, a.y, a.scale, a.shade, mode, a.phase, a.fleeing ? a.fleeDir : a.dir);
     }
 }
 
