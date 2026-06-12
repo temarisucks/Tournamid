@@ -58,7 +58,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.25.6</span>
+        <span class="menu-version">v0.26.0</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -241,6 +241,18 @@
             <button class="stage-card" data-stage="megaMansion" onclick="selectStage('megaMansion', this)">
                 <canvas class="stage-thumb" width="260" height="130" data-stage-preview="megaMansion"></canvas>
                 <span>Mega Mansion</span>
+            </button>
+            <button class="stage-card" data-stage="garden" onclick="selectStage('garden', this)">
+                <canvas class="stage-thumb" width="260" height="130" data-stage-preview="garden"></canvas>
+                <span>The Garden</span>
+            </button>
+            <button class="stage-card" data-stage="chamber" onclick="selectStage('chamber', this)">
+                <canvas class="stage-thumb" width="260" height="130" data-stage-preview="chamber"></canvas>
+                <span>The Chamber</span>
+            </button>
+            <button class="stage-card" data-stage="tournamidGrounds" onclick="selectStage('tournamidGrounds', this)">
+                <canvas class="stage-thumb" width="260" height="130" data-stage-preview="tournamidGrounds"></canvas>
+                <span>Tournamid Grounds</span>
             </button>
             <button class="stage-card random-stage-card" data-stage="random" onclick="selectRandomStage(this)">
                 <div class="stage-thumb random-stage-thumb">?</div>

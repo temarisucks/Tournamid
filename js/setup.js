@@ -815,8 +815,15 @@ const STAGES = {
     darkCastle: { name: "Dark King's Castle" },
     clockworkTower: { name: 'Clockworkx Tower' },
     endWorld: { name: 'The End of the World' },
-    megaMansion: { name: 'Mega Mansion' }
+    megaMansion: { name: 'Mega Mansion' },
+    garden: { name: 'The Garden' },
+    chamber: { name: 'The Chamber' },
+    tournamidGrounds: { name: 'Tournamid Grounds' }
 };
+
+// Time of day for the outdoor stages (The Garden / Tournamid Grounds).
+// Re-rolled at the start of every fight in initStageActors().
+let stageDaypart = 'noon';
 
 // Ladder mode progression + animated stage background actors (set up in engine/ui)
 let ladder = { queue: [], partners: [], playerQueue: [], index: 0, active: false, infinite: false }; // partners[i] = the rung's tag partner (LADDER2 only)

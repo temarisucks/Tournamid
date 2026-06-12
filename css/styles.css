@@ -324,3 +324,6 @@
 
         /* tagline removed — keep a breath of space between the title and the menu */
         #menu-screen .menu-buttons { margin-top: 34px; }
+
+        /* 15 stage cards now — 5 columns keeps the select screen to three tidy rows */
+        .stage-grid { grid-template-columns: repeat(5, 1fr); max-width: 990px; }

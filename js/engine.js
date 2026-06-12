@@ -1570,50 +1570,13 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
     targetCtx.fillRect(0, 0, width, height);
 
     if (stageId === 'moonBridge') {
-        let sky = targetCtx.createLinearGradient(0, 0, 0, height);
-        sky.addColorStop(0, '#111');
-        sky.addColorStop(0.55, '#020202');
-        sky.addColorStop(1, '#080808');
-        targetCtx.fillStyle = sky;
-        targetCtx.fillRect(0, 0, width, height);
-
-        targetCtx.save();
-        targetCtx.shadowBlur = 45;
-        targetCtx.shadowColor = '#fff';
-        targetCtx.fillStyle = '#ddd';
-        targetCtx.beginPath();
-        targetCtx.arc(width * 0.5, height * 0.22, height * 0.16, 0, Math.PI * 2);
-        targetCtx.fill();
-        targetCtx.shadowBlur = 0;
-        targetCtx.fillStyle = '#050505';
-        targetCtx.beginPath();
-        targetCtx.arc(width * 0.55, height * 0.18, height * 0.15, 0, Math.PI * 2);
-        targetCtx.fill();
-        targetCtx.restore();
-
-        targetCtx.fillStyle = 'rgba(255,255,255,0.05)';
-        for (let i = 0; i < 5; i++) {
-            targetCtx.fillRect(0, groundY - 68 + i * 11, width, 2);
-        }
-        targetCtx.strokeStyle = '#555';
-        targetCtx.lineWidth = 4;
-        targetCtx.beginPath();
-        targetCtx.moveTo(0, groundY - 22);
-        targetCtx.quadraticCurveTo(width * 0.5, groundY + 22, width, groundY - 22);
-        targetCtx.stroke();
-        targetCtx.strokeStyle = '#aaa';
-        targetCtx.lineWidth = 3;
-        targetCtx.beginPath();
-        targetCtx.moveTo(0, groundY);
-        targetCtx.quadraticCurveTo(width * 0.5, groundY + 28, width, groundY);
-        targetCtx.stroke();
-        for (let x = 60; x < width; x += 90) {
-            targetCtx.strokeStyle = '#333';
-            targetCtx.beginPath();
-            targetCtx.moveTo(x, groundY - 25);
-            targetCtx.lineTo(x + 18, groundY + 5);
-            targetCtx.stroke();
-        }
+        drawMoonBridgeStage(targetCtx, width, height, groundY);
+    } else if (stageId === 'garden') {
+        drawGardenStage(targetCtx, width, height, groundY);
+    } else if (stageId === 'chamber') {
+        drawChamberStage(targetCtx, width, height, groundY);
+    } else if (stageId === 'tournamidGrounds') {
+        drawTournamidGrounds(targetCtx, width, height, groundY);
     } else if (stageId === 'platform') {
         let sky = targetCtx.createRadialGradient(width * 0.5, height * 0.25, 20, width * 0.5, height * 0.25, height * 0.8);
         sky.addColorStop(0, '#303030');
@@ -2482,7 +2445,23 @@ function drawChampionsArena(c, width, height, groundY) {
 // and all flee toward the nearest edge when an overkill happens.
 function initStageActors() {
     stageActors = null;
-    if (selectedStage === 'pStreet') {
+    stageDaypart = ['sunrise', 'noon', 'sunset', 'night'][Math.floor(Math.random() * 4)];
+    if (selectedStage === 'tournamidGrounds') {
+        // The whole roster comes out to watch. Whoever is actually fighting (including
+        // benched tag partners) is skipped at draw time, not here — initStageActors can
+        // run before the fighters exist, and the Soul Train can swap fighters mid-match.
+        let roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH',
+                      'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
+        let arr = [], n = roster.length;
+        roster.forEach((ct, i) => {
+            let x = WIDTH * 0.055 + i * (WIDTH * 0.89) / (n - 1) + (Math.random() * 14 - 7);
+            arr.push({ x, y: GROUND_Y - HEIGHT * 0.155, charType: ct, phase: Math.random() * Math.PI * 2,
+                       rate: 1.2 + Math.random() * 1.4, scale: 0.44 + Math.random() * 0.05,
+                       shade: 120, dir: x < WIDTH / 2 ? 1 : -1,
+                       fleeing: false, gone: false });
+        });
+        stageActors = { type: 'tournamidGrounds', actors: arr };
+    } else if (selectedStage === 'pStreet') {
         let arr = [], n = 9;
         for (let i = 0; i < n; i++) {
             let x = 55 + i * (WIDTH - 110) / (n - 1) + (Math.random() * 28 - 14);
@@ -2527,19 +2506,37 @@ function stageActorsFlee() {
     }
 }
 
+// Signature colors for the roster spectators on Tournamid Grounds.
+const STAGE_SPECTATOR_COLORS = {
+    BRAWLER: '#e8e8e8', SWORDSMAN: '#cfe8ff', MAGE: '#c98bff', RANGER: '#ffd27f',
+    DARK_RULER: '#ff0033', TELEPATH: '#9be3ff', BEAST_TAMER: '#d8a35e', PHANTOM: '#dfe4f2',
+    COPYCAT: '#9ef0b0', CULT: '#b48aff', TWINS: '#ffb8cf', TRAVELER: '#6fd0ff'
+};
+function stageActorIsFighting(charType) {
+    if (typeof players !== 'undefined' && players.some(p => p && p.charType === charType)) return true;
+    if (typeof teamBattle !== 'undefined' && teamBattle && typeof teams !== 'undefined' &&
+        teams.flat().some(f => f && f.charType === charType)) return true;
+    return false;
+}
 function drawStageActors(c) {
     if (!stageActors) return;
     let resting = stageActors.type === 'bloodBall' ? 'dance' : 'spectate';
     for (let a of stageActors.actors) {
         if (a.gone) continue;
+        if (a.charType && stageActorIsFighting(a.charType)) continue; // fighters don't watch themselves
         let mode = a.fleeing ? 'run' : resting;
-        drawBgStickman(c, a.x, a.y, a.scale, a.shade, mode, a.phase, a.fleeing ? a.fleeDir : a.dir);
+        let col = a.charType ? (STAGE_SPECTATOR_COLORS[a.charType] || null) : null;
+        drawBgStickman(c, a.x, a.y, a.scale, a.shade, mode, a.phase, a.fleeing ? a.fleeDir : a.dir, col);
+        // the Twins watch as a pair, naturally
+        if (a.charType === 'TWINS') {
+            drawBgStickman(c, a.x + 13, a.y, a.scale * 0.96, a.shade, mode, a.phase + 2.3, a.fleeing ? a.fleeDir : -a.dir, col);
+        }
     }
 }
 
 // A small greyscale background stickman. mode: 'spectate' | 'dance' | 'run'.
-function drawBgStickman(c, x, gy, s, shade, mode, ph, dir) {
-    const col = `rgb(${shade},${shade},${shade})`;
+function drawBgStickman(c, x, gy, s, shade, mode, ph, dir, colOverride) {
+    const col = colOverride || `rgb(${shade},${shade},${shade})`;
     const HIP = -44, SH = -70, HEAD = -82, HR = 8;
     let sway = 0, bob = 0, legA, legB, armA, armB;
 
@@ -3040,4 +3037,453 @@ function drawUltBanner(ctx) {
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
     ctx.restore();
+}
+
+// ============================== NEW STAGE RENDERERS ==============================
+
+// ---- Shared outdoor sky for The Garden / Tournamid Grounds. The time of day is
+// rolled once per fight into stageDaypart: sunrise, noon, sunset, or night. ----
+function drawDaypartSky(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    const fr = v => v - Math.floor(v);
+    const PALS = {
+        sunrise: { top: '#1d1626', mid: '#54323a', low: '#b4795a', sun: '#ffd9a0', sx: 0.18, sy: 0.80, sr: 0.085, glow: 36, light: 'rgba(255,200,140,0.12)', cloud: 'rgba(255,210,170,0.10)' },
+        noon:    { top: '#3a4450', mid: '#6b7886', low: '#a3aeb5', sun: '#ffffff', sx: 0.56, sy: 0.16, sr: 0.06,  glow: 30, light: 'rgba(255,255,255,0.12)', cloud: 'rgba(255,255,255,0.13)' },
+        sunset:  { top: '#150e1c', mid: '#542230', low: '#c2563a', sun: '#ff8a4a', sx: 0.80, sy: 0.82, sr: 0.10,  glow: 40, light: 'rgba(255,130,70,0.12)',  cloud: 'rgba(255,120,80,0.12)' },
+        night:   { top: '#04050c', mid: '#0a0d18', low: '#131a28', sun: null, light: 'rgba(160,185,255,0.06)', cloud: 'rgba(190,205,255,0.05)' }
+    };
+    let pal = PALS[stageDaypart] || PALS.noon;
+    let sky = c.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, pal.top); sky.addColorStop(0.55, pal.mid); sky.addColorStop(1, pal.low);
+    c.fillStyle = sky; c.fillRect(0, 0, width, groundY + 2);
+    if (pal.sun) {
+        c.save();
+        c.shadowBlur = pal.glow; c.shadowColor = pal.sun; c.fillStyle = pal.sun;
+        c.beginPath(); c.arc(width * pal.sx, groundY * pal.sy, height * pal.sr, 0, Math.PI * 2); c.fill();
+        c.restore();
+        // soft drifting clouds
+        c.fillStyle = pal.cloud;
+        for (let i = 0; i < 4; i++) {
+            let cw = width * (0.16 + (i % 3) * 0.05);
+            let cx = ((t * (6 + i * 2.5) + i * 331) % (width + cw * 2)) - cw;
+            let cy = height * (0.12 + ((i * 73) % 5) * 0.045);
+            c.beginPath();
+            c.ellipse(cx, cy, cw * 0.5, height * 0.022, 0, 0, Math.PI * 2);
+            c.ellipse(cx + cw * 0.18, cy - height * 0.014, cw * 0.3, height * 0.018, 0, 0, Math.PI * 2);
+            c.fill();
+        }
+    } else {
+        // night: starfield + a thin crescent (the BIG moon belongs to Moon Bridge)
+        for (let i = 0; i < 64; i++) {
+            let hx = fr(Math.sin(i * 127.1) * 43758.5453);
+            let hy = fr(Math.sin(i * 311.7) * 12543.853);
+            let tw = 0.35 + 0.65 * Math.abs(Math.sin(t * (0.6 + hy) + i));
+            c.fillStyle = `rgba(225,232,255,${(0.22 + hy * 0.5) * tw})`;
+            let sz = hy > 0.85 ? 2 : 1.4;
+            c.fillRect(hx * width, hy * groundY * 0.85, sz, sz);
+        }
+        c.save();
+        c.fillStyle = '#dfe6f5'; c.shadowBlur = 18; c.shadowColor = '#aebdf0';
+        c.beginPath(); c.arc(width * 0.80, height * 0.16, height * 0.05, 0, Math.PI * 2); c.fill();
+        c.shadowBlur = 0; c.fillStyle = pal.top;
+        c.beginPath(); c.arc(width * 0.815, height * 0.148, height * 0.045, 0, Math.PI * 2); c.fill();
+        c.restore();
+    }
+    return pal;
+}
+
+// ---- THE GARDEN: a grassy open field. Different time of day every match. ----
+function drawGardenStage(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    const fr = v => v - Math.floor(v);
+    let pal = drawDaypartSky(c, width, height, groundY);
+    let night = stageDaypart === 'night';
+    // rolling hills on the horizon, far then near
+    c.fillStyle = night ? '#080b06' : '#10160a';
+    c.beginPath();
+    c.moveTo(0, groundY);
+    c.quadraticCurveTo(width * 0.20, groundY - height * 0.17, width * 0.46, groundY - height * 0.06);
+    c.quadraticCurveTo(width * 0.66, groundY + height * 0.01, width, groundY - height * 0.12);
+    c.lineTo(width, groundY); c.closePath(); c.fill();
+    c.fillStyle = night ? '#050704' : '#0a0f06';
+    c.beginPath();
+    c.moveTo(0, groundY);
+    c.quadraticCurveTo(width * 0.35, groundY - height * 0.05, width * 0.62, groundY - height * 0.025);
+    c.quadraticCurveTo(width * 0.85, groundY - height * 0.005, width, groundY - height * 0.04);
+    c.lineTo(width, groundY); c.closePath(); c.fill();
+    // a lone tree on the far hill
+    let trX = width * 0.84, trY = groundY - height * 0.115;
+    c.strokeStyle = night ? '#06080a' : '#0b0d08'; c.lineWidth = 5; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(trX, trY); c.quadraticCurveTo(trX - 4, trY - 26, trX - 9, trY - 44); c.stroke();
+    c.lineWidth = 3;
+    c.beginPath(); c.moveTo(trX - 4, trY - 26); c.quadraticCurveTo(trX + 12, trY - 36, trX + 16, trY - 46); c.stroke();
+    c.fillStyle = night ? '#070a06' : '#0d1309';
+    c.beginPath();
+    c.ellipse(trX - 8, trY - 52, 26, 15, -0.2, 0, Math.PI * 2);
+    c.ellipse(trX + 13, trY - 48, 18, 11, 0.2, 0, Math.PI * 2);
+    c.fill();
+    // the meadow itself
+    let g = c.createLinearGradient(0, groundY, 0, height);
+    g.addColorStop(0, night ? '#0c1208' : '#15200d');
+    g.addColorStop(1, night ? '#040503' : '#070a04');
+    c.fillStyle = g; c.fillRect(0, groundY, width, height - groundY);
+    c.fillStyle = pal.light; c.fillRect(0, groundY, width, 3); // daylight catches the meadow's edge
+    // grass blades along the ground line, swaying in the breeze
+    for (let x = 4; x < width; x += 8) {
+        let h1 = fr(Math.sin(x * 12.9898) * 43758.5453);
+        let bladeH = 5 + h1 * 11;
+        let lean = Math.sin(t * 1.7 + x * 0.06) * 2.2 + (h1 - 0.5) * 3;
+        let sh = night ? 26 + h1 * 18 : 38 + h1 * 30;
+        c.strokeStyle = `rgb(${Math.floor(sh * 0.55)},${Math.floor(sh)},${Math.floor(sh * 0.45)})`;
+        c.lineWidth = 1.6;
+        c.beginPath();
+        c.moveTo(x, groundY + 2);
+        c.quadraticCurveTo(x + lean * 0.4, groundY - bladeH * 0.55, x + lean, groundY - bladeH);
+        c.stroke();
+    }
+    // wildflowers scattered through the field
+    for (let i = 0; i < 26; i++) {
+        let h1 = fr(Math.sin(i * 91.7) * 38274.31), h2 = fr(Math.sin(i * 47.3) * 74194.77);
+        let fx = h1 * width, fy = groundY + 6 + h2 * (height - groundY - 14);
+        c.fillStyle = night ? 'rgba(170,190,255,0.45)' : ['#e8e0ff', '#ffe9a8', '#ffc9d6'][i % 3];
+        c.beginPath(); c.arc(fx, fy, 1.5 + h2 * 1.2, 0, Math.PI * 2); c.fill();
+    }
+    // fireflies at night, drifting pollen by day
+    for (let i = 0; i < 14; i++) {
+        let h1 = fr(Math.sin(i * 53.13) * 91823.4), h2 = fr(Math.sin(i * 17.77) * 45631.2);
+        let fx = ((h1 * width + Math.sin(t * (0.4 + h2) + i) * 40 + t * 7) % width + width) % width;
+        let fy = groundY - 14 - h2 * 95 + Math.sin(t * (0.7 + h1) + i * 2) * 10;
+        if (night) {
+            let pulse = 0.25 + 0.75 * Math.abs(Math.sin(t * 1.6 + i * 1.7));
+            c.save(); c.shadowBlur = 8; c.shadowColor = '#bdff8c';
+            c.fillStyle = `rgba(190,255,140,${0.55 * pulse})`;
+            c.beginPath(); c.arc(fx, fy, 1.8, 0, Math.PI * 2); c.fill();
+            c.restore();
+        } else {
+            c.fillStyle = 'rgba(255,255,225,0.16)';
+            c.beginPath(); c.arc(fx, fy, 1.3, 0, Math.PI * 2); c.fill();
+        }
+    }
+}
+
+// ---- MOON BRIDGE: a rope-and-plank bridge over a gorge, the whole scene lit by
+// an enormous full moon hanging right behind the fighters. ----
+function drawMoonBridgeStage(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    const fr = v => v - Math.floor(v);
+    // deep night sky
+    let sky = c.createLinearGradient(0, 0, 0, height);
+    sky.addColorStop(0, '#03040a'); sky.addColorStop(0.5, '#070b16'); sky.addColorStop(1, '#0a0f1d');
+    c.fillStyle = sky; c.fillRect(0, 0, width, height);
+    // stars
+    for (let i = 0; i < 80; i++) {
+        let h1 = fr(Math.sin(i * 127.1) * 43758.5453);
+        let h2 = fr(Math.sin(i * 269.5) * 18367.21);
+        let tw = 0.3 + 0.7 * Math.abs(Math.sin(t * (0.5 + h2 * 1.2) + i));
+        c.fillStyle = `rgba(220,230,255,${(0.2 + h2 * 0.55) * tw})`;
+        let sz = h2 > 0.85 ? 2 : 1.4;
+        c.fillRect(h1 * width, h2 * height * 0.62, sz, sz);
+    }
+    // THE MOON — enormous, full, and bright
+    let mx = width * 0.5, my = height * 0.34, mr = height * 0.40;
+    let halo = c.createRadialGradient(mx, my, mr * 0.6, mx, my, mr * 1.7);
+    halo.addColorStop(0, 'rgba(205,220,255,0.20)'); halo.addColorStop(1, 'rgba(205,220,255,0)');
+    c.fillStyle = halo; c.fillRect(0, 0, width, height);
+    c.save();
+    c.shadowBlur = 80; c.shadowColor = '#cdd8ff';
+    c.fillStyle = '#eef1f8';
+    c.beginPath(); c.arc(mx, my, mr, 0, Math.PI * 2); c.fill();
+    c.shadowBlur = 0;
+    // craters
+    [[-0.30, -0.25, 0.10], [0.22, -0.06, 0.07], [-0.06, 0.30, 0.12],
+     [0.42, 0.28, 0.06], [-0.46, 0.14, 0.05], [0.10, -0.46, 0.05], [0.30, 0.52, 0.045]].forEach(([dx, dy, r]) => {
+        c.fillStyle = 'rgba(176,188,212,0.50)';
+        c.beginPath(); c.arc(mx + dx * mr, my + dy * mr, r * mr, 0, Math.PI * 2); c.fill();
+        c.fillStyle = 'rgba(150,163,190,0.35)';
+        c.beginPath(); c.arc(mx + dx * mr + r * mr * 0.2, my + dy * mr + r * mr * 0.25, r * mr * 0.6, 0, Math.PI * 2); c.fill();
+    });
+    c.restore();
+    // thin clouds drifting across the moon
+    c.fillStyle = 'rgba(10,14,26,0.55)';
+    for (let i = 0; i < 3; i++) {
+        let cw = width * (0.30 + i * 0.08);
+        let cx = ((t * (8 + i * 5) + i * 420) % (width + cw)) - cw / 2;
+        let cy = height * (0.22 + i * 0.10);
+        c.beginPath(); c.ellipse(cx, cy, cw / 2, height * 0.018 + i * 2, 0, 0, Math.PI * 2); c.fill();
+    }
+    // the gorge below the bridge
+    c.fillStyle = '#04050b';
+    c.fillRect(0, groundY + 26, width, height - groundY - 26);
+    // mist rising out of the gorge
+    c.fillStyle = 'rgba(160,180,220,0.05)';
+    for (let i = 0; i < 4; i++) {
+        let myst = groundY + 16 + i * 13 + Math.sin(t * 0.5 + i) * 4;
+        c.beginPath();
+        c.ellipse(width * (0.18 + i * 0.21) + Math.sin(t * 0.3 + i * 2) * 30, myst, width * 0.18, 9, 0, 0, Math.PI * 2);
+        c.fill();
+    }
+    // bridge deck with a gentle sag (deck top at y = groundY + 24*s*(1-s))
+    const deckY = x => { let s = x / width; return groundY + 24 * s * (1 - s); };
+    c.fillStyle = '#0e0e13';
+    c.beginPath();
+    c.moveTo(0, groundY);
+    c.quadraticCurveTo(width / 2, groundY + 12, width, groundY);
+    c.lineTo(width, groundY + 30);
+    c.quadraticCurveTo(width / 2, groundY + 44, 0, groundY + 30);
+    c.closePath(); c.fill();
+    // plank seams
+    c.strokeStyle = 'rgba(255,255,255,0.07)'; c.lineWidth = 1.6;
+    for (let x = 12; x < width; x += 26) {
+        c.beginPath(); c.moveTo(x, deckY(x) + 2); c.lineTo(x - 3, deckY(x) + 30); c.stroke();
+    }
+    // moonlight catches the lip of the deck
+    c.strokeStyle = 'rgba(205,220,255,0.55)'; c.lineWidth = 2.5;
+    c.beginPath(); c.moveTo(0, groundY); c.quadraticCurveTo(width / 2, groundY + 12, width, groundY); c.stroke();
+    // support cables falling away into the dark
+    c.strokeStyle = 'rgba(90,100,130,0.4)'; c.lineWidth = 2;
+    for (let x = 70; x < width; x += 170) {
+        c.beginPath(); c.moveTo(x, deckY(x) + 30); c.lineTo(x - 26, height); c.stroke();
+    }
+    // posts + sagging rope rails (background — the fighters duel in front of them)
+    for (let x = 40; x < width; x += 112) {
+        let dy = deckY(x);
+        c.strokeStyle = '#3a3f4d'; c.lineWidth = 4;
+        c.beginPath(); c.moveTo(x, dy); c.lineTo(x, dy - 38); c.stroke();
+        c.fillStyle = 'rgba(205,220,255,0.5)';
+        c.fillRect(x - 2.5, dy - 40, 5, 3); // moonlit cap
+    }
+    c.strokeStyle = '#566077'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, groundY - 36); c.quadraticCurveTo(width / 2, groundY - 18, width, groundY - 36); c.stroke();
+    c.beginPath(); c.moveTo(0, groundY - 20); c.quadraticCurveTo(width / 2, groundY - 5, width, groundY - 20); c.stroke();
+}
+
+// ---- THE CHAMBER: the hidden bunker lab. Three rings etched into the back wall —
+// two eyes and a third above, watching. Stasis pods hold the missing "best of the
+// best", and if the Telepath isn't one of the fighters, she hangs chained to the wall. ----
+function drawChamberStage(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    let pulse = 0.5 + 0.5 * Math.sin(t * 1.2);
+    // cavern wall
+    let wall = c.createLinearGradient(0, 0, 0, groundY);
+    wall.addColorStop(0, '#08080b'); wall.addColorStop(0.7, '#0c0c10'); wall.addColorStop(1, '#0a0a0d');
+    c.fillStyle = wall; c.fillRect(0, 0, width, groundY);
+    // wall panel seams
+    c.strokeStyle = 'rgba(255,255,255,0.04)'; c.lineWidth = 2;
+    for (let x = width * 0.08; x < width; x += width * 0.12) {
+        c.beginPath(); c.moveTo(x, height * 0.06); c.lineTo(x, groundY); c.stroke();
+    }
+    c.beginPath(); c.moveTo(0, height * 0.36); c.lineTo(width, height * 0.36); c.stroke();
+    // ceiling pipework + hanging cables
+    c.strokeStyle = '#1a1a20'; c.lineWidth = 7;
+    c.beginPath(); c.moveTo(0, height * 0.055); c.lineTo(width, height * 0.055); c.stroke();
+    c.strokeStyle = '#15151a'; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(0, height * 0.085); c.lineTo(width, height * 0.085); c.stroke();
+    for (let x = width * 0.16; x < width; x += width * 0.24) {
+        c.strokeStyle = '#1e1e26'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x, height * 0.085);
+        c.quadraticCurveTo(x + 18, height * 0.15, x + 6, height * 0.20); c.stroke();
+        c.fillStyle = `rgba(255,0,51,${0.25 + 0.3 * Math.abs(Math.sin(t * 1.8 + x))})`;
+        c.beginPath(); c.arc(x + 6, height * 0.205, 2, 0, Math.PI * 2); c.fill();
+    }
+    // THE SIGIL — a great ring holding three smaller rings: two eyes, one above center
+    let sx = width * 0.5, sy = groundY - height * 0.42, R = height * 0.27;
+    c.save();
+    c.strokeStyle = '#23232c'; c.lineWidth = 9;
+    c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = `rgba(255,0,51,${0.16 + pulse * 0.14})`;
+    c.lineWidth = 3; c.shadowBlur = 14; c.shadowColor = '#ff0033';
+    c.beginPath(); c.arc(sx, sy, R, 0, Math.PI * 2); c.stroke();
+    const sigilRing = (ox, oy, ph) => {
+        let rr = R * 0.17;
+        c.strokeStyle = '#2a2a34'; c.lineWidth = 6; c.shadowBlur = 0;
+        c.beginPath(); c.arc(sx + ox, sy + oy, rr, 0, Math.PI * 2); c.stroke();
+        c.strokeStyle = `rgba(255,0,51,${0.20 + 0.18 * Math.sin(t * 1.2 + ph)})`;
+        c.lineWidth = 2.4; c.shadowBlur = 10; c.shadowColor = '#ff0033';
+        c.beginPath(); c.arc(sx + ox, sy + oy, rr, 0, Math.PI * 2); c.stroke();
+        c.fillStyle = `rgba(255,0,51,${0.10 + 0.10 * Math.sin(t * 1.2 + ph)})`;
+        c.beginPath(); c.arc(sx + ox, sy + oy, rr * 0.34, 0, Math.PI * 2); c.fill();
+    };
+    sigilRing(-R * 0.38, R * 0.18, 0);   // left eye
+    sigilRing(R * 0.38, R * 0.18, 2.1);  // right eye
+    sigilRing(0, -R * 0.34, 4.2);        // the third, above and between
+    c.restore();
+    // stasis pods along the left wall (the missing best of the best)
+    const pod = (px, ph) => {
+        let pw = width * 0.05, phh = height * 0.30, py = groundY - phh;
+        c.fillStyle = '#101016'; c.strokeStyle = '#26262e'; c.lineWidth = 3;
+        c.beginPath();
+        c.moveTo(px - pw / 2, py + pw / 2);
+        c.arc(px, py + pw / 2, pw / 2, Math.PI, 0);
+        c.lineTo(px + pw / 2, groundY - 4);
+        c.lineTo(px - pw / 2, groundY - 4);
+        c.closePath(); c.fill(); c.stroke();
+        // glass glow with a sleeper inside
+        c.fillStyle = `rgba(110,160,200,${0.07 + 0.03 * Math.sin(t * 0.9 + ph)})`;
+        c.fillRect(px - pw / 2 + 3, py + 8, pw - 6, phh - 16);
+        let fy = py + phh * 0.36;
+        c.fillStyle = '#1d2127';
+        c.beginPath(); c.arc(px, fy, pw * 0.17, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = '#1d2127'; c.lineWidth = 4; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(px, fy + pw * 0.17); c.quadraticCurveTo(px + 3, fy + phh * 0.24, px - 2, fy + phh * 0.42); c.stroke();
+        // status light
+        c.fillStyle = `rgba(120,255,170,${0.45 + 0.45 * Math.abs(Math.sin(t * 1.4 + ph))})`;
+        c.beginPath(); c.arc(px, py + 5, 2.2, 0, Math.PI * 2); c.fill();
+    };
+    pod(width * 0.06, 0); pod(width * 0.135, 1.4); pod(width * 0.21, 2.8);
+    // monitor console on the right
+    let mx2 = width * 0.745, my2 = groundY - height * 0.105;
+    c.fillStyle = '#0d0d12'; c.fillRect(mx2, my2, width * 0.075, height * 0.105);
+    c.fillStyle = '#10101a'; c.fillRect(mx2 + 5, my2 - height * 0.055, width * 0.058, height * 0.05);
+    c.strokeStyle = `rgba(120,220,160,${0.35 + 0.2 * Math.sin(t * 5.1)})`; c.lineWidth = 1.4;
+    c.beginPath();
+    for (let i = 0; i <= 24; i++) {
+        let gx = mx2 + 8 + i * (width * 0.052 / 24);
+        let gy2 = my2 - height * 0.030 + Math.sin(t * 3 + i * 0.8) * height * 0.008;
+        if (i === 0) c.moveTo(gx, gy2); else c.lineTo(gx, gy2);
+    }
+    c.stroke();
+    // the Telepath, chained to the wall by her wrists (only when she isn't in the fight)
+    if (!stageActorIsFighting('TELEPATH')) {
+        let cx = width * 0.90, anchorY = groundY - height * 0.305;
+        let sw = Math.sin(t * 0.8) * 1.5;
+        c.save();
+        c.translate(cx, 0);
+        c.strokeStyle = '#33333d'; c.lineWidth = 3;
+        c.beginPath(); c.arc(-24, anchorY, 4, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(24, anchorY, 4, 0, Math.PI * 2); c.stroke();
+        // chains down to her shackled wrists
+        let wY = anchorY + 12;
+        c.strokeStyle = '#4a4a55'; c.lineWidth = 2; c.setLineDash([3, 3]);
+        c.beginPath(); c.moveTo(-24, anchorY); c.lineTo(-14 + sw * 0.4, wY); c.stroke();
+        c.beginPath(); c.moveTo(24, anchorY); c.lineTo(14 + sw * 0.4, wY); c.stroke();
+        c.setLineDash([]);
+        let headYc = wY + 24, hipY = headYc + 36;
+        c.strokeStyle = '#8e96a8'; c.lineWidth = 3.4; c.lineCap = 'round';
+        // arms strung up to the shackles
+        c.beginPath(); c.moveTo(sw * 0.6 - 5, headYc + 10); c.quadraticCurveTo(-12, wY + 12, -14 + sw * 0.4, wY); c.stroke();
+        c.beginPath(); c.moveTo(sw * 0.6 + 5, headYc + 10); c.quadraticCurveTo(12, wY + 12, 14 + sw * 0.4, wY); c.stroke();
+        // head slumped forward, a faint psychic flicker still around it
+        c.fillStyle = '#8e96a8';
+        c.beginPath(); c.arc(sw * 0.6, headYc + 2, 7.5, 0, Math.PI * 2); c.fill();
+        c.strokeStyle = `rgba(155,227,255,${0.10 + 0.12 * Math.abs(Math.sin(t * 0.9))})`;
+        c.lineWidth = 1.6; c.shadowBlur = 8; c.shadowColor = '#9be3ff';
+        c.beginPath(); c.arc(sw * 0.6, headYc + 2, 11, 0, Math.PI * 2); c.stroke();
+        c.shadowBlur = 0;
+        // torso and hanging legs, feet clear of the floor
+        c.strokeStyle = '#8e96a8'; c.lineWidth = 3.4;
+        c.beginPath(); c.moveTo(sw * 0.6, headYc + 9); c.quadraticCurveTo(2 + sw, headYc + 24, sw, hipY); c.stroke();
+        c.beginPath(); c.moveTo(sw, hipY); c.quadraticCurveTo(sw + 4, hipY + 17, sw + 2.5, hipY + 33); c.stroke();
+        c.beginPath(); c.moveTo(sw, hipY); c.quadraticCurveTo(sw - 4, hipY + 16, sw - 3, hipY + 31); c.stroke();
+        c.restore();
+    }
+    // metal floor
+    c.fillStyle = '#0a0a0d'; c.fillRect(0, groundY, width, height - groundY);
+    c.strokeStyle = '#1f1f26'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.05)'; c.lineWidth = 2;
+    for (let x = 40; x < width; x += 90) {
+        c.beginPath(); c.moveTo(x, groundY + 4); c.lineTo(x - 14, height); c.stroke();
+    }
+    // inlaid ring in the floor directly beneath the sigil
+    c.strokeStyle = `rgba(255,0,51,${0.10 + pulse * 0.08})`; c.lineWidth = 3;
+    c.beginPath();
+    c.ellipse(sx, groundY + (height - groundY) * 0.5, R * 0.9, (height - groundY) * 0.32, 0, 0, Math.PI * 2);
+    c.stroke();
+}
+
+// ---- TOURNAMID GROUNDS: the open arena of the tournament itself. The rest of the
+// roster lines the terrace to watch (current fighters are skipped at draw time), and
+// it shares The Garden's rolling time of day. ----
+function drawTournamidGrounds(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    let pal = drawDaypartSky(c, width, height, groundY);
+    let torchesLit = stageDaypart === 'night' || stageDaypart === 'sunset';
+    let terraceY = groundY - height * 0.155; // spectators' feet
+    // outer arena wall with a notched parapet, silhouetted against the sky
+    let wallTop = terraceY - height * 0.17;
+    c.fillStyle = '#0b0b0e';
+    c.fillRect(0, wallTop, width, terraceY - wallTop);
+    c.fillStyle = '#101014';
+    for (let x = 0; x < width; x += 46) c.fillRect(x, wallTop - 9, 26, 9);
+    // banner poles with pennants snapping in the wind
+    for (let x = width * 0.1; x < width; x += width * 0.2) {
+        c.strokeStyle = '#1c1c22'; c.lineWidth = 3;
+        c.beginPath(); c.moveTo(x, wallTop - 8); c.lineTo(x, wallTop - 52); c.stroke();
+        let wave = Math.sin(t * 3 + x) * 5;
+        c.fillStyle = '#7a0d20';
+        c.beginPath();
+        c.moveTo(x, wallTop - 52);
+        c.lineTo(x + 30, wallTop - 47 + wave);
+        c.lineTo(x, wallTop - 40);
+        c.closePath(); c.fill();
+    }
+    // terrace the roster watches from
+    c.fillStyle = '#131316';
+    c.fillRect(0, terraceY, width, groundY - terraceY);
+    c.fillStyle = pal.light; c.fillRect(0, terraceY - 2, width, 2);
+    // front wall of the terrace, dressed with TOURNAMID banners
+    let bw = c.createLinearGradient(0, terraceY, 0, groundY);
+    bw.addColorStop(0, '#17171b'); bw.addColorStop(1, '#0e0e11');
+    c.fillStyle = bw;
+    c.fillRect(0, terraceY + height * 0.012, width, groundY - terraceY - height * 0.012);
+    c.strokeStyle = 'rgba(255,255,255,0.045)'; c.lineWidth = 2;
+    for (let x = 30; x < width; x += 64) {
+        c.beginPath(); c.moveTo(x, terraceY + height * 0.012); c.lineTo(x, groundY); c.stroke();
+    }
+    // hanging banners, each stamped with the three-ring crest
+    [0.14, 0.38, 0.62, 0.86].forEach((fx2, i) => {
+        let bx = width * fx2, bw2 = width * 0.062, bh = height * 0.105;
+        let sway2 = Math.sin(t * 1.2 + i * 1.7) * 1.5;
+        c.fillStyle = '#5e0a18';
+        c.beginPath();
+        c.moveTo(bx - bw2 / 2, terraceY + height * 0.012);
+        c.lineTo(bx + bw2 / 2, terraceY + height * 0.012);
+        c.lineTo(bx + bw2 / 2 + sway2, terraceY + bh * 0.8);
+        c.lineTo(bx + sway2, terraceY + bh);              // pointed tail
+        c.lineTo(bx - bw2 / 2 + sway2, terraceY + bh * 0.8);
+        c.closePath(); c.fill();
+        c.strokeStyle = '#8a1426'; c.lineWidth = 1.6;
+        c.stroke();
+        // the crest: two eyes and a third ring above
+        let cy2 = terraceY + bh * 0.42, rr = bw2 * 0.10;
+        c.strokeStyle = '#d8a0a8'; c.lineWidth = 1.6;
+        c.beginPath(); c.arc(bx + sway2 * 0.5 - rr * 1.7, cy2 + rr, rr, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(bx + sway2 * 0.5 + rr * 1.7, cy2 + rr, rr, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(bx + sway2 * 0.5, cy2 - rr * 1.2, rr, 0, Math.PI * 2); c.stroke();
+    });
+    // braziers between the banners — lit when the sun is down
+    [0.26, 0.5, 0.74].forEach((fx2, i) => {
+        let bx = width * fx2, by = groundY - height * 0.055;
+        c.strokeStyle = '#26262c'; c.lineWidth = 3;
+        c.beginPath(); c.moveTo(bx, groundY); c.lineTo(bx, by); c.stroke();
+        c.fillStyle = '#202026';
+        c.beginPath(); c.arc(bx, by, 7, Math.PI, 0); c.fill();
+        if (torchesLit) {
+            let fl = Math.abs(Math.sin(t * 7 + i * 2.3)) * 4;
+            c.save(); c.shadowBlur = 14; c.shadowColor = '#ff9a3a';
+            c.fillStyle = 'rgba(255,154,58,0.85)';
+            c.beginPath(); c.arc(bx + Math.sin(t * 9 + i) * 1.5, by - 7 - fl * 0.4, 4 + fl * 0.5, 0, Math.PI * 2); c.fill();
+            c.fillStyle = 'rgba(255,230,150,0.9)';
+            c.beginPath(); c.arc(bx, by - 6 - fl * 0.3, 2.2, 0, Math.PI * 2); c.fill();
+            c.restore();
+        }
+    });
+    // the fighting floor: packed earth with a worn chalk ring
+    let fg = c.createLinearGradient(0, groundY, 0, height);
+    fg.addColorStop(0, '#191510'); fg.addColorStop(1, '#0a0805');
+    c.fillStyle = fg; c.fillRect(0, groundY, width, height - groundY);
+    c.fillStyle = pal.light; c.fillRect(0, groundY, width, 3);
+    c.strokeStyle = 'rgba(230,225,210,0.15)'; c.lineWidth = 5;
+    c.setLineDash([26, 14]);
+    c.beginPath();
+    c.ellipse(width / 2, groundY + (height - groundY) * 0.48, width * 0.30, (height - groundY) * 0.34, 0, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+    // scattered scuffs and pebbles
+    const fr = v => v - Math.floor(v);
+    for (let i = 0; i < 18; i++) {
+        let h1 = fr(Math.sin(i * 73.7) * 52871.3), h2 = fr(Math.sin(i * 31.3) * 67234.9);
+        c.fillStyle = `rgba(255,255,255,${0.03 + h2 * 0.04})`;
+        c.fillRect(h1 * width, groundY + 6 + h2 * (height - groundY - 12), 2 + h1 * 3, 1.6);
+    }
 }
