@@ -2522,16 +2522,6 @@ function stageActorsFlee() {
     }
 }
 
-// Reusable offscreen canvas for muting the Tournamid Grounds spectators.
-let _bgActorBuf = null;
-function bgActorBuffer() {
-    if (!_bgActorBuf) {
-        _bgActorBuf = document.createElement('canvas');
-        _bgActorBuf.width = 300;
-        _bgActorBuf.height = 260;
-    }
-    return _bgActorBuf;
-}
 function stageActorIsFighting(charType) {
     if (typeof players !== 'undefined' && players.some(p => p && p.charType === charType)) return true;
     if (typeof teamBattle !== 'undefined' && teamBattle && typeof teams !== 'undefined' &&
@@ -2545,29 +2535,18 @@ function drawStageActors(c) {
         if (a.gone) continue;
         if (a.charType && stageActorIsFighting(a.charType)) continue; // fighters don't watch themselves
         if (a.fighter) {
-            // a real character rig on the terrace, idling (or bolting) at mini scale.
-            // Rendered through an offscreen buffer so a grey wash can mute the colors —
-            // they're scenery, not contestants (and ctx.filter isn't safe on iOS).
+            // a real character rig on the terrace, idling (or bolting) at mini scale
             let f = a.fighter;
             f.dir = a.fleeing ? a.fleeDir : a.dir;
             f.state = a.fleeing ? 'WALK' : 'IDLE';
             if (f.partner) { f.partner.dir = a.fleeing ? a.fleeDir : -a.dir; f.partner.state = f.state; }
-            let buf = bgActorBuffer(), b = buf.getContext('2d');
-            b.setTransform(1, 0, 0, 1, 0, 0);
-            b.globalCompositeOperation = 'source-over';
-            b.clearRect(0, 0, buf.width, buf.height);
-            b.save();
-            b.translate(120, 230 - GROUND_Y); // feet land at buffer (120, 230)
-            f.draw(b);
-            if (f.partner) f.partner.draw(b);
-            b.restore();
-            b.globalCompositeOperation = 'source-atop'; // wash only the sprite pixels
-            b.fillStyle = 'rgba(72,74,82,0.62)';
-            b.fillRect(0, 0, buf.width, buf.height);
-            b.globalCompositeOperation = 'source-over';
             c.save();
-            c.globalAlpha = 0.88;
-            c.drawImage(buf, a.x - 120 * a.scale, a.y - 230 * a.scale, buf.width * a.scale, buf.height * a.scale);
+            c.translate(a.x, a.y);
+            c.scale(a.scale, a.scale);
+            c.translate(0, -GROUND_Y); // re-base the fighter's GROUND_Y anchor onto the terrace
+            c.globalAlpha = 0.92;
+            f.draw(c);
+            if (f.partner) f.partner.draw(c);
             c.restore();
             continue;
         }
@@ -3089,10 +3068,10 @@ function drawDaypartSky(c, width, height, groundY) {
     let t = performance.now() / 1000;
     const fr = v => v - Math.floor(v);
     const PALS = {
-        sunrise: { top: '#1d1626', mid: '#54323a', low: '#b4795a', sun: '#ffd9a0', sx: 0.18, sy: 0.80, sr: 0.085, glow: 36, light: 'rgba(255,200,140,0.12)', cloud: 'rgba(255,210,170,0.10)' },
-        noon:    { top: '#3a4450', mid: '#6b7886', low: '#a3aeb5', sun: '#ffffff', sx: 0.56, sy: 0.16, sr: 0.06,  glow: 30, light: 'rgba(255,255,255,0.12)', cloud: 'rgba(255,255,255,0.13)' },
-        sunset:  { top: '#150e1c', mid: '#542230', low: '#c2563a', sun: '#ff8a4a', sx: 0.80, sy: 0.82, sr: 0.10,  glow: 40, light: 'rgba(255,130,70,0.12)',  cloud: 'rgba(255,120,80,0.12)' },
-        night:   { top: '#04050c', mid: '#0a0d18', low: '#131a28', sun: null, light: 'rgba(160,185,255,0.06)', cloud: 'rgba(190,205,255,0.05)' }
+        sunrise: { top: '#16121b', mid: '#382d30', low: '#6f5b4e', sun: '#dcc6a4', sx: 0.18, sy: 0.80, sr: 0.085, glow: 26, light: 'rgba(220,195,160,0.08)', cloud: 'rgba(220,200,175,0.06)' },
+        noon:    { top: '#2e343c', mid: '#525a63', low: '#7d848a', sun: '#eeeeee', sx: 0.56, sy: 0.16, sr: 0.06,  glow: 22, light: 'rgba(255,255,255,0.08)', cloud: 'rgba(255,255,255,0.09)' },
+        sunset:  { top: '#110d15', mid: '#372026', low: '#774237', sun: '#cd7a55', sx: 0.80, sy: 0.82, sr: 0.10,  glow: 28, light: 'rgba(215,140,95,0.08)',  cloud: 'rgba(205,130,105,0.07)' },
+        night:   { top: '#04050c', mid: '#0a0d16', low: '#111623', sun: null, light: 'rgba(160,185,255,0.05)', cloud: 'rgba(190,205,255,0.04)' }
     };
     let pal = PALS[stageDaypart] || PALS.noon;
     let sky = c.createLinearGradient(0, 0, 0, groundY);
@@ -3166,8 +3145,8 @@ function drawGardenStage(c, width, height, groundY) {
     c.fill();
     // the meadow itself
     let g = c.createLinearGradient(0, groundY, 0, height);
-    g.addColorStop(0, night ? '#0c1208' : '#15200d');
-    g.addColorStop(1, night ? '#040503' : '#070a04');
+    g.addColorStop(0, night ? '#0a0e07' : '#11160b');
+    g.addColorStop(1, night ? '#040503' : '#060804');
     c.fillStyle = g; c.fillRect(0, groundY, width, height - groundY);
     c.fillStyle = pal.light; c.fillRect(0, groundY, width, 3); // daylight catches the meadow's edge
     // grass blades along the ground line, swaying in the breeze
@@ -3175,8 +3154,8 @@ function drawGardenStage(c, width, height, groundY) {
         let h1 = fr(Math.sin(x * 12.9898) * 43758.5453);
         let bladeH = 5 + h1 * 11;
         let lean = Math.sin(t * 1.7 + x * 0.06) * 2.2 + (h1 - 0.5) * 3;
-        let sh = night ? 26 + h1 * 18 : 38 + h1 * 30;
-        c.strokeStyle = `rgb(${Math.floor(sh * 0.55)},${Math.floor(sh)},${Math.floor(sh * 0.45)})`;
+        let sh = night ? 24 + h1 * 16 : 32 + h1 * 24;
+        c.strokeStyle = `rgb(${Math.floor(sh * 0.72)},${Math.floor(sh * 0.9)},${Math.floor(sh * 0.62)})`;
         c.lineWidth = 1.6;
         c.beginPath();
         c.moveTo(x, groundY + 2);
@@ -3187,7 +3166,8 @@ function drawGardenStage(c, width, height, groundY) {
     for (let i = 0; i < 26; i++) {
         let h1 = fr(Math.sin(i * 91.7) * 38274.31), h2 = fr(Math.sin(i * 47.3) * 74194.77);
         let fx = h1 * width, fy = groundY + 6 + h2 * (height - groundY - 14);
-        c.fillStyle = night ? 'rgba(170,190,255,0.45)' : ['#e8e0ff', '#ffe9a8', '#ffc9d6'][i % 3];
+        c.fillStyle = night ? 'rgba(165,180,220,0.32)'
+            : ['rgba(214,210,224,0.55)', 'rgba(220,212,186,0.55)', 'rgba(216,198,203,0.55)'][i % 3];
         c.beginPath(); c.arc(fx, fy, 1.5 + h2 * 1.2, 0, Math.PI * 2); c.fill();
     }
     // fireflies at night, drifting pollen by day
@@ -3197,12 +3177,12 @@ function drawGardenStage(c, width, height, groundY) {
         let fy = groundY - 14 - h2 * 95 + Math.sin(t * (0.7 + h1) + i * 2) * 10;
         if (night) {
             let pulse = 0.25 + 0.75 * Math.abs(Math.sin(t * 1.6 + i * 1.7));
-            c.save(); c.shadowBlur = 8; c.shadowColor = '#bdff8c';
-            c.fillStyle = `rgba(190,255,140,${0.55 * pulse})`;
+            c.save(); c.shadowBlur = 6; c.shadowColor = '#b6cf9a';
+            c.fillStyle = `rgba(196,220,160,${0.42 * pulse})`;
             c.beginPath(); c.arc(fx, fy, 1.8, 0, Math.PI * 2); c.fill();
             c.restore();
         } else {
-            c.fillStyle = 'rgba(255,255,225,0.16)';
+            c.fillStyle = 'rgba(255,255,235,0.10)';
             c.beginPath(); c.arc(fx, fy, 1.3, 0, Math.PI * 2); c.fill();
         }
     }
@@ -3360,7 +3340,7 @@ function drawChamberStage(c, width, height, groundY) {
         c.lineTo(px - pw / 2, groundY - 4);
         c.closePath(); c.fill(); c.stroke();
         // glass glow with a sleeper inside
-        c.fillStyle = `rgba(110,160,200,${0.07 + 0.03 * Math.sin(t * 0.9 + ph)})`;
+        c.fillStyle = `rgba(120,140,160,${0.06 + 0.025 * Math.sin(t * 0.9 + ph)})`;
         c.fillRect(px - pw / 2 + 3, py + 8, pw - 6, phh - 16);
         let fy = py + phh * 0.36;
         c.fillStyle = '#1d2127';
@@ -3368,7 +3348,7 @@ function drawChamberStage(c, width, height, groundY) {
         c.strokeStyle = '#1d2127'; c.lineWidth = 4; c.lineCap = 'round';
         c.beginPath(); c.moveTo(px, fy + pw * 0.17); c.quadraticCurveTo(px + 3, fy + phh * 0.24, px - 2, fy + phh * 0.42); c.stroke();
         // status light
-        c.fillStyle = `rgba(120,255,170,${0.45 + 0.45 * Math.abs(Math.sin(t * 1.4 + ph))})`;
+        c.fillStyle = `rgba(140,200,165,${0.35 + 0.35 * Math.abs(Math.sin(t * 1.4 + ph))})`;
         c.beginPath(); c.arc(px, py + 5, 2.2, 0, Math.PI * 2); c.fill();
     };
     pod(width * 0.06, 0); pod(width * 0.135, 1.4); pod(width * 0.21, 2.8);
@@ -3376,7 +3356,7 @@ function drawChamberStage(c, width, height, groundY) {
     let mx2 = width * 0.745, my2 = groundY - height * 0.105;
     c.fillStyle = '#0d0d12'; c.fillRect(mx2, my2, width * 0.075, height * 0.105);
     c.fillStyle = '#10101a'; c.fillRect(mx2 + 5, my2 - height * 0.055, width * 0.058, height * 0.05);
-    c.strokeStyle = `rgba(120,220,160,${0.35 + 0.2 * Math.sin(t * 5.1)})`; c.lineWidth = 1.4;
+    c.strokeStyle = `rgba(130,185,150,${0.28 + 0.15 * Math.sin(t * 5.1)})`; c.lineWidth = 1.4;
     c.beginPath();
     for (let i = 0; i <= 24; i++) {
         let gx = mx2 + 8 + i * (width * 0.052 / 24);
@@ -3502,10 +3482,10 @@ function drawTournamidGrounds(c, width, height, groundY) {
         c.beginPath(); c.arc(bx, by, 7, Math.PI, 0); c.fill();
         if (torchesLit) {
             let fl = Math.abs(Math.sin(t * 7 + i * 2.3)) * 4;
-            c.save(); c.shadowBlur = 14; c.shadowColor = '#ff9a3a';
-            c.fillStyle = 'rgba(255,154,58,0.85)';
+            c.save(); c.shadowBlur = 10; c.shadowColor = '#cf8a4a';
+            c.fillStyle = 'rgba(225,150,75,0.7)';
             c.beginPath(); c.arc(bx + Math.sin(t * 9 + i) * 1.5, by - 7 - fl * 0.4, 4 + fl * 0.5, 0, Math.PI * 2); c.fill();
-            c.fillStyle = 'rgba(255,230,150,0.9)';
+            c.fillStyle = 'rgba(238,215,160,0.75)';
             c.beginPath(); c.arc(bx, by - 6 - fl * 0.3, 2.2, 0, Math.PI * 2); c.fill();
             c.restore();
         }
