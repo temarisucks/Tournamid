@@ -2522,6 +2522,16 @@ function stageActorsFlee() {
     }
 }
 
+// Reusable offscreen canvas for muting the Tournamid Grounds spectators.
+let _bgActorBuf = null;
+function bgActorBuffer() {
+    if (!_bgActorBuf) {
+        _bgActorBuf = document.createElement('canvas');
+        _bgActorBuf.width = 300;
+        _bgActorBuf.height = 260;
+    }
+    return _bgActorBuf;
+}
 function stageActorIsFighting(charType) {
     if (typeof players !== 'undefined' && players.some(p => p && p.charType === charType)) return true;
     if (typeof teamBattle !== 'undefined' && teamBattle && typeof teams !== 'undefined' &&
@@ -2535,18 +2545,29 @@ function drawStageActors(c) {
         if (a.gone) continue;
         if (a.charType && stageActorIsFighting(a.charType)) continue; // fighters don't watch themselves
         if (a.fighter) {
-            // a real character rig on the terrace, idling (or bolting) at mini scale
+            // a real character rig on the terrace, idling (or bolting) at mini scale.
+            // Rendered through an offscreen buffer so a grey wash can mute the colors —
+            // they're scenery, not contestants (and ctx.filter isn't safe on iOS).
             let f = a.fighter;
             f.dir = a.fleeing ? a.fleeDir : a.dir;
             f.state = a.fleeing ? 'WALK' : 'IDLE';
             if (f.partner) { f.partner.dir = a.fleeing ? a.fleeDir : -a.dir; f.partner.state = f.state; }
+            let buf = bgActorBuffer(), b = buf.getContext('2d');
+            b.setTransform(1, 0, 0, 1, 0, 0);
+            b.globalCompositeOperation = 'source-over';
+            b.clearRect(0, 0, buf.width, buf.height);
+            b.save();
+            b.translate(120, 230 - GROUND_Y); // feet land at buffer (120, 230)
+            f.draw(b);
+            if (f.partner) f.partner.draw(b);
+            b.restore();
+            b.globalCompositeOperation = 'source-atop'; // wash only the sprite pixels
+            b.fillStyle = 'rgba(72,74,82,0.62)';
+            b.fillRect(0, 0, buf.width, buf.height);
+            b.globalCompositeOperation = 'source-over';
             c.save();
-            c.translate(a.x, a.y);
-            c.scale(a.scale, a.scale);
-            c.translate(0, -GROUND_Y); // re-base the fighter's GROUND_Y anchor onto the terrace
-            c.globalAlpha = 0.92;
-            f.draw(c);
-            if (f.partner) f.partner.draw(c);
+            c.globalAlpha = 0.88;
+            c.drawImage(buf, a.x - 120 * a.scale, a.y - 230 * a.scale, buf.width * a.scale, buf.height * a.scale);
             c.restore();
             continue;
         }
