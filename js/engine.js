@@ -1040,15 +1040,20 @@ function drawRoundAnnounce(ctx) {
 // Both fighters arrive with their own signature entrance, trade a matchup-specific
 // exchange (typed out with per-character voice blips), THEN the announcer runs.
 function startEntranceSequence() {
-    if (currentMode === 'ONLINE' || currentMode === 'PVE' || currentMode === 'TRAINING') return;
+    if (currentMode === 'PVE' || currentMode === 'TRAINING') return;
     if (players.length < 2 || !players[0] || !players[1]) return;
     let a = players[0], b = players[1];
     if (!ENTRANCE_KIND[a.charType] || !ENTRANCE_KIND[b.charType]) return;
     let key = [a.charType, b.charType].sort().join('|');
     let scriptPool = [INTRO_DIALOGUE[key], INTRO_DIALOGUE_B[key], INTRO_DIALOGUE_C[key], INTRO_DIALOGUE_D[key]].filter(Boolean);
+    // online: both peers run the ceremony locally, so the script pick must agree —
+    // the host rolls entSeed into the 'start' message and both sides use it here
+    let pick = !scriptPool.length ? null
+        : currentMode === 'ONLINE' ? scriptPool[(onlineState.entSeed || 0) % scriptPool.length]
+        : scriptPool[Math.floor(Math.random() * scriptPool.length)];
     entranceSeq = {
         phase: 'enter', t: 0,
-        script: scriptPool.length ? scriptPool[Math.floor(Math.random() * scriptPool.length)] : null,
+        script: pick,
         lineIdx: 0, charIdx: 0, blipTick: 0, lineHold: 0,
         targets: [a.x, b.x],
         showRound: !!roundAnnounce
@@ -1068,8 +1073,15 @@ function startEntranceSequence() {
 function updateEntranceSeq(dt) {
     let s = entranceSeq, a = players[0], b = players[1];
     if (!s || !a || !b) { entranceSeq = null; return; }
-    // any fresh button press skips the whole ceremony
-    for (let k in keys) { if (keys[k] && !previousKeys[k]) { finishEntranceSeq(); return; } }
+    // any fresh button press skips the whole ceremony (online: only LOCAL presses count,
+    // and the skip is broadcast so both peers cut to the fight together)
+    for (let k in keys) {
+        if (currentMode === 'ONLINE' && k.indexOf('OnlineRemote') === 0) continue;
+        if (keys[k] && !previousKeys[k]) {
+            if (currentMode === 'ONLINE') onlineSend('ent-skip');
+            finishEntranceSeq(); return;
+        }
+    }
     s.t += dt;
     // afterimage trails keep aging so the Traveler's stutter ghosts fade properly
     [a, b].forEach(p => { if (p._trail && p._trail.length) { p._trail.forEach(g => g.age += dt); p._trail = p._trail.filter(g => g.age < 0.24); } });

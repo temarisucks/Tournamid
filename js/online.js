@@ -243,6 +243,7 @@ function onlineHandleMessage(event) {
         selectedStage = msg.stageId || selectedStage;
         p1Selection = msg.p1Selection || p1Selection;
         p2Selection = msg.p2Selection || p2Selection;
+        onlineState.entSeed = typeof msg.entSeed === 'number' ? msg.entSeed : 0; // shared entrance-script pick
         onlineState.postMatchLocal = null;
         onlineState.postMatchRemote = null;
         hideNetMessage();
@@ -255,6 +256,12 @@ function onlineHandleMessage(event) {
     if (msg.type === 'sync') { // host → guest state snapshot
         onlineMarkRemoteTraffic();
         onlineGuestApplySnapshot(msg.snap);
+        return;
+    }
+
+    if (msg.type === 'ent-skip') { // the other side skipped the pre-fight ceremony
+        onlineMarkRemoteTraffic();
+        if (typeof entranceSeq !== 'undefined' && entranceSeq) finishEntranceSeq();
         return;
     }
 
@@ -366,7 +373,7 @@ function onlineSelectStage(stageId) {
 function onlineStartGame() {
     if (Number(onlineState.slot) !== 0) return false;
     onlineSetStatus('Starting online match...');
-    onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection });
+    onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, entSeed: Math.floor(Math.random() * 1000) });
     return true;
 }
 
@@ -473,7 +480,7 @@ function onlineResolvePostMatch() {
         // both peers receive the relayed 'start' and reset together.
         showNetMessage('REMATCH', 'Starting…');
         if (Number(onlineState.slot) === 0) {
-            onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection });
+            onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, entSeed: Math.floor(Math.random() * 1000) });
         }
     }
 }
@@ -538,7 +545,8 @@ function onlineTick(dt) {
     onlineGuardRemoteInput();
     if (onlineState.slot === 0) {
         onlineState.snapTimer += dt;
-        if (onlineState.snapTimer >= ONLINE_SNAPSHOT_RATE) {
+        // no snapshots during the entrance ceremony — each side runs it locally
+        if (onlineState.snapTimer >= ONLINE_SNAPSHOT_RATE && !entranceSeq) {
             onlineState.snapTimer = 0;
             onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
         }
@@ -570,8 +578,13 @@ function onlineFixedUpdate(realDt) {
     } else {
         // GUEST — thin client: report inputs, animate the last snapshot forward
         if (gameState === 'PLAYING') onlineGuestSendInput(realDt);
-        if (gameState === 'PLAYING') onlineGuestAdvance(realDt);
-        else updateGameplay(realDt); // END screen win animations etc. run locally
+        if (gameState === 'PLAYING' && entranceSeq) {
+            updateGameplay(realDt); // pre-fight ceremony runs locally on both sides
+        } else if (gameState === 'PLAYING') {
+            onlineGuestAdvance(realDt);
+        } else {
+            updateGameplay(realDt); // END screen win animations etc. run locally
+        }
     }
 }
 
@@ -643,6 +656,7 @@ function onlineHostCaptureSnapshot() {
 function onlineGuestApplySnapshot(snap) {
     if (onlineState.slot !== 1 || !snap || !Array.isArray(snap.players)) return;
     if (gameState !== 'PLAYING' && gameState !== 'ROUND_END' && gameState !== 'END') return;
+    if (entranceSeq) return; // still mid-ceremony locally — fresh snapshots keep coming at 30Hz
     onlineState.lastSnapAt = performance.now();
     onlineState.snapAgeMs = 0;
 
