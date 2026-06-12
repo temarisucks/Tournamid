@@ -177,7 +177,10 @@ const music = {
         darkCastle: makeMusic('audio/music/Tournamid - Dark Castle.wav'),
         clockworkTower: makeMusic('audio/music/Tournamid - Clockworkx Tower.wav'),
         endWorld: makeMusic('audio/music/Tournamid - End of the World.wav'),
-        megaMansion: makeMusic('audio/music/Tournamid - Mega Mansion.wav')
+        megaMansion: makeMusic('audio/music/Tournamid - Mega Mansion.wav'),
+        garden: makeMusic('audio/music/Tournamid - The Garden.wav'),
+        chamber: makeMusic('audio/music/Tournamid - The Chamber.wav'),
+        tournamidGrounds: makeMusic('audio/music/Tournamid - Tournamid Grounds.wav')
     },
     fallbackStages: ['dojo', 'moonBridge', 'bloodBall', 'pStreet'],
     fallbackPick: null,
