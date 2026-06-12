@@ -2199,128 +2199,9 @@ function drawStage(targetCtx, stageId, width, height, groundY) {
         targetCtx.strokeStyle = '#777'; targetCtx.lineWidth = 2;
         targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
     } else if (stageId === 'pStreet') {
-        // ---- P STREET: greyscale downtown at night. The sidewalk recedes into a back
-        // road with traffic, so the spectators stand on real ground, not mid-air. ----
-        let t = performance.now() / 1000;
-        let sky = targetCtx.createLinearGradient(0, 0, 0, groundY);
-        sky.addColorStop(0, '#0c0c0c'); sky.addColorStop(1, '#060606');
-        targetCtx.fillStyle = sky;
-        targetCtx.fillRect(0, 0, width, height);
-
-        let roadTop = groundY - height * 0.30;   // building bases / far side of the road
-        let walkBack = groundY - height * 0.13;  // back edge of the sidewalk (spectators stand here)
-
-        // distant buildings with lit windows
-        let bw = width / 7;
-        for (let i = 0; i < 8; i++) {
-            let bx = i * bw - bw * 0.25;
-            let bh = height * (0.20 + ((i * 53) % 17) / 17 * 0.26);
-            let shade = 14 + ((i * 7) % 5) * 4;
-            targetCtx.fillStyle = `rgb(${shade},${shade},${shade})`;
-            targetCtx.fillRect(bx, roadTop - bh, bw * 0.92, bh + 6);
-            for (let wy = roadTop - bh + 12; wy < roadTop - 8; wy += 16) {
-                for (let wx = bx + 8; wx < bx + bw * 0.92 - 8; wx += 14) {
-                    let lit = ((Math.floor(wx) * 13 + Math.floor(wy) * 7) % 5) < 2;
-                    targetCtx.fillStyle = lit ? 'rgba(225,225,225,0.4)' : 'rgba(110,110,110,0.08)';
-                    targetCtx.fillRect(wx, wy, 7, 9);
-                }
-            }
-        }
-
-        // back road with lane dashes + passing cars
-        targetCtx.fillStyle = '#0a0a0a';
-        targetCtx.fillRect(0, roadTop, width, walkBack - roadTop);
-        targetCtx.fillStyle = '#363636';
-        let laneY = roadTop + (walkBack - roadTop) * 0.52;
-        for (let x = -((t * 40) % 70); x < width; x += 70) targetCtx.fillRect(x, laneY, 34, 3);
-        drawStreetCar(targetCtx, ((t * 70) % (width + 280)) - 140, roadTop + (walkBack - roadTop) * 0.34, 1, height);
-        drawStreetCar(targetCtx, width - (((t * 96) % (width + 340)) - 170), roadTop + (walkBack - roadTop) * 0.72, -1, height);
-
-        // traffic lights at the roadside (cycle through their lamps)
-        drawTrafficLight(targetCtx, width * 0.2, walkBack, height, t);
-        drawTrafficLight(targetCtx, width * 0.78, walkBack, height, t + 1.3);
-
-        // the sidewalk: spectators at the back edge, fighters across the front
-        let sg = targetCtx.createLinearGradient(0, walkBack, 0, height);
-        sg.addColorStop(0, '#1c1c1c'); sg.addColorStop(1, '#0d0d0d');
-        targetCtx.fillStyle = sg;
-        targetCtx.fillRect(0, walkBack, width, height - walkBack);
-        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.moveTo(0, walkBack); targetCtx.lineTo(width, walkBack); targetCtx.stroke();
-        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
-        targetCtx.strokeStyle = 'rgba(255,255,255,0.05)'; targetCtx.lineWidth = 1;
-        for (let i = 1; i < 6; i++) {
-            let x = width * (i / 6);
-            targetCtx.beginPath(); targetCtx.moveTo(x, walkBack); targetCtx.lineTo(x + (x - width / 2) * 0.35, height); targetCtx.stroke();
-        }
-
-        if (targetCtx !== ctx) { // static spectators in thumbnails (live draws animated ones)
-            let s = height / 460;
-            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.12 + i * 0.18), walkBack, s, 85, 'spectate', i * 1.3, 1);
-        }
+        drawPStreetStage(targetCtx, width, height, groundY);
     } else if (stageId === 'bloodBall') {
-        // ---- BLOOD BALL: greyscale disco club ----
-        let t = performance.now() / 1000;
-        let sky = targetCtx.createRadialGradient(width * 0.5, height * 0.18, 10, width * 0.5, height * 0.5, height * 0.95);
-        sky.addColorStop(0, '#1b1b1b'); sky.addColorStop(0.5, '#0a0a0a'); sky.addColorStop(1, '#040404');
-        targetCtx.fillStyle = sky;
-        targetCtx.fillRect(0, 0, width, height);
-
-        let cx = width * 0.5, cy = height * 0.17, br = height * 0.085;
-        // rotating light beams
-        targetCtx.save();
-        targetCtx.globalAlpha = 0.09;
-        for (let i = 0; i < 6; i++) {
-            let ang = t * 0.6 + i * Math.PI / 3;
-            targetCtx.fillStyle = i % 2 ? '#fff' : '#888';
-            targetCtx.beginPath();
-            targetCtx.moveTo(cx, cy);
-            targetCtx.lineTo(cx + Math.cos(ang) * width, cy + Math.abs(Math.sin(ang)) * height * 1.3);
-            targetCtx.lineTo(cx + Math.cos(ang + 0.16) * width, cy + Math.abs(Math.sin(ang + 0.16)) * height * 1.3);
-            targetCtx.closePath(); targetCtx.fill();
-        }
-        targetCtx.restore();
-        // pulsing dance floor
-        let fT = groundY - height * 0.02;
-        let cols = 8;
-        for (let r = 0; r < 4; r++) {
-            let yy = fT + (height - fT) * (r / 4), yy2 = fT + (height - fT) * ((r + 1) / 4);
-            for (let cI = 0; cI < cols; cI++) {
-                let x0 = width * (0.16 + 0.68 * (cI / cols)), x1 = width * (0.16 + 0.68 * ((cI + 1) / cols));
-                let pulse = 0.5 + 0.5 * Math.sin(t * 4 + cI + r * 1.7);
-                let v = Math.floor(34 + pulse * 150);
-                targetCtx.fillStyle = `rgb(${v},${v},${v})`;
-                targetCtx.fillRect(x0, yy, x1 - x0 - 2, yy2 - yy - 2);
-            }
-        }
-        // disco ball
-        targetCtx.strokeStyle = '#555'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.moveTo(cx, 0); targetCtx.lineTo(cx, cy - br); targetCtx.stroke();
-        targetCtx.save();
-        targetCtx.translate(cx, cy);
-        targetCtx.beginPath(); targetCtx.arc(0, 0, br, 0, Math.PI * 2); targetCtx.clip();
-        let spin = t * 0.8, fs = br / 3.2;
-        for (let yy = -br; yy < br; yy += fs) {
-            for (let xx = -br; xx < br; xx += fs) {
-                let b = 0.5 + 0.5 * Math.sin((xx / fs) * 0.9 + spin * 3 + (yy / fs) * 0.5);
-                let v = Math.floor(40 + b * 205);
-                targetCtx.fillStyle = `rgb(${v},${v},${v})`;
-                targetCtx.fillRect(xx, yy, fs - 1.5, fs - 1.5);
-            }
-        }
-        targetCtx.restore();
-        targetCtx.strokeStyle = 'rgba(0,0,0,0.5)'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.arc(cx, cy, br, 0, Math.PI * 2); targetCtx.stroke();
-        targetCtx.fillStyle = 'rgba(255,255,255,0.85)';
-        targetCtx.beginPath(); targetCtx.arc(cx - br * 0.35, cy - br * 0.35, br * 0.12, 0, Math.PI * 2); targetCtx.fill();
-        // floor line
-        targetCtx.strokeStyle = '#333'; targetCtx.lineWidth = 2;
-        targetCtx.beginPath(); targetCtx.moveTo(0, groundY); targetCtx.lineTo(width, groundY); targetCtx.stroke();
-        if (targetCtx !== ctx) {
-            let s = height / 430;
-            for (let i = 0; i < 5; i++) drawBgStickman(targetCtx, width * (0.2 + i * 0.15), groundY - height * 0.01, s, 95, 'dance', i * 1.7 + t, 1);
-        }
+        drawBloodBallStage(targetCtx, width, height, groundY);
     } else if (stageId === 'championsArena') {
         drawChampionsArena(targetCtx, width, height, groundY);
     } else {
@@ -3507,5 +3388,333 @@ function drawTournamidGrounds(c, width, height, groundY) {
         let h1 = fr(Math.sin(i * 73.7) * 52871.3), h2 = fr(Math.sin(i * 31.3) * 67234.9);
         c.fillStyle = `rgba(255,255,255,${0.03 + h2 * 0.04})`;
         c.fillRect(h1 * width, groundY + 6 + h2 * (height - groundY - 12), 2 + h1 * 3, 1.6);
+    }
+}
+
+// ---- P STREET (overhauled): greyscale downtown at night — layered skyline, neon
+// storefronts, streetlamp pools, steaming manhole, live traffic. Spectators still
+// stand on the sidewalk's back edge; fighters take the curb. ----
+function drawPStreetStage(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    const fr = v => v - Math.floor(v);
+    let roadTop = groundY - height * 0.30;   // building bases / far side of the road
+    let walkBack = groundY - height * 0.13;  // back edge of the sidewalk (spectators stand here)
+
+    // smoggy night sky, a few stars fighting the city glow
+    let sky = c.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, '#0b0b0d'); sky.addColorStop(0.72, '#0a0a0a'); sky.addColorStop(1, '#0d0d0c');
+    c.fillStyle = sky; c.fillRect(0, 0, width, height);
+    for (let i = 0; i < 24; i++) {
+        let h1 = fr(Math.sin(i * 127.1) * 43758.5), h2 = fr(Math.sin(i * 311.7) * 12543.8);
+        let tw = 0.3 + 0.7 * Math.abs(Math.sin(t * (0.4 + h2) + i));
+        c.fillStyle = `rgba(220,224,235,${0.16 * tw})`;
+        c.fillRect(h1 * width, h2 * height * 0.28, 1.4, 1.4);
+    }
+
+    // far skyline silhouette behind the main blocks, with blinking tower lights
+    c.fillStyle = '#0f0f10';
+    let farTops = [];
+    for (let i = 0; i < 10; i++) {
+        let bx = i * width / 9 - 24 + ((i * 37) % 13);
+        let bh = height * (0.34 + ((i * 71) % 23) / 23 * 0.20);
+        c.fillRect(bx, roadTop - bh, width / 9 * 0.82, bh);
+        farTops.push({ x: bx + width / 18 * 0.82, y: roadTop - bh });
+    }
+    [1, 4, 8].forEach((i, k) => {
+        let p = farTops[i];
+        let blink = Math.sin(t * 2.2 + k * 2.1) > 0.55 ? 0.75 : 0.12;
+        c.strokeStyle = '#1c1c1e'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x, p.y - 14); c.stroke();
+        c.fillStyle = `rgba(255,0,51,${blink})`;
+        c.beginPath(); c.arc(p.x, p.y - 16, 2.2, 0, Math.PI * 2); c.fill();
+    });
+
+    // main buildings with lit windows, rooftop water towers and antennas
+    let bw = width / 7;
+    for (let i = 0; i < 8; i++) {
+        let bx = i * bw - bw * 0.25;
+        let bh = height * (0.20 + ((i * 53) % 17) / 17 * 0.26);
+        let shade = 14 + ((i * 7) % 5) * 4;
+        let topY = roadTop - bh;
+        c.fillStyle = `rgb(${shade},${shade},${shade})`;
+        c.fillRect(bx, topY, bw * 0.92, bh + 6);
+        // roof furniture
+        if (i % 3 === 0) { // water tower
+            c.fillStyle = '#141414';
+            c.fillRect(bx + bw * 0.18, topY - 16, bw * 0.2, 16);
+            c.beginPath(); c.moveTo(bx + bw * 0.16, topY - 16); c.lineTo(bx + bw * 0.28, topY - 24); c.lineTo(bx + bw * 0.40, topY - 16); c.closePath(); c.fill();
+            c.strokeStyle = '#1e1e1e'; c.lineWidth = 1.5;
+            c.beginPath(); c.moveTo(bx + bw * 0.21, topY); c.lineTo(bx + bw * 0.21, topY - 4); c.moveTo(bx + bw * 0.35, topY); c.lineTo(bx + bw * 0.35, topY - 4); c.stroke();
+        } else if (i % 4 === 1) { // antenna
+            c.strokeStyle = '#1e1e1e'; c.lineWidth = 2;
+            c.beginPath(); c.moveTo(bx + bw * 0.6, topY); c.lineTo(bx + bw * 0.6, topY - 22); c.stroke();
+            c.beginPath(); c.moveTo(bx + bw * 0.52, topY - 13); c.lineTo(bx + bw * 0.68, topY - 13); c.stroke();
+        }
+        // windows: a fixed lit pattern with the occasional flickering tube
+        for (let wy = topY + 12; wy < roadTop - 8; wy += 16) {
+            for (let wx = bx + 8; wx < bx + bw * 0.92 - 8; wx += 14) {
+                let key = Math.floor(wx) * 13 + Math.floor(wy) * 7;
+                let lit = (key % 5) < 2;
+                let glow = lit ? 0.4 : 0.08;
+                if (lit && (key % 97) === 13) glow = Math.sin(t * 11 + wx) > -0.3 ? 0.42 : 0.10; // dying bulb
+                c.fillStyle = lit ? `rgba(225,225,225,${glow})` : 'rgba(110,110,110,0.08)';
+                c.fillRect(wx, wy, 7, 9);
+            }
+        }
+    }
+
+    // neon storefront signs at the building bases, glow spilling onto the road
+    const neonSign = (nx, nw, nh, col, ph) => {
+        let flick = Math.sin(t * 16 + ph) > -0.93 ? 1 : 0.25; // rare dropout
+        c.save();
+        c.globalAlpha = 0.85 * flick;
+        c.shadowBlur = 12; c.shadowColor = col; c.strokeStyle = col; c.lineWidth = 2;
+        c.strokeRect(nx, roadTop - nh - 12, nw, nh);
+        c.lineWidth = 1.6;
+        for (let k = 1; k <= 3; k++) { // abstract letter strokes
+            let lx = nx + nw * k / 4;
+            c.beginPath(); c.moveTo(lx, roadTop - nh - 8); c.lineTo(lx + (k % 2 ? 3 : -3), roadTop - 16); c.stroke();
+        }
+        c.restore();
+        // wet-asphalt reflection
+        let rg = c.createLinearGradient(0, roadTop, 0, roadTop + 34);
+        rg.addColorStop(0, col === '#ff0033' ? `rgba(255,0,51,${0.10 * flick})` : `rgba(210,220,230,${0.08 * flick})`);
+        rg.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = rg;
+        c.fillRect(nx - 4, roadTop, nw + 8, 34);
+    };
+    neonSign(width * 0.075, 58, 20, '#ff0033', 0);
+    neonSign(width * 0.47, 46, 18, '#cfd8e0', 2.2);
+    neonSign(width * 0.84, 60, 20, '#ff0033', 4.4);
+
+    // back road: lane dashes, a crosswalk, and passing traffic with headlight glow
+    c.fillStyle = '#0a0a0a';
+    c.fillRect(0, roadTop, width, walkBack - roadTop);
+    c.fillStyle = 'rgba(220,220,220,0.10)';
+    for (let x = width * 0.06; x < width * 0.17; x += 13) c.fillRect(x, roadTop + 4, 8, walkBack - roadTop - 8); // crosswalk
+    c.fillStyle = '#363636';
+    let laneY = roadTop + (walkBack - roadTop) * 0.52;
+    for (let x = -((t * 40) % 70); x < width; x += 70) c.fillRect(x, laneY, 34, 3);
+    let car1X = ((t * 70) % (width + 280)) - 140, car1Y = roadTop + (walkBack - roadTop) * 0.34;
+    let car2X = width - (((t * 96) % (width + 340)) - 170), car2Y = roadTop + (walkBack - roadTop) * 0.72;
+    const headlight = (x, y, dir) => {
+        let hg = c.createLinearGradient(x, y, x + dir * 64, y);
+        hg.addColorStop(0, 'rgba(235,235,205,0.16)'); hg.addColorStop(1, 'rgba(235,235,205,0)');
+        c.fillStyle = hg;
+        c.beginPath();
+        c.moveTo(x, y - 3);
+        c.lineTo(x + dir * 64, y - 9);
+        c.lineTo(x + dir * 64, y + 7);
+        c.lineTo(x, y + 3);
+        c.closePath(); c.fill();
+    };
+    headlight(car1X + height * 0.07, car1Y - height * 0.02, 1);
+    headlight(car2X - height * 0.07, car2Y - height * 0.02, -1);
+    drawStreetCar(c, car1X, car1Y, 1, height);
+    drawStreetCar(c, car2X, car2Y, -1, height);
+
+    // traffic lights at the roadside (cycle through their lamps)
+    drawTrafficLight(c, width * 0.2, walkBack, height, t);
+    drawTrafficLight(c, width * 0.78, walkBack, height, t + 1.3);
+
+    // the sidewalk: spectators at the back edge, fighters across the front
+    let sg = c.createLinearGradient(0, walkBack, 0, height);
+    sg.addColorStop(0, '#1c1c1c'); sg.addColorStop(1, '#0d0d0d');
+    c.fillStyle = sg;
+    c.fillRect(0, walkBack, width, height - walkBack);
+    c.strokeStyle = '#555'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, walkBack); c.lineTo(width, walkBack); c.stroke();
+    c.strokeStyle = '#333'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.05)'; c.lineWidth = 1;
+    for (let i = 1; i < 6; i++) {
+        let x = width * (i / 6);
+        c.beginPath(); c.moveTo(x, walkBack); c.lineTo(x + (x - width / 2) * 0.35, height); c.stroke();
+    }
+    // pavement cracks
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 1.4;
+    [[0.23, 0.5], [0.58, 0.3], [0.81, 0.65]].forEach(([fx2, fy2]) => {
+        let px2 = width * fx2, py2 = walkBack + (height - walkBack) * fy2;
+        c.beginPath(); c.moveTo(px2, py2);
+        c.lineTo(px2 + 14, py2 + 5); c.lineTo(px2 + 22, py2 + 16); c.lineTo(px2 + 38, py2 + 20);
+        c.stroke();
+    });
+
+    // streetlamps with light pools on the pavement
+    const lamp = (lx) => {
+        let lampY = walkBack - height * 0.20;
+        // light cone + pool first (behind the pole)
+        let cone = c.createLinearGradient(0, lampY, 0, walkBack + 22);
+        cone.addColorStop(0, 'rgba(235,235,215,0.10)'); cone.addColorStop(1, 'rgba(235,235,215,0.015)');
+        c.fillStyle = cone;
+        c.beginPath();
+        c.moveTo(lx + 14, lampY + 4);
+        c.lineTo(lx - 26, walkBack + 22);
+        c.lineTo(lx + 56, walkBack + 22);
+        c.closePath(); c.fill();
+        c.fillStyle = 'rgba(235,235,215,0.07)';
+        c.beginPath(); c.ellipse(lx + 15, walkBack + 20, 52, 7, 0, 0, Math.PI * 2); c.fill();
+        // pole + arm + head
+        c.strokeStyle = '#222'; c.lineWidth = 4; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(lx, walkBack); c.lineTo(lx, lampY + 8); c.quadraticCurveTo(lx + 2, lampY, lx + 12, lampY + 2); c.stroke();
+        c.fillStyle = 'rgba(240,240,220,0.85)';
+        c.beginPath(); c.ellipse(lx + 14, lampY + 4, 6, 3.4, 0, 0, Math.PI * 2); c.fill();
+    };
+    lamp(width * 0.335);
+    lamp(width * 0.665);
+
+    // steaming manhole on the sidewalk
+    let mhX = width * 0.50, mhY = walkBack + (height - walkBack) * 0.55;
+    c.strokeStyle = '#2c2c2c'; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(mhX, mhY, 19, 6, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.moveTo(mhX - 11, mhY - 2); c.lineTo(mhX + 11, mhY - 2); c.moveTo(mhX - 11, mhY + 2); c.lineTo(mhX + 11, mhY + 2); c.stroke();
+    for (let i = 0; i < 3; i++) {
+        let rise = (t * 26 + i * 17) % 52;
+        c.fillStyle = `rgba(200,200,200,${0.05 * (1 - rise / 52)})`;
+        c.beginPath();
+        c.ellipse(mhX + Math.sin(t * 1.4 + i * 2) * 7, mhY - 6 - rise, 10 + rise * 0.32, 5 + rise * 0.16, 0, 0, Math.PI * 2);
+        c.fill();
+    }
+    // overflowing trash can by the lamp
+    let tcX = width * 0.30, tcY = walkBack + 12;
+    c.fillStyle = '#161616';
+    c.fillRect(tcX - 8, tcY - 22, 16, 22);
+    c.strokeStyle = '#262626'; c.lineWidth = 1.6;
+    c.strokeRect(tcX - 8, tcY - 22, 16, 22);
+    c.beginPath(); c.moveTo(tcX - 10, tcY - 22); c.lineTo(tcX + 10, tcY - 22); c.stroke();
+    c.fillStyle = 'rgba(220,220,220,0.35)';
+    c.beginPath(); c.moveTo(tcX - 3, tcY - 25); c.lineTo(tcX + 2, tcY - 29); c.lineTo(tcX + 5, tcY - 24); c.closePath(); c.fill();
+
+    if (c !== ctx) { // static spectators in thumbnails (live draws animated ones)
+        let s = height / 460;
+        for (let i = 0; i < 5; i++) drawBgStickman(c, width * (0.12 + i * 0.18), walkBack, s, 85, 'spectate', i * 1.3, 1);
+    }
+}
+
+// ---- BLOOD BALL (overhauled): the disco club earns its name — red-washed light
+// beams, a DJ riser with a live equalizer, pulsing speaker stacks, and the mirror
+// ball throwing moving spots around the whole room. ----
+function drawBloodBallStage(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    let beat = 0.5 + 0.5 * Math.sin(t * 4); // one shared pulse drives the whole room
+    let sky = c.createRadialGradient(width * 0.5, height * 0.18, 10, width * 0.5, height * 0.5, height * 0.95);
+    sky.addColorStop(0, '#1b1b1b'); sky.addColorStop(0.5, '#0a0a0a'); sky.addColorStop(1, '#040404');
+    c.fillStyle = sky;
+    c.fillRect(0, 0, width, height);
+
+    let cx = width * 0.5, cy = height * 0.17, br = height * 0.085;
+    let fT = groundY - height * 0.02; // back edge of the dance floor
+
+    // rotating light beams — every other one runs blood red
+    c.save();
+    for (let i = 0; i < 6; i++) {
+        let ang = t * 0.6 + i * Math.PI / 3;
+        c.globalAlpha = i % 2 ? 0.075 : 0.09;
+        c.fillStyle = i % 2 ? '#ff0033' : '#fff';
+        c.beginPath();
+        c.moveTo(cx, cy);
+        c.lineTo(cx + Math.cos(ang) * width, cy + Math.abs(Math.sin(ang)) * height * 1.3);
+        c.lineTo(cx + Math.cos(ang + 0.16) * width, cy + Math.abs(Math.sin(ang + 0.16)) * height * 1.3);
+        c.closePath(); c.fill();
+    }
+    c.restore();
+
+    // mirror-ball spots wandering over the walls and floor
+    for (let k = 0; k < 12; k++) {
+        let a = t * 0.8 + k * 0.52;
+        let sx2 = cx + Math.cos(a) * width * (0.30 + ((k * 29) % 5) * 0.06);
+        let sy2 = cy + height * 0.12 + Math.abs(Math.sin(a * 0.7 + k)) * (groundY - cy) * 0.72;
+        let red = k % 3 === 0;
+        c.fillStyle = red ? 'rgba(255,0,51,0.10)' : 'rgba(255,255,255,0.085)';
+        c.beginPath(); c.ellipse(sx2, sy2, 7, 3.6, 0, 0, Math.PI * 2); c.fill();
+    }
+
+    // speaker stacks flanking the floor, woofers thumping on the beat
+    const speakerStack = (sx2, flip) => {
+        let sw = width * 0.075, sh = height * 0.105;
+        for (let s2 = 0; s2 < 2; s2++) {
+            let by2 = fT - sh * (s2 + 1) - 2 * s2;
+            c.fillStyle = '#0e0e0e';
+            c.fillRect(sx2 - sw / 2, by2, sw, sh);
+            c.strokeStyle = '#242424'; c.lineWidth = 2;
+            c.strokeRect(sx2 - sw / 2, by2, sw, sh);
+            // woofer ring swells with the beat; tweeter above
+            let wr = sh * 0.27 * (1 + beat * 0.10);
+            c.strokeStyle = '#3a3a3a'; c.lineWidth = 3;
+            c.beginPath(); c.arc(sx2, by2 + sh * 0.62, wr, 0, Math.PI * 2); c.stroke();
+            c.fillStyle = `rgba(255,0,51,${0.10 + beat * 0.14})`;
+            c.beginPath(); c.arc(sx2, by2 + sh * 0.62, wr * 0.45, 0, Math.PI * 2); c.fill();
+            c.strokeStyle = '#303030'; c.lineWidth = 2;
+            c.beginPath(); c.arc(sx2 + flip * sw * 0.16, by2 + sh * 0.22, sh * 0.09, 0, Math.PI * 2); c.stroke();
+        }
+    };
+    speakerStack(width * 0.075, 1);
+    speakerStack(width * 0.925, -1);
+
+    // DJ riser at the back of the floor (the DJ bobs behind it)
+    let boothW = width * 0.165, boothH = height * 0.088;
+    let bx0 = cx - boothW / 2, by0 = fT - boothH;
+    drawBgStickman(c, cx, by0 + 10, height / 520, 70, 'dance', t * 2.2, 1);
+    c.fillStyle = '#101010';
+    c.fillRect(bx0, by0, boothW, boothH);
+    c.strokeStyle = '#2a2a2a'; c.lineWidth = 2;
+    c.strokeRect(bx0, by0, boothW, boothH);
+    // live equalizer across the booth face, tips in red
+    let bars = 11, gap = boothW / bars;
+    for (let k = 0; k < bars; k++) {
+        let bh2 = (0.18 + 0.82 * Math.abs(Math.sin(t * 5.2 + k * 0.9))) * (boothH - 12);
+        let bx2 = bx0 + 4 + k * gap;
+        c.fillStyle = '#3c3c3c';
+        c.fillRect(bx2, by0 + boothH - 6 - bh2, gap - 4, bh2);
+        c.fillStyle = `rgba(255,0,51,${0.5 + beat * 0.4})`;
+        c.fillRect(bx2, by0 + boothH - 6 - bh2, gap - 4, 3);
+    }
+
+    // pulsing dance floor — most tiles grey, every fourth runs red
+    let cols = 8;
+    for (let r = 0; r < 4; r++) {
+        let yy = fT + (height - fT) * (r / 4), yy2 = fT + (height - fT) * ((r + 1) / 4);
+        for (let cI = 0; cI < cols; cI++) {
+            let x0 = width * (0.16 + 0.68 * (cI / cols)), x1 = width * (0.16 + 0.68 * ((cI + 1) / cols));
+            let pulse = 0.5 + 0.5 * Math.sin(t * 4 + cI + r * 1.7);
+            let v = Math.floor(34 + pulse * 150);
+            c.fillStyle = (cI + r) % 4 === 0
+                ? `rgb(${Math.floor(40 + pulse * 175)},${Math.floor(v * 0.12)},${Math.floor(v * 0.24)})`
+                : `rgb(${v},${v},${v})`;
+            c.fillRect(x0, yy, x1 - x0 - 2, yy2 - yy - 2);
+        }
+    }
+
+    // the mirror ball itself
+    c.strokeStyle = '#555'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx, 0); c.lineTo(cx, cy - br); c.stroke();
+    c.save();
+    c.translate(cx, cy);
+    c.beginPath(); c.arc(0, 0, br, 0, Math.PI * 2); c.clip();
+    let spin = t * 0.8, fs = br / 3.2;
+    for (let yy = -br; yy < br; yy += fs) {
+        for (let xx = -br; xx < br; xx += fs) {
+            let b = 0.5 + 0.5 * Math.sin((xx / fs) * 0.9 + spin * 3 + (yy / fs) * 0.5);
+            let glint = b > 0.93;
+            let v = Math.floor(40 + b * 205);
+            c.fillStyle = glint ? '#ff2a4d' : `rgb(${v},${v},${v})`; // the odd facet flashes red
+            c.fillRect(xx, yy, fs - 1.5, fs - 1.5);
+        }
+    }
+    c.restore();
+    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2;
+    c.beginPath(); c.arc(cx, cy, br, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.85)';
+    c.beginPath(); c.arc(cx - br * 0.35, cy - br * 0.35, br * 0.12, 0, Math.PI * 2); c.fill();
+    // soft red halo around the ball on the beat
+    c.strokeStyle = `rgba(255,0,51,${0.10 + beat * 0.10})`; c.lineWidth = 6;
+    c.beginPath(); c.arc(cx, cy, br + 5, 0, Math.PI * 2); c.stroke();
+
+    // floor line
+    c.strokeStyle = '#333'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
+    if (c !== ctx) {
+        let s = height / 430;
+        for (let i = 0; i < 5; i++) drawBgStickman(c, width * (0.2 + i * 0.15), groundY - height * 0.01, s, 95, 'dance', i * 1.7 + t, 1);
     }
 }
