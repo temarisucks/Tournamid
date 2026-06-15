@@ -917,6 +917,11 @@ function endGame(title, subtitle) {
     let winnerIdx = roundWins[0] > roundWins[1] ? 0
                   : roundWins[1] > roundWins[0] ? 1
                   : (players[0] && players[1] && players[0].hp >= players[1].hp ? 0 : 1);
+    // ranked/casual: the host reports the outcome so the relay updates MMR / records
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 &&
+        (onlineState.matchKind === 'ranked' || onlineState.matchKind === 'casual')) {
+        onlineSend('match-result', { winner: winnerIdx });
+    }
     let winner = players[winnerIdx];
     if (winner && winner.state !== 'DEAD') {
         winner.startWinPose();
@@ -928,6 +933,12 @@ function endGame(title, subtitle) {
     roundAnnounce = { text: title, t: 0, dur: animMs / 1000 };
     setTimeout(() => {
         if (isLadderMode()) { ladderResolveMatch(); return; } // win -> climb, loss -> retry
+        let endLb = document.getElementById('end-leaderboard');
+        if (endLb) endLb.classList.add('hidden');
+        // PvE survival feeds the leaderboard: score = highest wave reached
+        if (currentMode === 'PVE' && typeof showLeaderboardPanel === 'function') {
+            showLeaderboardPanel('end-leaderboard', 'pveWave', waveCount);
+        }
         document.getElementById('end-screen').classList.remove('hidden');
         if (currentMode === 'ONLINE') onlineBeginPostMatch();
     }, animMs);

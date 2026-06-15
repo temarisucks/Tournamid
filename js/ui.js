@@ -1147,8 +1147,47 @@ function showLadderDefeat() {
     document.getElementById('ladder-defeat-sub').innerText = currentMode === 'INFINITE_LADDER'
         ? 'Infinite streak ended at fight ' + (ladder.index + 1) + (opp ? ' — ' + opp.name + ' bested you.' : '.')
         : 'Fell at rung ' + (ladder.index + 1) + ' of ' + ladder.queue.length + (opp ? ' — ' + opp.name + ' bested you.' : '.');
+    let lb = document.getElementById('ladder-leaderboard');
+    if (lb) lb.classList.add('hidden');
+    // Infinite Ladder feeds the leaderboard: score = fights cleared before losing
+    if (currentMode === 'INFINITE_LADDER') showLeaderboardPanel('ladder-leaderboard', 'infiniteLadder', ladder.index);
     showScreen('ladder-defeat-screen');
     gameState = 'MENU';
+}
+
+// Render (and, for logged-in players, submit to) a leaderboard into a panel on an end
+// screen. Works logged-out too — shows the top board read-only with a "log in" note.
+function showLeaderboardPanel(panelId, board, score) {
+    let panel = document.getElementById(panelId);
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    let heading = board === 'pveWave' ? 'PVE — TOP WAVES' : 'INFINITE LADDER — TOP STREAKS';
+    panel.innerHTML = '<div class="lb-title">' + heading + '</div><div class="lb-note">Loading…</div>';
+    let render = (data) => {
+        if (!data) { panel.innerHTML = '<div class="lb-title">' + heading + '</div><div class="lb-note">Leaderboard unavailable — no relay connection.</div>'; return; }
+        let rows = data.top || [];
+        let html = '<div class="lb-title">' + heading + '</div>';
+        if (!rows.length) {
+            html += '<div class="lb-note">No scores yet — be the first on the board!</div>';
+        } else {
+            html += '<table class="leaderboard"><tbody>';
+            rows.forEach((r, i) => {
+                let mine = account && r.username.toLowerCase() === account.username.toLowerCase();
+                html += '<tr class="' + (mine ? 'lb-me' : '') + '"><td>' + (i + 1) + '</td><td>' + r.username + '</td><td>' + r.score + '</td></tr>';
+            });
+            html += '</tbody></table>';
+        }
+        if (data.you) html += '<div class="lb-you">You placed #' + data.you.rank + ' of ' + data.you.total + ' (best ' + data.you.score + ')</div>';
+        else if (!account) html += '<div class="lb-note">Log in (Online → account) to save your score and see where you rank.</div>';
+        panel.innerHTML = html;
+    };
+    if (typeof fetchLeaderboard !== 'function') { panel.classList.add('hidden'); return; }
+    if (account && score > 0) {
+        submitScore(board, score);
+        setTimeout(() => fetchLeaderboard(board, render), 400); // let the score land first
+    } else {
+        fetchLeaderboard(board, render);
+    }
 }
 
 function ladderRetry() {

@@ -43,8 +43,26 @@ The relay reads `PORT` from the hosting provider automatically.
 
 After deployment, set the frontend relay URL to the deployed `wss://...` URL. You can either:
 
-- type it into the Online Friend Room screen, or
+- type it into the Account / Custom Lobby screen, or
 - edit `js/online-config.js` and set `window.TOURNAMID_WS_URL`.
+
+## Accounts, Ranked/Casual, Leaderboards (v0.27.0)
+
+The relay now stores **accounts**, **ranked MMR / win-loss records**, and the
+**Infinite Ladder + PvE leaderboards** in a JSON data file. No new npm dependencies —
+password hashing uses Node's built-in `crypto`.
+
+**IMPORTANT — persistent storage:** the data file defaults to `./data/tournamid-data.json`.
+Free-tier hosts (Render/Railway) have an **ephemeral filesystem**, so without a persistent
+disk every redeploy/restart **wipes all accounts and leaderboards**. To keep data:
+
+- **Render**: add a **Disk** (e.g. mount path `/data`), then set env `DATA_FILE=/data/tournamid-data.json`.
+- **Railway**: add a **Volume**, then set `DATA_FILE` to a path on it.
+- **VPS / local**: nothing to do — it writes `./data/tournamid-data.json` next to the relay.
+
+Match results in ranked/casual are **host-trusted** (only the host reports the winner) —
+fine for a friendly game, not cheat-proof. Passwords are scrypt+salt hashed; there is no
+email/password recovery (a lost password means making a new account).
 
 ## Current Netcode Scope
 

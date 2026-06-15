@@ -113,9 +113,161 @@ function onlineGetUrl() {
     return url;
 }
 
+// ============================ ACCOUNTS / RANKED / LEADERBOARDS ============================
+// The relay is now a real backend: accounts (required for any online play), ranked +
+// casual matchmaking, and Infinite Ladder / PvE leaderboards. All of it rides the same
+// WebSocket the custom lobby already uses.
+let account = null;                 // the logged-in profile {username, mmr, tier, ...} or null
+onlineState.matchKind = 'custom';   // 'custom' | 'ranked' | 'casual'
+onlineState.opponent = null;        // opponent profile during a ranked/casual match
+onlineState.queueMode = null;       // which queue we're sitting in, if any
+
+function rankLabel(p) {
+    if (!p) return '';
+    return `${p.tier} • ${p.mmr}`;
+}
+
+// the account screen has its own relay-URL field; fall back to the custom-lobby field / default
+function onlineResolveUrl() {
+    let a = document.getElementById('account-relay-url');
+    if (a && a.value.trim()) { localStorage.setItem('tournamidWsUrl', a.value.trim()); return a.value.trim(); }
+    return onlineGetUrl();
+}
+
+function accountStatus(text) {
+    let el = document.getElementById('account-status');
+    if (el) el.innerText = text || '';
+}
+
+let onlinePendingAfterAuth = null; // action to run once a silent re-auth completes
+
+// Connect (if needed), re-authenticate the socket if we're logged in, then run cb.
+// Auth is per-connection on the relay, so a fresh socket after a disconnect must
+// re-send the token before matchmaking / leaderboard actions will be accepted.
+function onlineEnsureConnected(cb, onFail) {
+    let url = onlineResolveUrl();
+    if (!url) { if (onFail) onFail('Enter a relay URL first.'); return; }
+    let run = () => {
+        if (account && !onlineState.authed) {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem('tournamidAuth')); } catch (e) {}
+            if (saved && saved.token) { onlinePendingAfterAuth = cb; onlineSend('auth-token', { token: saved.token }); return; }
+        }
+        cb();
+    };
+    if (onlineState.socket && onlineState.socket.readyState === WebSocket.OPEN) { run(); return; }
+    let input = document.getElementById('account-relay-url');
+    if (input && input.value.trim()) localStorage.setItem('tournamidWsUrl', input.value.trim());
+    onlineConnect().then(() => run()).catch(() => { if (onFail) onFail('Could not reach the relay. Check the URL.'); });
+}
+
+function startRanked() { startMatchmaking('ranked'); }
+function startCasual() { startMatchmaking('casual'); }
+
+// --- entry point from the main menu's Online button ---
+function showOnlineHub() {
+    sfx.init();
+    currentMode = 'ONLINE';
+    if (account) { showOnlineMenu(); return; }
+    // show the account screen; if we have a stored token, try a silent re-login
+    showScreen('account-screen');
+    gameState = 'ONLINE_LOBBY';
+    let urlEl = document.getElementById('account-relay-url');
+    if (urlEl && !urlEl.value) urlEl.value = onlineDefaultUrl();
+    accountStatus('Log in or create an account to play online.');
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('tournamidAuth')); } catch (e) {}
+    if (saved && saved.token) {
+        accountStatus('Resuming your session…');
+        onlineEnsureConnected(() => onlineSend('auth-token', { token: saved.token }),
+            () => accountStatus('Log in or create an account to play online.'));
+    }
+}
+
+function showOnlineMenu() {
+    currentMode = 'ONLINE';
+    gameState = 'ONLINE_LOBBY';
+    onlineState.matchKind = 'custom';
+    let who = document.getElementById('online-menu-user');
+    if (who) who.innerText = account ? `${account.username} — ${rankLabel(account)}` : '';
+    let rec = document.getElementById('online-menu-record');
+    if (rec && account) rec.innerText = `Ranked ${account.rankWins}-${account.rankLosses}   •   Casual ${account.casualWins}-${account.casualLosses}`;
+    showScreen('online-menu-screen');
+}
+
+function accountRegister() {
+    let u = (document.getElementById('account-username').value || '').trim();
+    let p = document.getElementById('account-password').value || '';
+    accountStatus('Creating account…');
+    onlineEnsureConnected(() => onlineSend('register', { username: u, password: p }), accountStatus);
+}
+function accountLogin() {
+    let u = (document.getElementById('account-username').value || '').trim();
+    let p = document.getElementById('account-password').value || '';
+    accountStatus('Signing in…');
+    onlineEnsureConnected(() => onlineSend('login', { username: u, password: p }), accountStatus);
+}
+function accountLogout() {
+    onlineSend('logout');
+    account = null;
+    try { localStorage.removeItem('tournamidAuth'); } catch (e) {}
+    refreshAccountUI();
+    showOnlineHub();
+}
+
+function applyProfile(p) {
+    account = p;
+    refreshAccountUI();
+}
+
+// reflect the current login state across the menus
+function refreshAccountUI() {
+    let who = document.getElementById('online-menu-user');
+    if (who) who.innerText = account ? `${account.username} — ${rankLabel(account)}` : '';
+    let rec = document.getElementById('online-menu-record');
+    if (rec) rec.innerText = account ? `Ranked ${account.rankWins}-${account.rankLosses}   •   Casual ${account.casualWins}-${account.casualLosses}` : '';
+}
+
+// --- matchmaking ---
+function startMatchmaking(mode) {
+    if (!account) { showOnlineHub(); return; }
+    onlineState.queueMode = mode;
+    onlineState.matchKind = mode;
+    sfx.init();
+    onlineEnsureConnected(() => {
+        onlineResetRuntimeStats();
+        onlineSend('mm-join', { mode });
+        let h = document.getElementById('mm-title');
+        if (h) h.innerText = `Searching for ${mode === 'ranked' ? 'RANKED' : 'CASUAL'} match…`;
+        let s = document.getElementById('mm-status');
+        if (s) s.innerText = 'Connecting to the queue…';
+        showScreen('matchmaking-screen');
+        gameState = 'ONLINE_LOBBY';
+    }, msg => { accountStatus(msg); showScreen('account-screen'); });
+}
+
+function cancelMatchmaking() {
+    onlineSend('mm-leave');
+    onlineState.queueMode = null;
+    showOnlineMenu();
+}
+
+// --- leaderboards ---
+let onlineLeaderboardCb = null;
+function submitScore(board, score) {
+    if (!account) return;
+    onlineEnsureConnected(() => onlineSend('score-submit', { board, score }), () => {});
+}
+function fetchLeaderboard(board, cb) {
+    onlineLeaderboardCb = cb;
+    onlineEnsureConnected(() => onlineSend('leaderboard-get', { board }),
+        () => { if (cb) cb(null); });
+}
+
 function showOnlineScreen() {
     sfx.init();
     currentMode = 'ONLINE';
+    onlineState.matchKind = 'custom';
     gameState = 'ONLINE_LOBBY';
     let input = document.getElementById('online-relay-url');
     if (input) input.value = onlineDefaultUrl();
@@ -140,6 +292,7 @@ function onlineConnect() {
 
         ws.addEventListener('open', () => {
             onlineState.connected = true;
+            onlineState.authed = false; // a fresh socket must re-authenticate before matchmaking
             onlineSetStatus('Connected.');
             resolve(ws);
         }, { once: true });
@@ -183,6 +336,62 @@ function onlineSend(type, data = {}) {
 function onlineHandleMessage(event) {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
+
+    // ---- accounts / auth ----
+    if (msg.type === 'auth-ok') {
+        onlineState.authed = true;
+        applyProfile(msg.profile);
+        try { localStorage.setItem('tournamidAuth', JSON.stringify({ username: msg.profile.username, token: msg.token })); } catch (e) {}
+        if (onlinePendingAfterAuth) { let f = onlinePendingAfterAuth; onlinePendingAfterAuth = null; f(); return; }
+        // initial login / register / silent resume on the account screen → go to the sub-menu
+        let acct = document.getElementById('account-screen');
+        if (acct && !acct.classList.contains('hidden')) showOnlineMenu();
+        return;
+    }
+    if (msg.type === 'auth-error') {
+        onlineState.authed = false;
+        onlinePendingAfterAuth = null;
+        account = null;
+        try { localStorage.removeItem('tournamidAuth'); } catch (e) {}
+        accountStatus(msg.message || 'Could not sign in.');
+        if (gameState === 'ONLINE_LOBBY') showScreen('account-screen');
+        return;
+    }
+    if (msg.type === 'rank-update') { applyProfile(msg.profile); return; }
+
+    // ---- matchmaking ----
+    if (msg.type === 'mm-status') {
+        let s = document.getElementById('mm-status');
+        if (s) s.innerText = `Searching… ${msg.waited}s   •   ${msg.queued} in queue`;
+        return;
+    }
+    if (msg.type === 'mm-found') {
+        onlineState.matchKind = msg.mode;
+        onlineState.opponent = msg.opponent || null;
+        onlineState.roomCode = msg.code;
+        onlineState.slot = Number(msg.slot);
+        onlineState.active = true;
+        onlineState.peerConnected = true;
+        onlineState.queueMode = null;
+        onlineState.localSelection = null;
+        onlineState.remoteSelection = null;
+        onlineResetRuntimeStats();
+        currentMode = 'ONLINE';
+        let opp = msg.opponent ? `${msg.opponent.username} (${rankLabel(msg.opponent)})` : 'an opponent';
+        showNetMessage('MATCH FOUND', `vs ${opp}`);
+        setTimeout(() => { hideNetMessage(); goToCharSelect('ONLINE'); }, 1400);
+        return;
+    }
+
+    // ---- leaderboards ----
+    if (msg.type === 'score-ack') {
+        if (account && account.best) account.best[msg.board] = msg.best;
+        return;
+    }
+    if (msg.type === 'leaderboard') {
+        if (onlineLeaderboardCb) { onlineLeaderboardCb(msg); onlineLeaderboardCb = null; }
+        return;
+    }
 
     if (msg.type === 'created' || msg.type === 'joined') {
         onlineState.roomCode = msg.code;
@@ -338,6 +547,13 @@ function onlineMaybeAdvanceFromCharacterSelect(delay = 450) {
     setTimeout(() => {
         if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothSelected()) return;
         if (gameState === 'PLAYING' || gameState === 'STAGE_SELECT') return;
+        // ranked / casual: no host stage-pick — random arena, auto-start
+        if (onlineState.matchKind === 'ranked' || onlineState.matchKind === 'casual') {
+            let ids = Object.keys(STAGES);
+            selectedStage = ids[Math.floor(Math.random() * ids.length)] || 'dojo';
+            onlineStartGame();
+            return;
+        }
         goToStageSelect();
     }, delay);
 }
