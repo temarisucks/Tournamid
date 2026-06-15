@@ -992,17 +992,21 @@ function onlineGuestApplyFighter(p, src, isOwn) {
             p.state = keepState; p.stateTimer = keepTimer; p.currentAttack = keepAtk;
             p.vx = keepVx; p.vy = keepVy; p.dir = keepDir;
             let latSec = ((onlineState.pingMs || 120) / 1000) + ONLINE_SNAPSHOT_RATE;
-            // use the RECENT peak speed, not the instantaneous one: right after stopping or
-            // reversing, velocity reads ~0 but the host's stale view still trails the old
-            // motion — instantaneous slack collapsed and caused a tiny backward drag.
+            // X: latency-aware slack + a gentle ease. Use the RECENT peak speed, not the
+            // instantaneous one — right after stopping/reversing, velocity reads ~0 but the
+            // host's stale view still trails the old motion, and instantaneous slack
+            // collapsing caused a tiny backward drag. Walls / non-forced knockback can
+            // genuinely diverge, so X is still reconciled.
             let allowX = Math.max(p._predSpdX || 0, Math.abs(keepVx)) * latSec + 30;
-            let allowY = Math.max(p._predSpdY || 0, Math.abs(keepVy)) * latSec + 30;
-            let dx = src.x - keepX, dy = src.y - keepY;
-            if (keepY >= stageGroundYAt(keepX, GROUND_Y) && src.y >= stageGroundYAt(src.x, GROUND_Y)) dy = 0; // both grounded — y agrees
+            let dx = src.x - keepX;
             let exX = Math.abs(dx) > allowX ? dx - Math.sign(dx) * allowX : 0;
-            let exY = Math.abs(dy) > allowY ? dy - Math.sign(dy) * allowY : 0;
-            if (Math.hypot(exX, exY) > 140) { p.x = src.x; p.y = src.y; } // hopeless — snap
-            else { p.x = keepX + exX * 0.3; p.y = keepY + exY * 0.3; }    // ease out only the real error
+            p.x = Math.abs(exX) > 140 ? src.x : keepX + exX * 0.3;
+            // Y: your own jump + gravity is fully deterministic — the local prediction
+            // already traces the exact arc the host computes, just time-shifted. Easing
+            // toward the host's ping-stale Y every snapshot is what made jumps stutter
+            // instead of rising cleanly. Trust the predicted height; only hard-snap on a
+            // real desync (forced states like HITSTUN/LEDGE already take the host's Y above).
+            p.y = Math.abs(src.y - keepY) > 200 ? src.y : keepY;
             // if the host has us mid-attack and we predicted none (lost packet), adopt it
             if ((p.state === 'IDLE' || p.state === 'WALK') && src.state === 'ATTACK' && src.atk) {
                 p.state = 'ATTACK'; p.stateTimer = src.stateTimer; p.currentAttack = src.atk;
