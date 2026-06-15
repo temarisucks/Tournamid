@@ -795,8 +795,16 @@ function onlineFixedUpdate(realDt) {
         if (hpSig !== onlineState.lastHpSig) {
             onlineState.lastHpSig = hpSig;
             // ROUND_END / END included: the killing blow flips the state in the SAME frame,
-            // and without this final snapshot the guest never saw hp hit 0 or the loser fall
-            if (gameState === 'PLAYING' || gameState === 'ROUND_END' || gameState === 'END') {
+            // and without this final snapshot the guest never saw hp hit 0 or the loser fall.
+            // Throttled so a multi-tick DoT / long combo can't flood a marginal uplink with
+            // 60 full snapshots/sec (which bloats the send buffer and *adds* latency); the
+            // regular 30Hz tick still carries the latest hp within ~33ms. Deaths bypass the
+            // throttle so the round always ends crisply.
+            let now = performance.now();
+            let dying = players.some(p => p && Math.round(p.hp) <= 0);
+            if ((gameState === 'PLAYING' || gameState === 'ROUND_END' || gameState === 'END') &&
+                (dying || now - (onlineState.lastImpactAt || 0) >= 40)) {
+                onlineState.lastImpactAt = now;
                 onlineState.snapTimer = 0;
                 onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
             }
