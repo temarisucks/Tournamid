@@ -164,8 +164,15 @@ function onlineEnsureConnected(cb, onFail) {
 function startRanked() { startMatchmaking('ranked'); }
 function startCasual() { startMatchmaking('casual'); }
 
+// these menu screens must never appear over a live match (a stray click/keypress on a
+// lingering, focused menu button could otherwise yank a player out mid-fight)
+function onlineInActiveMatch() {
+    return gameState === 'PLAYING' || gameState === 'ROUND_END';
+}
+
 // --- entry point from the main menu's Online button ---
 function showOnlineHub() {
+    if (onlineInActiveMatch()) return;
     sfx.init();
     currentMode = 'ONLINE';
     if (account) { showOnlineMenu(); return; }
@@ -185,6 +192,7 @@ function showOnlineHub() {
 }
 
 function showOnlineMenu() {
+    if (onlineInActiveMatch()) return;
     currentMode = 'ONLINE';
     gameState = 'MODE_SELECT';
     onlineState.matchKind = 'custom';
@@ -228,6 +236,7 @@ function refreshAccountUI() {
 
 // --- matchmaking ---
 function startMatchmaking(mode) {
+    if (onlineInActiveMatch()) return;
     if (!account) { showOnlineHub(); return; }
     onlineState.queueMode = mode;
     onlineState.matchKind = mode;
@@ -263,6 +272,7 @@ function fetchLeaderboard(board, cb) {
 }
 
 function showOnlineScreen() {
+    if (onlineInActiveMatch()) return; // never surface the lobby over a live match
     sfx.init();
     currentMode = 'ONLINE';
     onlineState.matchKind = 'custom';

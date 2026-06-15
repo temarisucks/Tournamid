@@ -2433,9 +2433,42 @@ function stageActorIsFighting(charType) {
         teams.flat().some(f => f && f.charType === charType)) return true;
     return false;
 }
+// Tournamid Grounds seats 12 REAL fighter rigs in the stands — redrawing all of them
+// every frame is far too heavy. Cache them to an offscreen canvas refreshed a few times
+// a second and blit that; only draw live while they're fleeing (brief, after an overkill).
+let _specBuf = null, _specBufT = 0;
+function tournamidSpectatorCache() {
+    if (!_specBuf) { _specBuf = document.createElement('canvas'); _specBuf.width = WIDTH; _specBuf.height = HEIGHT; }
+    let now = performance.now();
+    if (now - _specBufT > 70) { // ~14 fps is plenty for idle background figures
+        _specBufT = now;
+        let b = _specBuf.getContext('2d');
+        b.clearRect(0, 0, WIDTH, HEIGHT);
+        for (let a of stageActors.actors) {
+            if (a.gone || !a.fighter) continue;
+            if (a.charType && stageActorIsFighting(a.charType)) continue;
+            let f = a.fighter;
+            f.dir = a.dir; f.state = 'IDLE';
+            if (f.partner) { f.partner.dir = -a.dir; f.partner.state = 'IDLE'; }
+            b.save();
+            b.translate(a.x, a.y);
+            b.scale(a.scale, a.scale);
+            b.translate(0, -GROUND_Y);
+            b.globalAlpha = 0.92;
+            f.draw(b);
+            if (f.partner) f.partner.draw(b);
+            b.restore();
+        }
+    }
+    return _specBuf;
+}
 function drawStageActors(c) {
     if (!stageActors) return;
     let resting = stageActors.type === 'bloodBall' ? 'dance' : 'spectate';
+    if (stageActors.type === 'tournamidGrounds' && !stageActors.actors.some(a => a.fleeing && !a.gone)) {
+        c.drawImage(tournamidSpectatorCache(), 0, 0); // cached spectators (world-space, blit under the camera transform)
+        return;
+    }
     for (let a of stageActors.actors) {
         if (a.gone) continue;
         if (a.charType && stageActorIsFighting(a.charType)) continue; // fighters don't watch themselves

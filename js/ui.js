@@ -878,6 +878,9 @@ function buildTeams(p1chars, p2chars, cpuLevel, p1AI = false, p2AI = true) {
 
 function startGame() {
     showScreen(); // hide menus
+    // drop focus off any menu button — otherwise Enter/Space during the fight could
+    // re-trigger it (e.g. the last-clicked online button), pulling you out of the match
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
     
