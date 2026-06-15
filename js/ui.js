@@ -236,7 +236,14 @@ function setOfflineModesOpen(open) {
     let screen = document.getElementById('mode-screen');
     if (!screen) return;
     screen.classList.toggle('offline-open', !!open);
-    screen.classList.remove('versus-open', 'solo-versus-open', 'team-versus-open');
+    screen.classList.remove('versus-open', 'solo-versus-open', 'team-versus-open', 'online-open');
+}
+// the Online sub-menu is a slide-in panel inside mode-screen, mirroring the offline one
+function setOnlineModesOpen(open) {
+    let screen = document.getElementById('mode-screen');
+    if (!screen) return;
+    screen.classList.toggle('online-open', !!open);
+    screen.classList.remove('offline-open', 'versus-open', 'solo-versus-open', 'team-versus-open');
 }
 function showModeSelect(openOffline = false) {
     sfx.init();
@@ -249,6 +256,9 @@ function showOfflineModes() {
 }
 function hideOfflineModes() {
     setOfflineModesOpen(false);
+}
+function hideOnlineModes() {
+    setOnlineModesOpen(false);
 }
 function showOfflineVersusModes(kind) {
     let screen = document.getElementById('mode-screen');
@@ -303,8 +313,13 @@ function closeHowTo() {
 // --- SETTINGS ---
 const STATE_SCREEN = { MENU: 'menu-screen', MODE_SELECT: 'mode-screen', ONLINE_LOBBY: 'online-screen', CHAR_SELECT: 'char-select-screen', STAGE_SELECT: 'stage-select-screen', INFO: 'info-screen', HOWTO: 'howto-screen', PAUSED: 'pause-screen', END: 'end-screen' };
 let settingsReturn = 'MENU';
+let settingsReturnScreen = 'menu-screen'; // exact visible screen (several states share one gameState)
 function openSettings() {
     settingsReturn = STATE_SCREEN[gameState] ? gameState : 'MENU';
+    // remember the actual on-screen panel so we return to it (account / matchmaking /
+    // custom lobby all share the ONLINE_LOBBY state, for instance)
+    let visible = document.querySelector('.screen:not(.hidden)');
+    settingsReturnScreen = visible ? visible.id : (STATE_SCREEN[settingsReturn] || 'menu-screen');
     renderSettings();
     gameState = 'SETTINGS';
     showScreen('settings-screen');
@@ -313,7 +328,7 @@ function closeSettings() {
     saveSettings(); saveBindings();
     if (rebind) { rebind.btn && rebind.btn.classList.remove('listening'); rebind = null; }
     gameState = settingsReturn;
-    showScreen(STATE_SCREEN[settingsReturn] || 'menu-screen');
+    showScreen(settingsReturnScreen || STATE_SCREEN[settingsReturn] || 'menu-screen');
 }
 function toggleSettingsMenu() {
     if (gameState === 'SETTINGS') closeSettings();

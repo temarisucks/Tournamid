@@ -345,3 +345,12 @@
         table.leaderboard tr.lb-me td { color: #ffd27f; }
         table.leaderboard tr.lb-me td:first-child { color: #ffd27f; }
         .leaderboard-panel .lb-you { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid #333; color: #ffd27f; letter-spacing: 1px; font-size: 0.9rem; }
+
+        /* online sub-menu: a slide-in panel inside mode-screen, mirroring .offline-panel.
+           NOTE: distinct from .online-panel (the input-form grid on the account / custom
+           lobby screens) — a different class on purpose so those forms aren't clobbered. */
+        .online-modes-panel { position: absolute; right: 28px; top: 0; opacity: 0; transform: translateX(70px); pointer-events: none; transition: transform 0.28s ease, opacity 0.24s ease; }
+        #mode-screen.online-open .play-choice-panel { transform: translateX(-250px); }
+        #mode-screen.online-open .online-modes-panel { opacity: 1; transform: translateX(0); pointer-events: auto; }
+        .online-modes-panel .account-line { color: #fff; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; font-size: 0.95rem; margin-bottom: 1px; }
+        .online-modes-panel .account-record { color: #9aa3b2; letter-spacing: 1px; font-size: 0.82rem; margin-bottom: 14px; }

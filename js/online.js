@@ -186,13 +186,11 @@ function showOnlineHub() {
 
 function showOnlineMenu() {
     currentMode = 'ONLINE';
-    gameState = 'ONLINE_LOBBY';
+    gameState = 'MODE_SELECT';
     onlineState.matchKind = 'custom';
-    let who = document.getElementById('online-menu-user');
-    if (who) who.innerText = account ? `${account.username} — ${rankLabel(account)}` : '';
-    let rec = document.getElementById('online-menu-record');
-    if (rec && account) rec.innerText = `Ranked ${account.rankWins}-${account.rankLosses}   •   Casual ${account.casualWins}-${account.casualLosses}`;
-    showScreen('online-menu-screen');
+    showScreen('mode-screen');
+    if (typeof setOnlineModesOpen === 'function') setOnlineModesOpen(true);
+    refreshAccountUI();
 }
 
 function accountRegister() {

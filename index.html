@@ -58,7 +58,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.27.0</span>
+        <span class="menu-version">v0.27.1</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -70,6 +70,15 @@
                 <button class="btn menu-btn primary" onclick="showOnlineHub()"><span>Online</span><small>Ranked, Casual, and custom lobbies</small></button>
                 <button class="btn menu-btn" onclick="showOfflineModes()"><span>Offline</span><small>Local battles, ladder, and PvE</small></button>
                 <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
+            </div>
+            <div class="menu-buttons online-modes-panel">
+                <p id="online-menu-user" class="account-line"></p>
+                <p id="online-menu-record" class="account-record"></p>
+                <button class="btn menu-btn primary online-choice" onclick="startRanked()"><span>Ranked</span><small>Climb the ladder — your rank is on the line</small></button>
+                <button class="btn menu-btn online-choice" onclick="startCasual()"><span>Casual</span><small>Matchmade games, no rank pressure</small></button>
+                <button class="btn menu-btn online-choice" onclick="showOnlineScreen()"><span>Custom Lobby</span><small>Host or join a friend by room code</small></button>
+                <button class="btn menu-btn ghost online-choice" onclick="accountLogout()">Log Out</button>
+                <button class="btn menu-btn ghost online-choice" onclick="hideOnlineModes()">Back</button>
             </div>
             <div class="menu-buttons offline-panel">
                 <button class="btn menu-btn mode-pvp offline-choice" onclick="showOfflineVersusModes('solo')"><span>1v1</span><small>Choose local, CPU, or CPU watch</small></button>
@@ -115,21 +124,6 @@
         <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
     </div>
 
-    <!-- Online sub-menu (after login): Ranked / Casual / Custom Lobby -->
-    <div id="online-menu-screen" class="screen menu-screen hidden">
-        <div class="menu-bg-streak"></div>
-        <h2 class="menu-sub-title">Online</h2>
-        <p id="online-menu-user" class="subtitle account-line"></p>
-        <p id="online-menu-record" class="subtitle account-record"></p>
-        <div class="menu-buttons">
-            <button class="btn menu-btn primary" onclick="startRanked()"><span>Ranked</span><small>Climb the ladder — your rank is on the line</small></button>
-            <button class="btn menu-btn" onclick="startCasual()"><span>Casual</span><small>Matchmade games, no rank pressure</small></button>
-            <button class="btn menu-btn" onclick="showOnlineScreen()"><span>Custom Lobby</span><small>Host or join a friend by room code</small></button>
-            <button class="btn menu-btn ghost" onclick="accountLogout()">Log Out</button>
-            <button class="btn menu-btn ghost" onclick="backToMainMenu()">Back</button>
-        </div>
-    </div>
-
     <!-- Matchmaking search -->
     <div id="matchmaking-screen" class="screen menu-screen hidden">
         <div class="menu-bg-streak"></div>
@@ -154,7 +148,7 @@
             </div>
             <p id="online-status">Enter a relay URL, then host or join a friend room.</p>
         </div>
-        <button class="btn menu-btn ghost" onclick="showOnlineMenu()">Back</button>
+        <button class="btn menu-btn ghost" onclick="showOnlineHub()">Back</button>
     </div>
 
     <!-- How To Play -->
