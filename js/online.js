@@ -835,6 +835,8 @@ const ONLINE_FIGHTER_FIELDS = [
     'fadeCharge', 'fadeActive', 'fadeCooldown', '_fadeIntangible',
     'beastIndex', 'beastSwapFlash', 'beastMarkedTimer', 'beastAnimTimer',
     'beastRavenGlideTimer', 'beastSnakeSwingTimer',
+    'gamblerStance', 'gamblerLuck', 'gamblerSavings', 'gamblerInstall',
+    'gamblerTimer', 'gamblerMix', 'gamblerJackpots',
     '_guardBreakFx', 'blockBreakTimer', 'rootTimer', 'yankTimer',
     'overkillRed', '_overkilled'
 ];

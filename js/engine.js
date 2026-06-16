@@ -878,6 +878,7 @@ function nextRound() {
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
         if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = stageGroundYAt(x + 60, GROUND_Y); p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
         if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; } // fresh timeline each round
+        if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._installRoll = null; } // reset the table each round
         p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
         p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
@@ -2358,7 +2359,7 @@ function initStageActors() {
         // draw time, not here — initStageActors can run before the fighters exist, and
         // the Soul Train can swap fighters mid-match.
         let roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH',
-                      'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
+                      'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER', 'GAMBLER'];
         let arr = [], n = roster.length;
         roster.forEach((ct, i) => {
             let x = WIDTH * 0.055 + i * (WIDTH * 0.89) / (n - 1) + (Math.random() * 14 - 7);
@@ -2745,7 +2746,9 @@ function draw() {
     ctx.scale(camNow.zoom, camNow.zoom);
     ctx.translate(-camNow.x, -camNow.y);
 
-    drawStage(ctx, selectedStage, WIDTH, HEIGHT, GROUND_Y);
+    // The Gambler's "MAX BET" install swallows the arena into a void with a giant spinning slot
+    if (players.some(p => p && p.gamblerInstall)) drawGamblerVoid(ctx, WIDTH, HEIGHT, GROUND_Y);
+    else drawStage(ctx, selectedStage, WIDTH, HEIGHT, GROUND_Y);
     drawStageActors(ctx);
     drawOverkillBackground(ctx);
 
@@ -3774,4 +3777,92 @@ function drawBloodBallStage(c, width, height, groundY) {
         let s = height / 430;
         for (let i = 0; i < 5; i++) drawBgStickman(c, width * (0.2 + i * 0.15), groundY - height * 0.01, s, 95, 'dance', i * 1.7 + t, 1);
     }
+}
+
+// ---- THE GAMBLER — "MAX BET" install backdrop: a black void with a colossal slot
+// machine looming behind the fighters, its three reels endlessly spinning. ----
+function drawGamblerVoid(c, width, height, groundY) {
+    let t = performance.now() / 1000;
+    // deep void with a faint gold glow pooling around the machine
+    let bg = c.createRadialGradient(width * 0.5, height * 0.42, 40, width * 0.5, height * 0.5, height * 1.05);
+    bg.addColorStop(0, '#161008'); bg.addColorStop(0.5, '#0a0703'); bg.addColorStop(1, '#000');
+    c.fillStyle = bg; c.fillRect(0, 0, width, height);
+    // drifting gold motes in the dark
+    const fr = v => v - Math.floor(v);
+    for (let i = 0; i < 30; i++) {
+        let h1 = fr(Math.sin(i * 41.3) * 8123.7), h2 = fr(Math.sin(i * 71.9) * 5331.2);
+        let mx = ((h1 * width + t * (10 + h2 * 24)) % width);
+        let my = (h2 * height + Math.sin(t * 0.6 + i) * 14) % height;
+        c.fillStyle = `rgba(255,210,74,${0.10 + h2 * 0.18})`;
+        c.fillRect(mx, my, 2, 2);
+    }
+
+    // --- the colossal slot machine (background, behind the fight) ---
+    let mw = width * 0.46, mh = height * 0.6;
+    let mx0 = width * 0.5 - mw / 2, my0 = height * 0.06;
+    // cabinet body
+    c.fillStyle = '#241a0c'; c.strokeStyle = '#caa23e'; c.lineWidth = 4;
+    c.beginPath();
+    c.moveTo(mx0, my0 + 26);
+    c.quadraticCurveTo(mx0, my0, mx0 + 26, my0);
+    c.lineTo(mx0 + mw - 26, my0);
+    c.quadraticCurveTo(mx0 + mw, my0, mx0 + mw, my0 + 26);
+    c.lineTo(mx0 + mw, my0 + mh);
+    c.lineTo(mx0, my0 + mh);
+    c.closePath(); c.fill(); c.stroke();
+    // marquee with chasing bulbs
+    c.fillStyle = '#3a2b12'; c.fillRect(mx0 + 14, my0 + 14, mw - 28, mh * 0.13);
+    for (let bx = mx0 + 26; bx < mx0 + mw - 20; bx += 22) {
+        let on = (Math.floor(t * 6) + Math.floor(bx)) % 3 === 0;
+        c.fillStyle = on ? '#ffe9a8' : '#7a5e22';
+        c.beginPath(); c.arc(bx, my0 + 14 + mh * 0.065, 4, 0, Math.PI * 2); c.fill();
+    }
+    // "777" on the marquee
+    c.fillStyle = '#ffd24a'; c.font = `900 ${Math.floor(mh * 0.1)}px Courier New`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('7 7 7', width * 0.5, my0 + 14 + mh * 0.065);
+
+    // three spinning reels in a window
+    let reelTop = my0 + mh * 0.2, reelH = mh * 0.5, reelW = (mw - 56) / 3;
+    let symbols = ['7', '🍒', '★', '$', '💎', '🔔'];
+    c.textBaseline = 'middle';
+    for (let r = 0; r < 3; r++) {
+        let rx = mx0 + 22 + r * (reelW + 6);
+        c.save();
+        c.beginPath(); c.rect(rx, reelTop, reelW, reelH); c.clip();
+        c.fillStyle = '#0d0a05'; c.fillRect(rx, reelTop, reelW, reelH);
+        // scrolling symbol strip (each reel a different speed)
+        let speed = 220 + r * 80;
+        let cell = reelH * 0.5;
+        let off = (t * speed) % cell;
+        c.fillStyle = '#ffe9a8'; c.font = `bold ${Math.floor(cell * 0.6)}px Courier New`;
+        for (let k = -1; k < reelH / cell + 1; k++) {
+            let sy = reelTop + k * cell - off + cell / 2;
+            let sym = symbols[(k + r * 2 + Math.floor(t * speed / cell)) % symbols.length];
+            c.fillText(sym, rx + reelW / 2, sy);
+        }
+        c.restore();
+        c.strokeStyle = '#caa23e'; c.lineWidth = 3; c.strokeRect(rx, reelTop, reelW, reelH);
+    }
+    // payline
+    c.strokeStyle = 'rgba(255,0,51,0.7)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(mx0 + 18, reelTop + reelH / 2); c.lineTo(mx0 + mw - 18, reelTop + reelH / 2); c.stroke();
+
+    // the lever on the right, bobbing as if freshly pulled
+    let lvx = mx0 + mw + 6, lvy = my0 + mh * 0.34;
+    let pull = (Math.sin(t * 1.4) * 0.5 + 0.5) * 18;
+    c.strokeStyle = '#caa23e'; c.lineWidth = 6; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(lvx, lvy + 40); c.lineTo(lvx, lvy + pull); c.stroke();
+    c.fillStyle = '#ff0033'; c.beginPath(); c.arc(lvx, lvy + pull, 9, 0, Math.PI * 2); c.fill();
+
+    // coin slot tray glow at the base
+    c.fillStyle = 'rgba(255,210,74,0.16)';
+    c.fillRect(mx0 + mw * 0.3, my0 + mh - 10, mw * 0.4, 8);
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+
+    // a stage floor line so the fight still reads as grounded
+    let fg = c.createLinearGradient(0, groundY, 0, height);
+    fg.addColorStop(0, '#15100a'); fg.addColorStop(1, '#000');
+    c.fillStyle = fg; c.fillRect(0, groundY, width, height - groundY);
+    c.strokeStyle = 'rgba(255,210,74,0.4)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
 }

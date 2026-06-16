@@ -204,6 +204,17 @@ const CHAR_INFO = [
             ["Down", "Rewind", "snap back to where you stood 3 seconds ago and undo 60% of the damage taken since (cooldown)"]
         ],
         ult: "Ultimate — SAW THAT COMING: a counter stance. Swing at him and he dodges five strikes in a row, stops time, flurries you from every angle while the world is frozen, slides past, waves his hand — and every stored hit lands at once."
+    },
+    {
+        name: "THE GAMBLER", role: "High-variance chaos / luck",
+        passive: "Passive — Lucky Streak: landing hits fills a row of coins; a full row rigs his next RNG special to its best. Two stances: GAMBLING (high variance) and FINANCIALLY RESPONSIBLE (safe, banks Savings — cashed into a guard + health when you flip back).",
+        specials: [
+            ["Neutral", "Lets Go Gambling!", "slam the button — the reels decide: jackpot (coin barrage + heal), a mix (a few coins), or a fizzle ('aw dang it')"],
+            ["Side", "Dice Roll", "hurl a die; the damage scales with the face it lands on (1-6)"],
+            ["Up", "Cha-Ching!", "a coin geyser launches him up — recovery and an anti-air"],
+            ["Down", "Stance Toggle", "flip Gambling / Financially Responsible; swinging back to Gambling cashes out your Savings"]
+        ],
+        ult: "Ultimate — LET'S GO GAMBLING! (MAX BET): an install. The arena becomes a void with a giant spinning slot; the meter drains as a clock. The machine keeps rolling — a mix grants a small stacking buff, a jackpot gives massive health/speed/damage and refills the clock (draining a touch faster after), and three failures end it instantly. While it's live, all his RNG specials are guaranteed their best."
     }
 ];
 
@@ -1002,7 +1013,7 @@ function ladderLevelFor(index, total) {
     return Math.min(1, 0.3 + (index / (total - 1)) * 0.7); // first rung 0.3 → last 1.0
 }
 
-const LADDER_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
+const LADDER_ROSTER = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER', 'GAMBLER'];
 function randomLadderCharacter(exclude = []) {
     let pool = LADDER_ROSTER.filter(c => !exclude.includes(c));
     return pool[Math.floor(Math.random() * pool.length)] || LADDER_ROSTER[0];

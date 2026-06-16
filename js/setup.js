@@ -81,6 +81,11 @@ let cultTraps = [];         // snare-traps planted by the Procession
 let lumBeastFx = [];        // Lumatrossia's fire-breathing beast maws
 let lumPortalFx = [];       // Lumatrossia's drop-portals (visual rings)
 const LUM_DURATION = 13;    // seconds the Lumatrossia install lasts before the bar empties
+// The Gambler's "MAX BET" install: the meter becomes a draining clock; a background slot
+// keeps rolling — mixes stack small buffs, jackpots refill the clock + grant big buffs (and
+// drain a little faster after), and a loss ends it instantly.
+const GAMBLER_INSTALL_DUR = 11;     // seconds the install clock lasts at base drain
+const GAMBLER_ROLL_INTERVAL = 2.0;  // seconds between background slot rolls during the install
 
 // --- META: ultimates, block-break, training ---
 let infiniteMeter = false; // training toggle: ultimates always ready
@@ -108,7 +113,8 @@ const ULT_LINES = {
     COPYCAT: "I can do anything better than you!",
     CULT: "RISE, LUMATROSSIA!",
     TWINS: "CAUGHT IN THE MIDDLE.",
-    TRAVELER: "SAW THAT COMING."
+    TRAVELER: "SAW THAT COMING.",
+    GAMBLER: "LET'S GO GAMBLING!"
 };
 
 // Which ultimate "kind" each character runs. The Copy Cat has none of its own —
@@ -116,7 +122,7 @@ const ULT_LINES = {
 const ULT_KIND = {
     BRAWLER: 'counter', SWORDSMAN: 'arena', MAGE: 'orb', RANGER: 'bomb',
     DARK_RULER: 'darkslash', TELEPATH: 'mindbreak', BEAST_TAMER: 'beaststorm', PHANTOM: 'soultrain',
-    TRAVELER: 'chronostop'
+    TRAVELER: 'chronostop', GAMBLER: 'gamble'
 };
 
 // Total damage each character's ultimate deals once it connects. Used to draw the
@@ -133,7 +139,8 @@ const ULT_DAMAGE = {
     BEAST_TAMER: 66,// snare 4 + bind 6 + brute 18 + raven 14 + whip 24
     PHANTOM: 43,    // claw 4 + seize 3 + void chips 12 + smash 24
     TWINS: 28,      // Eclipse — both twins collide on the centered foe
-    TRAVELER: 40    // chronostop — 6 stored flurry hits (30) + the detonation finale 10
+    TRAVELER: 40,   // chronostop — 6 stored flurry hits (30) + the detonation finale 10
+    GAMBLER: 0      // "MAX BET" is a buff install, not a burst — no ult-lethal threshold
 };
 
 // Ultimate voice lines (played when an ultimate is activated)
@@ -149,7 +156,8 @@ const ultVoices = {
     COPYCAT: new Audio('audio/voicelines/copycatult.wav'),
     CULT: new Audio('audio/voicelines/cultult.wav'),
     TWINS: new Audio('audio/voicelines/twinsult.wav'),
-    TRAVELER: new Audio('audio/voicelines/travelerult.wav')
+    TRAVELER: new Audio('audio/voicelines/travelerult.wav'),
+    GAMBLER: new Audio('audio/voicelines/letsgogambling.wav')
 };
 Object.values(ultVoices).forEach(a => { a.preload = 'auto'; a.volume = 0.9; });
 function playUltVoice(type) {
@@ -299,7 +307,8 @@ const selectVoices = {
     COPYCAT: makeAudio('audio/voicelines/copycat.wav', 0.92),
     CULT: makeAudio('audio/sfx/cult.wav', 0.92),
     TWINS: makeAudio('audio/voicelines/twins.wav', 0.92),
-    TRAVELER: makeAudio('audio/voicelines/traveler.wav', 0.92)
+    TRAVELER: makeAudio('audio/voicelines/traveler.wav', 0.92),
+    GAMBLER: makeAudio('audio/voicelines/letsgogambling.wav', 0.92)
 };
 const winVoices = {
     BRAWLER: makeAudio('audio/voicelines/brawlerwin.wav', 0.95),
@@ -313,8 +322,21 @@ const winVoices = {
     COPYCAT: makeAudio('audio/voicelines/copycatwin.wav', 0.95),
     CULT: makeAudio('audio/sfx/cultwin.wav', 0.95),
     TWINS: makeAudio('audio/voicelines/twinswin.wav', 0.95),
-    TRAVELER: makeAudio('audio/voicelines/travelerwin.wav', 0.95)
+    TRAVELER: makeAudio('audio/voicelines/travelerwin.wav', 0.95),
+    GAMBLER: makeAudio('audio/voicelines/icantstopwinning.mp3', 0.95)
 };
+// The Gambler's reaction barks: a "win" (mix/jackpot) vs a "loss" on his RNG specials,
+// plus the stance-flip lines. responsible.wav fires only on entering the safe stance.
+const gamblerVoices = {
+    dang: makeAudio('audio/voicelines/awdangit.mp3', 0.95),
+    winning: makeAudio('audio/voicelines/icantstopwinning.mp3', 0.95),
+    gambling: makeAudio('audio/voicelines/letsgogambling.wav', 0.92),
+    responsible: makeAudio('audio/voicelines/responsible.wav', 0.92)
+};
+function playGamblerVoice(which) {
+    let a = gamblerVoices[which];
+    if (a) { try { a.currentTime = 0; a.play(); } catch (e) {} }
+}
 const roundVoices = {
     ready: makeAudio('audio/voicelines/doesheknow.wav', 0.95),
     fight: makeAudio('audio/voicelines/fight.wav', 0.95),
@@ -352,7 +374,7 @@ function applyVolumes() {
 }
 // register every sound under its category
 Object.values(attackSfx).forEach(a => registerAudio(a, 'sfx'));
-[selectVoices, winVoices, roundVoices, ultVoices].forEach(coll => Object.values(coll).forEach(a => registerAudio(a, 'voice')));
+[selectVoices, winVoices, roundVoices, ultVoices, gamblerVoices].forEach(coll => Object.values(coll).forEach(a => registerAudio(a, 'voice')));
 registerAudio(overkillVoice, 'voice');
 registerAudio(music.menu, 'music');
 Object.values(music.stages).forEach(a => registerAudio(a, 'music'));
@@ -372,7 +394,8 @@ let entranceSeq = null; // { phase, t, script, lineIdx, charIdx, ... } — walk-
 const ENTRANCE_KIND = {
     BRAWLER: 'jog', SWORDSMAN: 'spinblade', MAGE: 'float', RANGER: 'roll',
     DARK_RULER: 'stride', TELEPATH: 'levitate', BEAST_TAMER: 'whip', PHANTOM: 'mist',
-    COPYCAT: 'allfours', CULT: 'procession', TWINS: 'cartwheel', TRAVELER: 'stutter'
+    COPYCAT: 'allfours', CULT: 'procession', TWINS: 'cartwheel', TRAVELER: 'stutter',
+    GAMBLER: 'jog'
 };
 
 // Undertale-style speech blips — every character talks in their own synth voice
@@ -383,7 +406,7 @@ const BLIP_VOICE = {
     BEAST_TAMER: { f: 190, w: 'square' }, PHANTOM: { f: 120, w: 'sine' },
     COPYCAT: { f: 450, w: 'triangle' }, CULT: { f: 70, w: 'sawtooth' },
     TWINS: { f: 330, w: 'triangle' },   TWINS_B: { f: 415, w: 'triangle' },
-    TRAVELER: { f: 480, w: 'square' }
+    TRAVELER: { f: 480, w: 'square' },  GAMBLER: { f: 360, w: 'square' }
 };
 
 // Unique pre-fight exchange for EVERY matchup. Keyed by both charTypes sorted + '|'.
@@ -1148,6 +1171,17 @@ const CHARACTERS = {
             specSide: { startup: 0.16, active: 0.1, recovery: 0.3, dmg: 6, isProj: true, pSpeed: 720, pLife: 0.9, w: 18, h: 12, oy: -56, kb: {x: 150, y: -80}, stun: 0.3, type: 'tachyonEcho' }, // bolt that hits AGAIN 1s later
             specUp: { startup: 0.1, active: 0.12, recovery: 0.3, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'timeSkip' },                  // fast-forward out of the timeline
             specDown: { startup: 0.12, active: 0.1, recovery: 0.34, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'rewind' }                  // snap back to your echo, undo damage
+        }
+    },
+    GAMBLER: {
+        name: "THE GAMBLER", hp: 100, speed: 290, jump: -560, width: 32, height: 86,
+        attacks: {
+            light: { startup: 0.09, active: 0.1, recovery: 0.16, dmg: 5, w: 48, h: 22, ox: 22, oy: -54, kb: {x: 110, y: -60}, stun: 0.24, type: 'coinJab' },     // quick coin flick
+            heavy: { startup: 0.22, active: 0.14, recovery: 0.3, dmg: 11, w: 70, h: 52, ox: 24, oy: -60, kb: {x: 250, y: -210}, stun: 0.46, type: 'leverSlam' },   // overhead slot-lever crank
+            specNeutral: { startup: 0.2, active: 0.12, recovery: 0.34, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'slotRoll' },             // "LET'S GO GAMBLING!" — reels decide the payout
+            specSide: { startup: 0.16, active: 0.1, recovery: 0.3, dmg: 4, isProj: true, pSpeed: 640, pLife: 1.6, w: 26, h: 26, oy: -52, kb: {x: 170, y: -90}, stun: 0.34, type: 'diceRoll' }, // hurled die; damage scales with the face
+            specUp: { startup: 0.1, active: 0.2, recovery: 0.32, dmg: 7, w: 46, h: 64, ox: 0, oy: -10, kb: {x: 70, y: -250}, stun: 0.3, type: 'chaChing' },         // coin geyser — launcher + recovery
+            specDown: { startup: 0.05, active: 0.1, recovery: 0.16, dmg: 0, w: 0, h: 0, ox: 0, oy: 0, kb: {x: 0, y: 0}, stun: 0, type: 'gamblerStance' }            // toggle Gambling / Responsible (cash out on the way back to Gambling)
         }
     },
     ZOMBIE: {

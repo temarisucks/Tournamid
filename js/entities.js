@@ -164,6 +164,7 @@ class Projectile {
         this.y += this.vy * dt;
         // Arcing projectiles fall under gravity
         if (this.subtype === 'fire') this.vy += 600 * dt;
+        if (this.gravity) { this.vy += this.gravity * dt; this.spin = (this.spin || 0) + dt * 12; } // coins / dice tumble as they arc
 
         // Piano Drop (Copy Cat): plummets, then SMASHES the floor with its sound
         if (this.subtype === 'piano') {
@@ -397,6 +398,29 @@ class Projectile {
             ctx.fillStyle = 'rgba(255,0,51,0.85)'; ctx.shadowBlur = 18; ctx.shadowColor = '#ff0033';
             ctx.beginPath(); ctx.ellipse(cx, cy, this.w * 0.75, this.h / 2, 0, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(cx, cy, this.w * 0.4, this.h * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (this.subtype === 'coin') {
+            // The Gambler's gold coin — spinning edge-on so it flashes thin then round
+            let s = Math.abs(Math.cos((this.spin || 0)));
+            ctx.translate(cx, cy);
+            ctx.fillStyle = '#ffd24a'; ctx.strokeStyle = '#a8791a'; ctx.lineWidth = 1.6;
+            ctx.shadowBlur = 8; ctx.shadowColor = '#ffd24a';
+            ctx.beginPath(); ctx.ellipse(0, 0, Math.max(1.5, this.w / 2 * s), this.h / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.shadowBlur = 0; ctx.fillStyle = '#a8791a';
+            if (s > 0.4) ctx.fillRect(-1, -this.h / 4, 2, this.h / 2); // $ tick
+        } else if (this.subtype === 'dice') {
+            // a tumbling white die; the rolled face is shown as pips
+            ctx.translate(cx, cy); ctx.rotate((this.spin || 0) * 0.5);
+            ctx.fillStyle = '#f4f4f4'; ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+            let s = this.w; ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(-s / 2, -s / 2, s, s, 4); else ctx.rect(-s / 2, -s / 2, s, s);
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#222';
+            const pip = (px, py) => { ctx.beginPath(); ctx.arc(px * s * 0.28, py * s * 0.28, s * 0.08, 0, Math.PI * 2); ctx.fill(); };
+            let f = this.diceFace || 1;
+            if (f % 2 === 1) pip(0, 0);
+            if (f >= 2) { pip(-1, -1); pip(1, 1); }
+            if (f >= 4) { pip(1, -1); pip(-1, 1); }
+            if (f === 6) { pip(-1, 0); pip(1, 0); }
         } else if (this.subtype === 'piano') {
             // a tumbling grand piano (Copy Cat's Piano Drop)
             if (typeof pianoImg !== 'undefined' && pianoImg.complete && pianoImg.naturalWidth > 0) {
@@ -499,6 +523,22 @@ class Fighter {
         this._echoHit = null;         // Tachyon Echo re-hit pending on this fighter { t, dmg, owner }
         this._skipHide = 0;           // Time Skip: brief edit-out-of-the-timeline invisibility
         this._trail = [];             // afterimage ghosts {x, y, dir, age}
+
+        // The Gambler — luck / stance / the "MAX BET" install
+        this._baseSpeed = stats.speed;   // restored when install speed buffs end
+        this.gamblerStance = 'gambling'; // 'gambling' (high variance) | 'responsible' (safe, banks Savings)
+        this.gamblerLuck = 0;            // 0..3 pips; full = next RNG special is rigged to its best
+        this.gamblerSavings = 0;         // banked in Responsible; cashed to a shield on the swing back
+        this.slotCd = 0; this.diceCd = 0; this.geyserCd = 0; // brief spam guards
+        this._slotFx = null;             // { t, result } reels readout above his head
+        this._stanceFx = 0;              // stance-swap flash
+        this.gamblerInstall = false;     // "MAX BET" install active
+        this.gamblerTimer = 0;           // install clock (drains; meter mirrors it)
+        this.gamblerDrainScale = 1;      // each jackpot refills the clock and drains a touch faster
+        this.gamblerMix = 0;             // stacked small buffs from mix rolls
+        this.gamblerJackpots = 0;        // jackpots hit this install (big buffs)
+        this.gamblerRollTimer = 0;       // cadence of the background slot's rolls
+        this._installRoll = null;        // { t, result } the background reels' latest spin
 
         // Combat state
         this.attacks = stats.attacks;
@@ -628,6 +668,11 @@ class Fighter {
         if (this.slipCd > 0) this.slipCd -= dt;     // Temporal Slip recharging
         if (this.rewindCd > 0) this.rewindCd -= dt;
         if (this.vortexCd > 0) this.vortexCd -= dt;
+        if (this.slotCd > 0) this.slotCd -= dt;
+        if (this.diceCd > 0) this.diceCd -= dt;
+        if (this.geyserCd > 0) this.geyserCd -= dt;
+        if (this._stanceFx > 0) this._stanceFx -= dt;
+        if (this._slotFx) { this._slotFx.t += dt; if (this._slotFx.t > 1.1) this._slotFx = null; } // reels readout fades
         if (this.comboHitTimer > 0) { this.comboHitTimer -= dt; if (this.comboHitTimer <= 0) this.comboHits = 0; } // combo window lapsed
         if (this._comboPop > 0) this._comboPop -= dt;
         if (this._skipHide > 0) this._skipHide -= dt;
@@ -664,6 +709,7 @@ class Fighter {
             this.meter = Math.max(0, this.meterMax * (this.lumTimer / LUM_DURATION));
             if (this.lumTimer <= 0) this.revertFromLumatrossia();
         }
+        if (this.gamblerInstall) this.updateGamblerInstall(dt);
         if (this.tumbleTimer > 0) { this.tumbleTimer -= dt; this._tumbleAngle += Math.abs(this.vx) * dt * 0.04 * (this._tumbleDir || 1); }
         if (this.yankTimer > 0) this.updateYank(dt);
         if (this.rootTimer > 0) {
@@ -1331,6 +1377,7 @@ class Fighter {
         if (this.ultSealed) return; // a Copy Cat sealed your ultimate
         if (this.charType === 'COPYCAT' && !this.ultUnlocked) return; // locked until Nine Lives procs
         if (this.lumActive) return; // already summoned Lumatrossia — can't re-ult mid-install
+        if (this.gamblerInstall) return; // already mid-"MAX BET" install
         let ready = (infiniteMeter && this.team === 0) || this.meter >= this.meterMax;
         if (!ready) return;
         // The Twins' Eclipse only lands if the foe is close enough to catch in the collision —
@@ -1415,6 +1462,160 @@ class Fighter {
         this.lumActive = false; this.lumTimer = 0; this.meter = 0; this._lumFx = 1.0;
         if (this.state !== 'DEAD') { this.state = this.y < stageGroundYAt(this.x, GROUND_Y) ? 'FALL' : 'IDLE'; this.currentAttack = null; }
         spawnParticles(this.x, this.y - 60, 30, '#ff0033');
+    }
+
+    // ---------------- THE GAMBLER ----------------
+    // Roll an outcome for an RNG special. Install → always its best (jackpot); a full Luck
+    // row → a rigged jackpot (consumed); Responsible stance → always a safe "mix" (no jackpot,
+    // no loss). Otherwise weighted, mostly upside with a rare comedic loss.
+    gamblerRoll() {
+        if (this.gamblerInstall) return 'jackpot';
+        if (this.gamblerLuck >= 3) { this.gamblerLuck = 0; return 'jackpot'; }
+        if (this.gamblerStance === 'responsible') return 'mix';
+        let r = Math.random();
+        if (r < 0.13) return 'loss';
+        if (r < 0.33) return 'jackpot';
+        return 'mix';
+    }
+    gamblerReact(result) { playGamblerVoice(result === 'loss' ? 'dang' : 'winning'); }
+
+    toggleGamblerStance() {
+        if (this.gamblerStance === 'gambling') {
+            this.gamblerStance = 'responsible';
+            playGamblerVoice('responsible');
+        } else {
+            // back to Gambling — cash out everything banked into a coin guard + a little health
+            this.gamblerStance = 'gambling';
+            if (this.gamblerSavings > 0) {
+                this.blockHealth = Math.min(this.blockMax * 1.6, this.blockHealth + this.gamblerSavings * 4);
+                this.hp = Math.min(this.maxHp, this.hp + this.gamblerSavings * 1.5);
+                spawnParticles(this.x, this.y - 50, Math.min(24, 6 + this.gamblerSavings), '#ffd24a');
+                this.gamblerSavings = 0;
+            }
+            playGamblerVoice('gambling');
+        }
+        this._stanceFx = 0.5;
+        spawnParticles(this.x, this.y - 46, 10, this.gamblerStance === 'gambling' ? '#ffd24a' : '#6fd0ff');
+    }
+
+    doSlotRoll(dmgMod = 1) {
+        this.slotCd = 0.7;
+        let result = this.gamblerRoll();
+        this._slotFx = { t: 0, result };
+        this.gamblerReact(result);
+        if (result === 'jackpot') {
+            this.spawnGamblerCoins(7, 6 * dmgMod, 1);              // a coin barrage
+            this.hp = Math.min(this.maxHp, this.hp + 8);            // small heal
+            spawnParticles(this.x, this.y - 50, 26, '#ffd24a');
+        } else if (result === 'mix') {
+            this.spawnGamblerCoins(3, 5 * dmgMod, 0.6);
+        } else { // loss — "aw dang it": the reels fizzle, brief whiff
+            this.vx = 0;
+            spawnParticles(this.x, this.y - 40, 8, '#888');
+        }
+    }
+
+    spawnGamblerCoins(n, dmg, spreadAmt) {
+        for (let i = 0; i < n; i++) {
+            let ang = (i - (n - 1) / 2) * 0.16 * (spreadAmt || 1);
+            let sp = 560 + Math.random() * 120;
+            let p = new Projectile(this.x + this.dir * 20, this.y - 52, Math.cos(ang) * sp * this.dir, Math.sin(ang) * sp - 60,
+                14, 14, dmg, { x: 130 * this.dir, y: -70 }, 0.28, this, 0.85, null);
+            p.subtype = 'coin'; p.gravity = 520;
+            projectiles.push(p);
+        }
+        playAudio(attackSfx.shot);
+    }
+
+    doDiceRoll(dmgMod = 1, atk) {
+        this.diceCd = 0.6;
+        let result = this.gamblerRoll();
+        this.gamblerReact(result);
+        let face = result === 'jackpot' ? 6 : result === 'loss' ? 1 : 2 + Math.floor(Math.random() * 4); // 2..5
+        let dmg = (3 + face * 2.4) * dmgMod;  // face 1 ≈ 5, face 6 ≈ 17 — damage scales with the roll
+        let p = new Projectile(this.x + this.dir * 22, this.y + atk.oy, atk.pSpeed * this.dir, -40,
+            atk.w, atk.h, dmg, { x: (90 + face * 22) * this.dir, y: atk.kb.y }, atk.stun + face * 0.02, this, atk.pLife, null);
+        p.subtype = 'dice'; p.diceFace = face; p.gravity = 240;
+        projectiles.push(p);
+        if (result === 'loss') spawnParticles(this.x + this.dir * 22, this.y + atk.oy, 6, '#888');
+    }
+
+    doChaChing(dmgMod = 1, atk) {
+        this.geyserCd = 0.5;
+        // a fountain of coins erupts in front of him — launcher + the move that carried him up
+        let hb = new Hitbox(this.x - atk.w / 2, this.y + atk.oy - atk.h, atk.w, atk.h, atk.dmg * dmgMod,
+            { x: atk.kb.x * this.dir, y: atk.kb.y }, atk.stun, this, atk.active);
+        hb.atk = atk; hitboxes.push(hb);
+        for (let i = 0; i < 14; i++) {
+            particles.push(new Particle(this.x + (Math.random() * 30 - 15), this.y - 6, (Math.random() - 0.5) * 160, -260 - Math.random() * 220, 0.5, '#ffd24a', 3));
+        }
+        playAudio(attackSfx.shot);
+    }
+
+    // --- "MAX BET" install: the meter becomes a draining clock; a background slot keeps rolling ---
+    becomeGamblerInstall() {
+        this.gamblerInstall = true;
+        this.gamblerTimer = GAMBLER_INSTALL_DUR;
+        this.gamblerDrainScale = 1;
+        this.gamblerMix = 0; this.gamblerJackpots = 0;
+        this.gamblerRollTimer = GAMBLER_ROLL_INTERVAL;
+        this._installRoll = null;
+        this.meter = this.meterMax;
+        this.applyGamblerSpeed();
+        this.state = 'IDLE'; this.vx = 0; this.vy = 0; this.currentAttack = null;
+        playGamblerVoice('gambling');
+        spawnParticles(this.x, this.y - 60, 40, '#ffd24a');
+    }
+
+    updateGamblerInstall(dt) {
+        this.gamblerTimer -= dt * this.gamblerDrainScale;
+        this.meter = Math.max(0, this.meterMax * (this.gamblerTimer / GAMBLER_INSTALL_DUR));
+        if (this._installRoll) this._installRoll.t += dt;
+        this.gamblerRollTimer -= dt;
+        if (this.gamblerRollTimer <= 0) {
+            this.gamblerRollTimer = GAMBLER_ROLL_INTERVAL;
+            let r = Math.random();
+            let result = r < 0.15 ? 'loss' : r < 0.35 ? 'jackpot' : 'mix';
+            this._installRoll = { t: 0, result };
+            if (result === 'loss') { playGamblerVoice('dang'); this.endGamblerInstall(); return; } // bust — install ends instantly
+            if (result === 'jackpot') {
+                this.gamblerJackpots++;
+                this.hp = Math.min(this.maxHp, this.hp + 50);   // massive heal
+                this.gamblerTimer = GAMBLER_INSTALL_DUR;        // refill the clock...
+                this.gamblerDrainScale *= 1.18;                 // ...but it drains a touch faster now
+                this.applyGamblerSpeed();
+                playGamblerVoice('winning');
+                spawnParticles(this.x, this.y - 56, 40, '#ffd24a');
+                spawnParticles(this.x, this.y - 56, 22, '#fff');
+            } else { // mix — a small stacking buff
+                this.gamblerMix++;
+                this.hp = Math.min(this.maxHp, this.hp + 4);
+                this.applyGamblerSpeed();
+                playGamblerVoice('winning');
+                spawnParticles(this.x, this.y - 50, 10, '#ffd24a');
+            }
+        }
+        if (this.gamblerTimer <= 0) this.endGamblerInstall();
+    }
+
+    endGamblerInstall() {
+        this.gamblerInstall = false;
+        this.gamblerTimer = 0; this.meter = 0;
+        this.gamblerMix = 0; this.gamblerJackpots = 0; this.gamblerDrainScale = 1;
+        this.speed = this._baseSpeed;
+        spawnParticles(this.x, this.y - 50, 18, '#888');
+    }
+
+    applyGamblerSpeed() {
+        let mult = 1 + this.gamblerMix * 0.04 + this.gamblerJackpots * 0.16;
+        this.speed = this._baseSpeed * Math.min(1.9, mult);
+    }
+
+    // Combined outgoing-damage multiplier (stance + install). Applied in takeDamage.
+    gamblerDamageMult() {
+        let m = this.gamblerStance === 'responsible' ? 0.88 : 1;
+        if (this.gamblerInstall) m *= 1 + this.gamblerMix * 0.06 + this.gamblerJackpots * 0.35;
+        return m;
     }
 
     // Devotion tier (Congregation): 0/1/2 — more cultists, bigger zones, faster ult.
@@ -1650,6 +1851,16 @@ class Fighter {
                 }
             }
             if (u.t > 1.3) { this.becomeLumatrossia(); this.endUlt(); }
+            return;
+        }
+
+        // THE GAMBLER — "MAX BET": a brief declare, then the slot install takes over
+        if (u.kind === 'gamble') {
+            timeScale = 0.5;
+            this.vx = 0; this.y = STAGE_GY;
+            ultCamera = { fx: this.x, fy: STAGE_GY - 80, zoom: 1.35 };
+            if (onlineDeterministicRandom('gamblerRise', this) < 0.4) spawnParticles(this.x + (Math.random() * 60 - 30), STAGE_GY - 20 - u.t * 90, 2, '#ffd24a');
+            if (u.t > 1.1) { this.becomeGamblerInstall(); this.endUlt(); }
             return;
         }
 
@@ -2225,6 +2436,7 @@ class Fighter {
             LUMATROSSIA:{ range: 120, kite: false, jumpy: 0.04 },
             TWINS:     { range: 70,  kite: false, jumpy: 0.10 },
             TRAVELER:  { range: 105, kite: false, jumpy: 0.16 },
+            GAMBLER:   { range: 130, kite: false, jumpy: 0.14 },
             ZOMBIE:    { range: 40,  kite: false, jumpy: 0.03 }
         })[this.charType] || { range: 70, kite: false, jumpy: 0.12 };
 
@@ -2487,6 +2699,9 @@ class Fighter {
         let atk = overrideAtk || this.attacks[atkName] || createAttackVariant(this, atkName);
         if (!atk) return;
         if (atk.type === 'timeVortex' && this.vortexCd > 0) return; // the singularity needs time to re-form
+        if (atk.type === 'slotRoll' && this.slotCd > 0) return;     // the reels need a beat to reset
+        if (atk.type === 'diceRoll' && this.diceCd > 0) return;
+        if (atk.type === 'chaChing' && this.geyserCd > 0) return;
         if (!overrideAtk && this.charType === 'BEAST_TAMER') atk = this.beastAttackFor(atkName, atk);
 
         this.currentAttack = { ...atk, name: atkName };
@@ -2533,6 +2748,8 @@ class Fighter {
         if (t === 'uppercut') { this.vy = -700; this.vx = 200 * this.dir; }
         if (t === 'risingSlash') { this.vy = -560; this.vx = 110 * this.dir; }
         if (t === 'updraftShot') { this.vy = -620; }
+        if (t === 'chaChing') { this.vy = -560; this.vx = 120 * this.dir; } // Cha-Ching geyser: ride the coins up (recovery)
+        if (t === 'gamblerStance') { this.toggleGamblerStance(); }          // flip Gambling / Responsible (resolved instantly on start)
         if (t === 'parry') this.vx = 0;
         if (t === 'combatRoll') { this.vx = 680 * this.dir; this.invulnTimer = 0.32; this.tacticalReload = true; }
         if (t === 'beastBruteRush') this.vx = 780 * this.dir;
@@ -2722,6 +2939,14 @@ class Fighter {
                 this.spawnBeastRavenMark(dmgMod);
             } else if (atk.type === 'darkOffering') {
                 this.spawnDarkOffering(dmgMod);                 // 1-3 hexed bolts (Devotion)
+            } else if (atk.type === 'slotRoll') {
+                this.doSlotRoll(dmgMod);                        // "LET'S GO GAMBLING!" — the reels decide
+            } else if (atk.type === 'diceRoll') {
+                this.doDiceRoll(dmgMod, atk);                   // hurl a die — damage scales with the face
+            } else if (atk.type === 'chaChing') {
+                this.doChaChing(dmgMod, atk);                   // coin geyser launcher
+            } else if (atk.type === 'gamblerStance') {
+                // resolved on attack-start (toggleGamblerStance); no hitbox
             } else if (atk.type === 'consecrate') {
                 this.spawnConsecrate();                         // plant the ritual trap-zone
             } else if (atk.type === 'teleCrash') {
@@ -2976,6 +3201,8 @@ class Fighter {
     takeDamage(amount, kb, stun, attacker, opts = {}) {
         if (this.state === 'DEAD') return false;
         kb = { x: kb.x, y: kb.y }; // local copy so scaling never mutates the source
+        // The Gambler's stance + "MAX BET" install scale all of his outgoing damage
+        if (attacker && attacker !== this && attacker.charType === 'GAMBLER' && attacker.gamblerDamageMult) amount *= attacker.gamblerDamageMult();
 
         // BRAWLER ultimate COUNTER — negate any attack (even an enemy ultimate) and punish
         if (this.state === 'ULT' && this.ult && this.ult.kind === 'counter' && this.ult.phase === 'window') {
@@ -3121,6 +3348,12 @@ class Fighter {
                 attacker.comboHits = (attacker.comboHitTimer > 0 ? attacker.comboHits : 0) + 1;
                 attacker.comboHitTimer = stun + 0.6; // the window to continue: their stun plus a beat
                 attacker._comboPop = 0.18;
+            }
+            // The Gambler — Lucky Streak: landing hits fills the row toward a rigged jackpot;
+            // in Responsible stance he banks Savings instead (cashed out on the swing to Gambling)
+            if (attacker && attacker !== this && attacker.charType === 'GAMBLER') {
+                attacker.gamblerLuck = Math.min(3, attacker.gamblerLuck + 1);
+                if (attacker.gamblerStance === 'responsible') attacker.gamblerSavings = Math.min(20, attacker.gamblerSavings + 1);
             }
         }
 
@@ -3630,6 +3863,12 @@ class Fighter {
         ctx.strokeStyle = '#fff';
         if (this.charType === 'LUMATROSSIA') ctx.strokeStyle = '#e8e8e8';
         if (this.charType === 'CULT') ctx.strokeStyle = '#cfcfcf';
+        if (this.charType === 'GAMBLER') {
+            ctx.strokeStyle = this.gamblerStance === 'responsible' ? '#7fd2ff' : '#3aa0ff'; // electric blue
+            // scribbled-in look: the whole rig is re-jittered every frame so he twitches
+            ctx.translate((Math.random() - 0.5) * 2.4, (Math.random() - 0.5) * 2.4);
+            if (this.gamblerInstall) ctx.strokeStyle = '#ffd24a'; // gilded while "MAX BET" is live
+        }
         if (this.state === 'HITSTUN') ctx.strokeStyle = '#f55'; // Red flash on hit
         if (this.overkillRed) ctx.strokeStyle = '#ff0033';
         ctx.lineWidth = (this.charType === 'BRAWLER') ? 6 : (this.charType === 'DARK_RULER') ? 7 : (this.charType === 'TELEPATH') ? 3.5 : (this.charType === 'BEAST_TAMER') ? 4.5 : (this.charType === 'PHANTOM') ? 3.4 : (this.charType === 'LUMATROSSIA') ? 5 : 4; // bigger = thicker
@@ -4525,6 +4764,43 @@ class Fighter {
                 leftArmAngle = -0.3; leftArmBend = 0.2;
                 leftLegAngle = -0.3; rightLegAngle = 0.26; leftLegBend = 0.3; rightLegBend = 0.32;
                 torsoLean = mix(0.02, -0.12, ex); headY -= 1;
+            } else if (atk.type === 'coinJab') {
+                // a quick flick — snap the lead hand out like flipping a coin off the thumb
+                rightArmAngle = mix(2.1, 1.5, ex); rightArmBend = mix(-0.7, 0.05, ex);
+                leftArmAngle = 2.2; leftArmBend = -0.6;
+                leftLegAngle = -0.3; rightLegAngle = 0.3; rightLegBend = 0.4;
+                torsoLean = 0.06 + ex * 0.08; headY -= 1;
+            } else if (atk.type === 'leverSlam') {
+                // both hands grab a slot lever overhead and CRANK it down
+                rightArmAngle = mix(3.0, 1.0, ex); rightArmBend = mix(-0.2, -0.05, ex);
+                leftArmAngle  = mix(2.9, 1.1, ex); leftArmBend  = mix(-0.2, -0.05, ex);
+                leftLegAngle = -0.36; rightLegAngle = 0.42; leftLegBend = 0.4; rightLegBend = 0.5;
+                torsoLean = mix(-0.12, 0.22, ex); headY += ex * 3;
+            } else if (atk.type === 'slotRoll') {
+                // slam an imaginary button, then throw both arms up as the reels spin
+                let up = Math.sin(Math.min(1, ex) * Math.PI);
+                rightArmAngle = mix(2.0, 2.7, ex); rightArmBend = -0.4 - up * 0.3;
+                leftArmAngle  = mix(2.0, 2.7, ex); leftArmBend  = -0.4 - up * 0.3;
+                leftLegAngle = -0.2; rightLegAngle = 0.2; leftLegBend = 0.4; rightLegBend = 0.4;
+                headY -= up * 3; torsoLean = 0;
+            } else if (atk.type === 'diceRoll') {
+                // underhand sling — scoop low then fling the die forward
+                rightArmAngle = mix(0.4, 1.7, ex); rightArmBend = mix(-0.3, 0.1, ex);
+                leftArmAngle = 2.0; leftArmBend = -0.5;
+                leftLegAngle = -0.4; rightLegAngle = mix(0.3, 0.55, ex); rightLegBend = 0.5;
+                torsoLean = mix(-0.08, 0.2, ex); headY -= 1;
+            } else if (atk.type === 'chaChing') {
+                // arms flung wide and down as the coin geyser blasts him upward
+                rightArmAngle = 2.5; rightArmBend = -0.5;
+                leftArmAngle = 2.5; leftArmBend = -0.5;
+                leftLegAngle = -0.15; rightLegAngle = 0.15; leftLegBend = 0.55; rightLegBend = 0.55;
+                headY -= 4; torsoLean = 0;
+            } else if (atk.type === 'gamblerStance') {
+                // a quick showman's flourish — present the palms as he switches stance
+                rightArmAngle = mix(1.4, 1.9, ex); rightArmBend = 0.2;
+                leftArmAngle  = mix(1.4, 1.9, ex); leftArmBend  = 0.2;
+                leftLegAngle = -0.2; rightLegAngle = 0.2; leftLegBend = 0.35; rightLegBend = 0.35;
+                torsoLean = 0; headY -= 1;
             } else if (atk.type === 'uppercut') {
                 // Crouch-load, then a rising fist straight overhead
                 rightArmAngle = mix(1.5, 3.05, ex); rightArmBend = mix(-0.5, -0.05, ex);
@@ -5280,9 +5556,10 @@ class Fighter {
             ctx.fill();
         });
 
-        // Head
+        // Head — the Gambler's is a WIDE oval (wider than tall); everyone else is round
         ctx.beginPath();
-        ctx.arc(0, headY, 12, 0, Math.PI*2);
+        if (this.charType === 'GAMBLER') ctx.ellipse(0, headY, 15, 9.5, 0, 0, Math.PI * 2);
+        else ctx.arc(0, headY, 12, 0, Math.PI*2);
         ctx.stroke();
         if (this.team === 1 && currentMode !== 'PVE') {
             // slight indicator for P2
@@ -5296,6 +5573,47 @@ class Fighter {
             ctx.fillStyle = '#ff0033';
             ctx.fillRect(-12, headY - 4, 24, 4);
             ctx.beginPath(); ctx.moveTo(-12, headY-2); ctx.lineTo(-24, headY+4); ctx.lineWidth = 3; ctx.strokeStyle = '#ff0033'; ctx.stroke();
+        } else if (this.charType === 'GAMBLER') {
+            // two dim eyes on the wide oval + the signature lone black RIGHT eyebrow
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.beginPath(); ctx.arc(-5, headY - 1, 1.7, 0, Math.PI * 2); ctx.arc(6, headY - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+            let browUp = (this.gamblerStance === 'gambling' || this.state === 'WIN') ? 4 : 1.5; // cockier in Gambling
+            if (Math.sin(t * 0.7 + this.animTimer) > -0.4) { // it comes and goes
+                ctx.save(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(2, headY - 6 - browUp * 0.4); ctx.lineTo(11, headY - 7 - browUp); ctx.stroke(); ctx.restore();
+            }
+            // a coin he idly flips while standing around
+            if (this.state === 'IDLE' || this.state === 'WALK') {
+                let cf = Math.abs(Math.sin(t * 3.2));
+                ctx.fillStyle = 'rgba(255,210,74,0.9)';
+                ctx.beginPath(); ctx.ellipse(14, headY + 2 - cf * 11, 3, 3 * cf + 0.7, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            // Luck pips stacking toward a rigged jackpot
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath(); ctx.arc(-12 + i * 8, headY - 26, 3, 0, Math.PI * 2);
+                if (i < this.gamblerLuck) { ctx.fillStyle = '#ffd24a'; ctx.fill(); }
+                else { ctx.strokeStyle = 'rgba(255,210,74,0.5)'; ctx.lineWidth = 1.4; ctx.stroke(); }
+            }
+            // the reels' verdict flashing above him after a Slot Roll
+            if (this._slotFx) {
+                let a = Math.max(0, 1 - this._slotFx.t / 1.1);
+                let col = this._slotFx.result === 'jackpot' ? '#ffd24a' : this._slotFx.result === 'loss' ? '#ff5577' : '#7fd2ff';
+                ctx.save(); ctx.globalAlpha = a;
+                for (let r = 0; r < 3; r++) {
+                    ctx.strokeStyle = '#caa23e'; ctx.lineWidth = 1.4; ctx.strokeRect(-15 + r * 11, headY - 45, 9, 9);
+                    ctx.fillStyle = col;
+                    if (this._slotFx.result === 'jackpot') { ctx.fillRect(-13 + r * 11, headY - 43, 5, 1.6); ctx.fillRect(-9 + r * 11, headY - 43, 1.6, 5); }
+                    else if (this._slotFx.result === 'loss') { ctx.fillRect(-13 + r * 11, headY - 40, 5, 1.6); }
+                    else { ctx.beginPath(); ctx.arc(-10.5 + r * 11, headY - 40.5, 1.8, 0, Math.PI * 2); ctx.fill(); }
+                }
+                ctx.restore();
+            }
+            // gilded aura while "MAX BET" is live
+            if (this.gamblerInstall) {
+                ctx.save(); ctx.globalAlpha = 0.4 + 0.25 * Math.sin(t * 6);
+                ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.shadowBlur = 14; ctx.shadowColor = '#ffd24a';
+                ctx.beginPath(); ctx.ellipse(0, headY, 21, 14, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+            }
         } else if (this.charType === 'PHANTOM') {
             // hollow, glowing eyes
             ctx.save();
