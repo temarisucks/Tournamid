@@ -884,7 +884,7 @@ function nextRound() {
         p.puppet = null; p._portalSlam = null; p.portalCd = 0;
         if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = stageGroundYAt(x + 60, GROUND_Y); p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
         if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; } // fresh timeline each round
-        if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._installRoll = null; } // reset the table each round
+        if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._slotPending = null; p._installRoll = null; } // reset the table each round
         p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
         p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
         p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
@@ -2739,6 +2739,13 @@ function draw() {
     // The ladder-climb screen replaces the arena entirely.
     if (gameState === 'LADDER_SCREEN') { drawLadderScreen(ctx); return; }
 
+    // On menu / select screens an opaque DOM overlay fully covers the canvas, so rendering
+    // the whole arena every frame underneath it is pure waste — and with the heavier new
+    // stages (or a left-over Tournamid Grounds crowd from the last match) that waste is what
+    // made the menu lag. Only draw the scene when it can actually be seen.
+    const SCENE_VISIBLE = gameState === 'PLAYING' || gameState === 'ROUND_END' || gameState === 'END' || gameState === 'PAUSED';
+    if (!SCENE_VISIBLE) return;
+
     // Ease the cinematic camera toward its target (centre + zoom 1 when idle)
     let tx = ultCamera ? ultCamera.fx : WIDTH / 2;
     let ty = ultCamera ? ultCamera.fy : HEIGHT / 2;
@@ -2776,6 +2783,7 @@ function draw() {
     drawCultTraps(ctx);       // Procession snare-traps on the floor
 
     // Entities
+    drawGamblerSlotRoll(ctx); // the neutral-special slot machine, spinning in the air behind him
     drawTravelerFx(ctx); // afterimage ghosts + the Rewind after-echo, behind the live body
     players.forEach(p => p.draw(ctx));
     players.forEach(p => { if (p.partner && p.state !== 'DEAD') p.partner.draw(ctx); }); // The Twins' second body
@@ -3871,4 +3879,77 @@ function drawGamblerVoid(c, width, height, groundY) {
     c.fillStyle = fg; c.fillRect(0, groundY, width, height - groundY);
     c.strokeStyle = 'rgba(255,210,74,0.4)'; c.lineWidth = 2;
     c.beginPath(); c.moveTo(0, groundY); c.lineTo(width, groundY); c.stroke();
+}
+
+// ---- THE GAMBLER — neutral special: a slot machine spins in the air behind him, the
+// reels whirling through symbols and locking in one at a time on the outcome you rolled. ----
+const GAMBLER_SLOT_SYMS = ['7', '🍒', '★', '🔔', '💎', '💰']; // 7, cherry, star, bell, gem, money
+function gamblerFinalSyms(result) {
+    if (result === 'jackpot') return ['7', '7', '7'];
+    if (result === 'loss') return ['💀', '💀', '💀']; // skulls
+    return ['🍒', '★', '🔔']; // a mixed line
+}
+function drawGamblerSlotRoll(c) {
+    if (typeof players === 'undefined') return;
+    let now = performance.now() / 1000;
+    for (let p of players) {
+        if (!p || p.charType !== 'GAMBLER' || !p._slotFx) continue;
+        let fx = p._slotFx, t = fx.t;
+        let a = t < 0.12 ? t / 0.12 : Math.max(0, 1 - (t - 0.85) / 0.25); // fade in, hold, fade out
+        if (a <= 0) continue;
+        let finals = gamblerFinalSyms(fx.result);
+        let mw = 150, mh = 96;
+        let cx = Math.max(mw / 2 + 10, Math.min(WIDTH - mw / 2 - 10, p.x));
+        let cy = stageGroundYAt(p.x, GROUND_Y) - 168; // hovers above his head
+        c.save();
+        c.globalAlpha = a;
+        c.translate(cx, cy);
+        // cabinet
+        c.fillStyle = '#241a0c'; c.strokeStyle = '#caa23e'; c.lineWidth = 3;
+        c.beginPath();
+        if (c.roundRect) c.roundRect(-mw / 2, -mh / 2, mw, mh, 10); else c.rect(-mw / 2, -mh / 2, mw, mh);
+        c.fill(); c.stroke();
+        // marquee bulbs
+        for (let bx = -mw / 2 + 12; bx < mw / 2 - 8; bx += 16) {
+            c.fillStyle = (Math.floor(now * 8) + Math.floor(bx)) % 3 === 0 ? '#ffe9a8' : '#7a5e22';
+            c.beginPath(); c.arc(bx, -mh / 2 + 8, 2.6, 0, Math.PI * 2); c.fill();
+        }
+        // three reels in a window
+        let rw = (mw - 28) / 3, rh = mh - 30, top = -mh / 2 + 20;
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.font = '700 26px Courier New';
+        const lockAt = [0.42, 0.58, 0.74]; // reels stop left-to-right
+        for (let r = 0; r < 3; r++) {
+            let rx = -mw / 2 + 12 + r * (rw + 2);
+            c.save();
+            c.beginPath(); c.rect(rx, top, rw, rh); c.clip();
+            c.fillStyle = '#0d0a05'; c.fillRect(rx, top, rw, rh);
+            let locked = t >= lockAt[r];
+            if (locked) {
+                // settled on the final symbol (a tiny landing bounce)
+                let b = Math.max(0, 1 - (t - lockAt[r]) / 0.12);
+                c.fillStyle = fx.result === 'jackpot' ? '#ffd24a' : fx.result === 'loss' ? '#ff6680' : '#ffe9a8';
+                c.fillText(finals[r], rx + rw / 2, top + rh / 2 + b * 6);
+            } else {
+                // whirling — symbols scroll past fast and blurred
+                c.fillStyle = '#ffe9a8';
+                let speed = 520;
+                let off = (t * speed) % 34;
+                for (let k = -1; k < rh / 34 + 1; k++) {
+                    let sy = top + k * 34 - off + 17;
+                    let sym = GAMBLER_SLOT_SYMS[(k + r * 2 + Math.floor(t * speed / 34)) % GAMBLER_SLOT_SYMS.length];
+                    c.globalAlpha = a * 0.85;
+                    c.fillText(sym, rx + rw / 2, sy);
+                }
+                c.globalAlpha = a;
+            }
+            c.restore();
+            c.strokeStyle = '#caa23e'; c.lineWidth = 2; c.strokeRect(rx, top, rw, rh);
+        }
+        // payline + a glow that flares on a jackpot landing
+        c.strokeStyle = fx.result === 'jackpot' && t > 0.74 ? 'rgba(255,210,74,0.9)' : 'rgba(255,0,51,0.6)';
+        c.lineWidth = 2; c.beginPath(); c.moveTo(-mw / 2 + 8, 5); c.lineTo(mw / 2 - 8, 5); c.stroke();
+        c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+        c.restore();
+    }
 }

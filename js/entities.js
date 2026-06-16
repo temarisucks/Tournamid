@@ -672,7 +672,11 @@ class Fighter {
         if (this.diceCd > 0) this.diceCd -= dt;
         if (this.geyserCd > 0) this.geyserCd -= dt;
         if (this._stanceFx > 0) this._stanceFx -= dt;
-        if (this._slotFx) { this._slotFx.t += dt; if (this._slotFx.t > 1.1) this._slotFx = null; } // reels readout fades
+        if (this._slotFx) { // the neutral-special reels spin, then land + pay out
+            this._slotFx.t += dt;
+            if (this._slotPending && this._slotFx.t >= 0.78) { this.resolveSlotRoll(this._slotPending.result); this._slotPending = null; }
+            if (this._slotFx.t > 1.25) this._slotFx = null;
+        }
         if (this.comboHitTimer > 0) { this.comboHitTimer -= dt; if (this.comboHitTimer <= 0) this.comboHits = 0; } // combo window lapsed
         if (this._comboPop > 0) this._comboPop -= dt;
         if (this._skipHide > 0) this._skipHide -= dt;
@@ -1501,17 +1505,22 @@ class Fighter {
     doSlotRoll(dmgMod = 1) {
         this.slotCd = 0.7;
         let result = this.gamblerRoll(0.4, 0.16); // the neutral is the gamble — much higher chance of nothing
-        if (result === 'loss') this.gamblerLuck = 0; // a bust on the headline move wipes the streak
+        // the reels spin in the air (drawn in drawGamblerSlotRoll); the payout + the bark
+        // both fire when they LAND (resolved in update via _slotPending), not on the button
         this._slotFx = { t: 0, result };
+        this._slotPending = { result };
+    }
+
+    resolveSlotRoll(result) {
         this.gamblerReact(result);
         if (result === 'jackpot') {
-            this.spawnGamblerCoins(7, 6 * dmgMod, 1);              // a coin barrage
+            this.spawnGamblerCoins(7, 6, 1);                        // a coin barrage
             this.hp = Math.min(this.maxHp, this.hp + 8);            // small heal
             spawnParticles(this.x, this.y - 50, 26, '#ffd24a');
         } else if (result === 'mix') {
-            this.spawnGamblerCoins(3, 5 * dmgMod, 0.6);
-        } else { // loss — "aw dang it": the reels fizzle, brief whiff
-            this.vx = 0;
+            this.spawnGamblerCoins(3, 5, 0.6);
+        } else { // loss — "aw dang it": nothing, and the streak is wiped
+            this.gamblerLuck = 0;
             spawnParticles(this.x, this.y - 40, 8, '#888');
         }
     }
@@ -5624,20 +5633,7 @@ class Fighter {
                 if (i < this.gamblerLuck) { ctx.fillStyle = '#ffd24a'; ctx.fill(); }
                 else { ctx.strokeStyle = 'rgba(255,210,74,0.5)'; ctx.lineWidth = 1.4; ctx.stroke(); }
             }
-            // the reels' verdict flashing above him after a Slot Roll
-            if (this._slotFx) {
-                let a = Math.max(0, 1 - this._slotFx.t / 1.1);
-                let col = this._slotFx.result === 'jackpot' ? '#ffd24a' : this._slotFx.result === 'loss' ? '#ff5577' : '#7fd2ff';
-                ctx.save(); ctx.globalAlpha = a;
-                for (let r = 0; r < 3; r++) {
-                    ctx.strokeStyle = '#caa23e'; ctx.lineWidth = 1.4; ctx.strokeRect(-15 + r * 11, headY - 45, 9, 9);
-                    ctx.fillStyle = col;
-                    if (this._slotFx.result === 'jackpot') { ctx.fillRect(-13 + r * 11, headY - 43, 5, 1.6); ctx.fillRect(-9 + r * 11, headY - 43, 1.6, 5); }
-                    else if (this._slotFx.result === 'loss') { ctx.fillRect(-13 + r * 11, headY - 40, 5, 1.6); }
-                    else { ctx.beginPath(); ctx.arc(-10.5 + r * 11, headY - 40.5, 1.8, 0, Math.PI * 2); ctx.fill(); }
-                }
-                ctx.restore();
-            }
+            // (the reels themselves spin in the background — see drawGamblerSlotRoll)
             // gilded aura while "MAX BET" is live
             if (this.gamblerInstall) {
                 ctx.save(); ctx.globalAlpha = 0.4 + 0.25 * Math.sin(t * 6);
