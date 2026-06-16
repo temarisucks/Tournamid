@@ -1468,13 +1468,13 @@ class Fighter {
     // Roll an outcome for an RNG special. Install → always its best (jackpot); a full Luck
     // row → a rigged jackpot (consumed); Responsible stance → always a safe "mix" (no jackpot,
     // no loss). Otherwise weighted, mostly upside with a rare comedic loss.
-    gamblerRoll() {
+    gamblerRoll(lossW = 0.13, jackW = 0.20) {
         if (this.gamblerInstall) return 'jackpot';
         if (this.gamblerLuck >= 3) { this.gamblerLuck = 0; return 'jackpot'; }
         if (this.gamblerStance === 'responsible') return 'mix';
         let r = Math.random();
-        if (r < 0.13) return 'loss';
-        if (r < 0.33) return 'jackpot';
+        if (r < lossW) return 'loss';
+        if (r < lossW + jackW) return 'jackpot';
         return 'mix';
     }
     gamblerReact(result) { playGamblerVoice(result === 'loss' ? 'dang' : 'winning'); }
@@ -1500,7 +1500,8 @@ class Fighter {
 
     doSlotRoll(dmgMod = 1) {
         this.slotCd = 0.7;
-        let result = this.gamblerRoll();
+        let result = this.gamblerRoll(0.4, 0.16); // the neutral is the gamble — much higher chance of nothing
+        if (result === 'loss') this.gamblerLuck = 0; // a bust on the headline move wipes the streak
         this._slotFx = { t: 0, result };
         this.gamblerReact(result);
         if (result === 'jackpot') {
@@ -1709,6 +1710,7 @@ class Fighter {
                 else if (u.kind === 'beaststorm') { u.phase = 'snare'; this.spawnUltActivation(); }
                 else if (u.kind === 'soultrain') { u.phase = 'rush'; }
                 else if (u.kind === 'install') { u.phase = 'summon'; this._lumFx = 1.4; }
+                else if (u.kind === 'gamble') { u.phase = 'spin'; }
                 else if (u.kind === 'eclipse') { u.phase = 'split'; u.target = this.getClosestEnemy(); }
                 else if (u.kind === 'chronostop') { u.phase = 'stance'; }
             }
@@ -3865,9 +3867,9 @@ class Fighter {
         if (this.charType === 'CULT') ctx.strokeStyle = '#cfcfcf';
         if (this.charType === 'GAMBLER') {
             ctx.strokeStyle = this.gamblerStance === 'responsible' ? '#7fd2ff' : '#3aa0ff'; // electric blue
-            // scribbled-in look: the whole rig is re-jittered every frame so he twitches
-            ctx.translate((Math.random() - 0.5) * 2.4, (Math.random() - 0.5) * 2.4);
+            ctx.lineJoin = 'round'; ctx.lineCap = 'round'; // rough sketched strokes read better rounded
             if (this.gamblerInstall) ctx.strokeStyle = '#ffd24a'; // gilded while "MAX BET" is live
+            // (the scribbled, twitchy look comes from the multi-pass rough stroke below, not a whole-body jitter)
         }
         if (this.state === 'HITSTUN') ctx.strokeStyle = '#f55'; // Red flash on hit
         if (this.overkillRed) ctx.strokeStyle = '#ff0033';
@@ -5547,7 +5549,25 @@ class Fighter {
         let rightArm = drawBentLimb(0, shoulderY, rightArmAngle, rightArmBend, rUp, rLow);
         let rHandX = rightArm.endX;
         let rHandY = rightArm.endY;
-        ctx.stroke();
+        if (this.charType === 'GAMBLER') {
+            // SCRIBBLED look: trace the whole skeleton several times with tiny per-pass
+            // offsets + thin lines, so he reads as roughly sketched-in (and re-drawn every
+            // frame, which gives the live "twitch"). Each pass is its own offset; save/restore
+            // so the head + accessories drawn afterward aren't shifted.
+            let baseA = ctx.globalAlpha, baseW = ctx.lineWidth;
+            for (let pass = 0; pass < 4; pass++) {
+                ctx.save();
+                ctx.translate((Math.random() - 0.5) * 2.6, (Math.random() - 0.5) * 2.6);
+                ctx.rotate((Math.random() - 0.5) * 0.018);
+                ctx.globalAlpha = baseA * (pass === 0 ? 0.95 : 0.4);
+                ctx.lineWidth = pass === 0 ? baseW : baseW * 0.6;
+                ctx.stroke();
+                ctx.restore();
+            }
+            ctx.globalAlpha = baseA; ctx.lineWidth = baseW;
+        } else {
+            ctx.stroke();
+        }
 
         ctx.fillStyle = ctx.strokeStyle;
         [leftLeg, rightLeg, leftArm, rightArm].forEach(joint => {
@@ -5556,11 +5576,23 @@ class Fighter {
             ctx.fill();
         });
 
-        // Head — the Gambler's is a WIDE oval (wider than tall); everyone else is round
+        // Head — the Gambler's is a WIDE oval (wider than tall), sketched rough; else round
         ctx.beginPath();
         if (this.charType === 'GAMBLER') ctx.ellipse(0, headY, 15, 9.5, 0, 0, Math.PI * 2);
         else ctx.arc(0, headY, 12, 0, Math.PI*2);
-        ctx.stroke();
+        if (this.charType === 'GAMBLER') {
+            let baseA = ctx.globalAlpha;
+            for (let pass = 0; pass < 3; pass++) {
+                ctx.save();
+                ctx.translate((Math.random() - 0.5) * 2.2, (Math.random() - 0.5) * 2.2);
+                ctx.globalAlpha = baseA * (pass === 0 ? 0.95 : 0.4);
+                ctx.stroke();
+                ctx.restore();
+            }
+            ctx.globalAlpha = baseA;
+        } else {
+            ctx.stroke();
+        }
         if (this.team === 1 && currentMode !== 'PVE') {
             // slight indicator for P2
             ctx.fillStyle = '#333';
@@ -5574,9 +5606,7 @@ class Fighter {
             ctx.fillRect(-12, headY - 4, 24, 4);
             ctx.beginPath(); ctx.moveTo(-12, headY-2); ctx.lineTo(-24, headY+4); ctx.lineWidth = 3; ctx.strokeStyle = '#ff0033'; ctx.stroke();
         } else if (this.charType === 'GAMBLER') {
-            // two dim eyes on the wide oval + the signature lone black RIGHT eyebrow
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.beginPath(); ctx.arc(-5, headY - 1, 1.7, 0, Math.PI * 2); ctx.arc(6, headY - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+            // no eyes — just the signature lone black RIGHT eyebrow on the blank wide oval
             let browUp = (this.gamblerStance === 'gambling' || this.state === 'WIN') ? 4 : 1.5; // cockier in Gambling
             if (Math.sin(t * 0.7 + this.animTimer) > -0.4) { // it comes and goes
                 ctx.save(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';

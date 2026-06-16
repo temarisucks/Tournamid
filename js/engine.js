@@ -642,9 +642,15 @@ function setMeterBar(id, p) {
 function setHudIcon(id, fighter) {
     let icon = document.getElementById(id + '-icon');
     if (!icon || !fighter) return;
+    // updateHUD runs every frame; only touch the <img> when the fighter actually changes.
+    // (Re-assigning a 404'd src each frame made Firefox re-request it endlessly → menu lag.)
+    if (icon.dataset.iconType === fighter.charType) return;
+    icon.dataset.iconType = fighter.charType;
+    let file = LADDER_ICON_FILE[fighter.charType];
+    if (!file) { icon.style.visibility = 'hidden'; return; } // no icon for this fighter — just hide it, never request
     icon.onerror = function () { this.style.visibility = 'hidden'; };
     icon.style.visibility = 'visible';
-    icon.src = 'textures/icons/' + (LADDER_ICON_FILE[fighter.charType] || 'x') + '.png';
+    icon.src = 'textures/icons/' + file + '.png';
 }
 
 // Show/hide the 2v2 stacked bars and load each fighter's icon (called at match start).
@@ -665,9 +671,9 @@ function setupTeamHud(on) {
             let f = teams[tm][i];
             let icon = document.getElementById(pfx + '-team-icon-' + i);
             if (icon && f) {
-                icon.onerror = function () { this.style.visibility = 'hidden'; };
-                icon.style.visibility = 'visible';
-                icon.src = 'textures/icons/' + (LADDER_ICON_FILE[f.charType] || 'x') + '.png';
+                let file = LADDER_ICON_FILE[f.charType];
+                if (!file) { icon.style.visibility = 'hidden'; }
+                else { icon.onerror = function () { this.style.visibility = 'hidden'; }; icon.style.visibility = 'visible'; icon.src = 'textures/icons/' + file + '.png'; }
             }
         }
     }
@@ -3798,8 +3804,8 @@ function drawGamblerVoid(c, width, height, groundY) {
     }
 
     // --- the colossal slot machine (background, behind the fight) ---
-    let mw = width * 0.46, mh = height * 0.6;
-    let mx0 = width * 0.5 - mw / 2, my0 = height * 0.06;
+    let mw = width * 0.64, mh = height * 0.82;
+    let mx0 = width * 0.5 - mw / 2, my0 = height * 0.02;
     // cabinet body
     c.fillStyle = '#241a0c'; c.strokeStyle = '#caa23e'; c.lineWidth = 4;
     c.beginPath();
