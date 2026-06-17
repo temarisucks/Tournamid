@@ -567,22 +567,7 @@ function backFromCharacterSelect() {
         showOnlineScreen();
         return;
     }
-    if (isTeamSelectMode()) {
-        playerTeam = [];
-        opponentTeam = [];
-        returnFromSelect();
-        return;
-    }
-    if (p1Selection && !p2Selection && currentMode !== 'PVE') {
-        p1Selection = null;
-        charSelectPreview.p1 = null;
-        charSelectPreview.p1Burst = 0;
-        document.querySelectorAll('.char-card').forEach(c => c.classList.remove('locked', 'selected'));
-        document.getElementById('char-select-title').innerText = "Select Player 1";
-        updateSelectionLabels();
-    } else {
-        returnFromSelect();
-    }
+    offlineUndoStep(); // Esc cancels the current pick, steps back a confirmed one, or leaves
 }
 
 function updateSelectionLabels() {
@@ -724,7 +709,11 @@ function selectCharacter(charType, cardEl) {
 
 // ---- Offline character select: pick → confirm. You choose freely (and can change your
 // mind) until you press Confirm — no more instant commit/auto-advance. ----
-let selectPicks = []; // the tentative roster being built this char-select
+// Each fighter is confirmed INDIVIDUALLY: pick one (changeable), press Confirm to lock it
+// and move to the next slot; the last confirm starts the match. Esc cancels the current
+// pick, or steps back a confirmed one.
+let selectPicks = [];       // the fighters already confirmed, in order
+let selectTentative = null; // the fighter currently highlighted for THIS slot, not yet confirmed
 function selectNeedCount() {
     if (isTeamSelectMode()) return (currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') ? 4 : 2;
     if (currentMode === 'LADDER' || currentMode === 'PVE' || currentMode === 'TRAINING') return 1;
@@ -732,65 +721,84 @@ function selectNeedCount() {
 }
 function offlineInitCharSelect() {
     selectPicks = [];
+    selectTentative = null;
     let bar = document.getElementById('char-confirm-bar');
     if (bar) bar.classList.remove('hidden');
     offlineRenderPicks();
 }
 function offlinePickCharacter(type) {
     if (!CHARACTERS[type]) return;
-    if (selectPicks.length >= selectNeedCount()) selectPicks = []; // a click past a full roster starts over
-    selectPicks.push(type);
+    if (selectPicks.length >= selectNeedCount()) return; // all slots already confirmed
+    selectTentative = type; // tentative — click another to change, Confirm to lock
     playAudio(selectVoices[type]);
     offlineRenderPicks();
 }
-function offlineResetPicks() { selectPicks = []; offlineRenderPicks(); }
-function offlineConfirmPicks() {
-    if (selectPicks.length !== selectNeedCount()) return;
-    offlineDistribute();
-    let bar = document.getElementById('char-confirm-bar'); if (bar) bar.classList.add('hidden');
-    if (currentMode === 'LADDER' || currentMode === 'LADDER2') enterLadder();
-    else goToStageSelect();
+function offlineConfirmStep() {
+    if (!selectTentative) return; // nothing to confirm yet
+    selectPicks.push(selectTentative);
+    selectTentative = null;
+    if (selectPicks.length >= selectNeedCount()) { // every slot locked — go fight
+        offlineDistribute();
+        let bar = document.getElementById('char-confirm-bar'); if (bar) bar.classList.add('hidden');
+        if (currentMode === 'LADDER' || currentMode === 'LADDER2') enterLadder();
+        else goToStageSelect();
+        return;
+    }
+    offlineRenderPicks();
 }
-// map the tentative picks onto the globals the rest of the game reads
+// Esc handler for offline char select: cancel the current pick, else step back a slot, else leave.
+function offlineUndoStep() {
+    if (selectTentative) { selectTentative = null; offlineRenderPicks(); return; }
+    if (selectPicks.length > 0) { selectPicks.pop(); offlineRenderPicks(); return; }
+    returnFromSelect();
+}
+// confirmed picks + the current tentative, in slot order
+function offlineCurrentPicks() {
+    let all = selectPicks.slice();
+    if (selectTentative && all.length < selectNeedCount()) all.push(selectTentative);
+    return all;
+}
+// map the picks-so-far onto the globals the rest of the game reads (for preview/labels)
 function offlineDistribute() {
+    let picks = offlineCurrentPicks();
     p1Selection = null; p2Selection = null; playerTeam = []; opponentTeam = [];
     charSelectPreview.p1 = null; charSelectPreview.p2 = null;
     if (isTeamSelectMode()) {
-        playerTeam = selectPicks.slice(0, 2);
-        if (currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') opponentTeam = selectPicks.slice(2, 4);
+        playerTeam = picks.slice(0, 2);
+        if (currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') opponentTeam = picks.slice(2, 4);
         charSelectPreview.p1 = playerTeam[0] || null;
         charSelectPreview.p2 = opponentTeam[0] || playerTeam[1] || null;
     } else {
-        p1Selection = selectPicks[0] || null;
-        if (selectNeedCount() === 2) p2Selection = selectPicks[1] || null;
+        p1Selection = picks[0] || null;
+        if (selectNeedCount() === 2) p2Selection = picks[1] || null;
         charSelectPreview.p1 = p1Selection;
         charSelectPreview.p2 = p2Selection;
     }
 }
-function offlineSelectTitleText() {
-    let need = selectNeedCount(), n = selectPicks.length;
-    if (n >= need) return isTeamSelectMode() ? (need === 4 ? 'CONFIRM BOTH SQUADS' : 'CONFIRM YOUR SQUAD') : (need === 1 ? 'CONFIRM YOUR FIGHTER' : 'CONFIRM FIGHTERS');
+function offlineSlotLabel() {
+    let n = selectPicks.length, need = selectNeedCount();
     if (isTeamSelectMode()) {
-        if (n < 2) return isCpuWatchMode() ? `Select CPU Team 1 - Fighter ${n + 1}` : `Select Fighter ${n + 1} of 2`;
-        return currentMode === 'VS2_WATCH' ? `Select CPU Team 2 - Fighter ${n - 1}` : `Select Opponent Squad - Fighter ${n - 1}`;
+        if (n < 2) return isCpuWatchMode() ? `CPU Team 1 - Fighter ${n + 1}` : `Fighter ${n + 1} of 2`;
+        return currentMode === 'VS2_WATCH' ? `CPU Team 2 - Fighter ${n - 1}` : `Opponent Squad - Fighter ${n - 1}`;
     }
-    if (need === 1) return 'Select Your Fighter';
-    if (n === 0) return currentMode === 'CPU_WATCH' ? 'Select CPU Fighter 1' : 'Select Player 1';
-    return currentMode === 'CPU' ? 'Select CPU Opponent' : currentMode === 'CPU_WATCH' ? 'Select CPU Fighter 2' : 'Select Player 2';
+    if (need === 1) return 'Your Fighter';
+    if (n === 0) return currentMode === 'CPU_WATCH' ? 'CPU Fighter 1' : 'Player 1';
+    return currentMode === 'CPU' ? 'CPU Opponent' : currentMode === 'CPU_WATCH' ? 'CPU Fighter 2' : 'Player 2';
 }
 function offlineRenderPicks() {
     offlineDistribute();
-    if (selectPicks[0]) charSelectPreview.p1Burst = 1;
+    if (selectTentative) charSelectPreview[(!isTeamSelectMode() && selectPicks.length === 1) ? 'p2Burst' : 'p1Burst'] = 1;
     if (isTeamSelectMode()) updateTeamSelectionLabels(); else updateSelectionLabels();
-    document.querySelectorAll('.char-card').forEach(c => c.classList.toggle('selected', selectPicks.includes(c.dataset.char)));
-    document.getElementById('char-select-title').innerText = offlineSelectTitleText();
+    let active = offlineCurrentPicks();
+    document.querySelectorAll('.char-card').forEach(c => c.classList.toggle('selected', active.includes(c.dataset.char)));
+    let slot = offlineSlotLabel();
+    document.getElementById('char-select-title').innerText = (selectTentative ? 'CONFIRM ' : 'SELECT ') + slot.toUpperCase() + (selectTentative ? '?' : '');
     let cbtn = document.getElementById('char-confirm-btn');
-    if (cbtn) { cbtn.disabled = selectPicks.length !== selectNeedCount(); cbtn.innerText = 'Confirm'; }
+    if (cbtn) { cbtn.disabled = !selectTentative; cbtn.innerText = 'Confirm'; }
 }
 
 // the confirm bar serves both online and offline
-function selectConfirm() { if (currentMode === 'ONLINE') onlineConfirmPicks(); else offlineConfirmPicks(); }
-function selectReset() { if (currentMode === 'ONLINE') onlineResetPicks(); else offlineResetPicks(); }
+function selectConfirm() { if (currentMode === 'ONLINE') onlineConfirmPicks(); else offlineConfirmStep(); }
 
 function goToStageSelect() {
     if (currentMode === 'ONLINE' && Number(onlineState.slot) !== 0) {
@@ -854,7 +862,7 @@ function updateTeamSelectionLabels() {
 
 // 2v2 char select: collect one or both squads depending on the selected mode.
 // (selectTeamCharacter removed — team squads now go through the unified offline
-//  pick → confirm flow in offlinePickCharacter / offlineConfirmPicks.)
+//  pick → confirm flow in offlinePickCharacter / offlineConfirmStep.)
 
 // Build both 2v2 squads (each fighter created off the shared P1/P2 control id).
 function buildTeams(p1chars, p2chars, cpuLevel, p1AI = false, p2AI = true) {

@@ -138,21 +138,21 @@
         .howto-card p { font-size: 0.74rem; color: #ccc; line-height: 1.5; margin-bottom: 3px; }
         .howto-card p b { color: #fff; }
         
-        #char-select-screen { justify-content: flex-start; padding: 16px 36px 58px; background: radial-gradient(circle at 50% 16%, rgba(80, 0, 12, 0.45), rgba(0, 0, 0, 0.92) 42%, rgba(0, 0, 0, 0.96)); }
-        #char-select-title { margin-bottom: 8px; letter-spacing: 4px; text-transform: uppercase; }
-        .versus-preview { width: 100%; height: 152px; border-top: 2px solid #333; border-bottom: 2px solid #333; background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,0,51,0.08), rgba(255,255,255,0.04)); position: relative; margin-bottom: 10px; }
+        #char-select-screen { justify-content: flex-start; padding: 18px 36px 52px; background: radial-gradient(circle at 50% 16%, rgba(80, 0, 12, 0.45), rgba(0, 0, 0, 0.92) 42%, rgba(0, 0, 0, 0.96)); }
+        #char-select-title { margin-bottom: 12px; letter-spacing: 4px; text-transform: uppercase; }
+        .versus-preview { width: 100%; height: 178px; border-top: 2px solid #333; border-bottom: 2px solid #333; background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,0,51,0.08), rgba(255,255,255,0.04)); position: relative; margin-bottom: 14px; }
         #char-preview-canvas { width: 100%; height: 100%; display: block; }
         .selection-status { position: absolute; top: 12px; left: 0; width: 100%; display: flex; justify-content: space-between; padding: 0 28px; font-size: 0.95rem; color: #ccc; text-transform: uppercase; letter-spacing: 2px; pointer-events: none; }
         .selection-status strong { color: #fff; }
         /* Single row so the RANDOM card sits dead-centre of the roster */
-        .char-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: 100%; max-width: 940px; margin-bottom: 6px; align-items: center; justify-items: center; }
-        .char-card { border: 0; min-height: 100px; padding: 0; cursor: pointer; transition: 0.2s; background: transparent; position: relative; overflow: visible; display: flex; align-items: center; justify-content: center; }
+        .char-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; width: 100%; max-width: 940px; margin-bottom: 6px; align-items: center; justify-items: center; }
+        .char-card { border: 0; min-height: 116px; padding: 0; cursor: pointer; transition: 0.2s; background: transparent; position: relative; overflow: visible; display: flex; align-items: center; justify-content: center; }
         .char-card::after { content: ""; position: absolute; inset: auto 10px 0 10px; height: 4px; background: #ff0033; transform: scaleX(0); transform-origin: center; transition: transform 0.2s; }
         .char-card:hover, .char-card.selected { transform: translateY(-5px) scale(1.06); }
         .char-card:hover::after, .char-card.selected::after { transform: scaleX(1); }
         .char-card.locked { filter: drop-shadow(0 0 12px rgba(255, 0, 51, 0.8)); }
         /* Character icon buttons (PNGs live in textures/icons/) */
-        .char-icon { width: 100%; max-width: 98px; height: auto; object-fit: contain; image-rendering: auto; pointer-events: none; filter: drop-shadow(0 12px 12px rgba(0,0,0,0.75)); }
+        .char-icon { width: 100%; max-width: 112px; height: auto; object-fit: contain; image-rendering: auto; pointer-events: none; filter: drop-shadow(0 12px 12px rgba(0,0,0,0.75)); }
         .random-card { order: 0; } /* centred via the markup order (4th of 7) */
         .random-mark { width: 84px; height: 84px; border: 2px solid #aaa; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 3rem; background: radial-gradient(circle, #333, #050505 70%); box-shadow: 0 0 24px rgba(255,255,255,0.08); }
         /* Graceful fallback shown until each PNG is added */
@@ -364,6 +364,6 @@
 
         /* online character-select: pick freely, then Lock In (no more instant binding) */
         /* pinned to the bottom of the select screen so it's always visible above the roster */
-        #char-confirm-bar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 14px; justify-content: center; z-index: 6; }
-        #char-confirm-bar .menu-btn { min-width: 200px; margin: 0; padding: 11px 30px; }
-        #char-confirm-btn:disabled { opacity: 0.4; cursor: default; }
+        #char-confirm-bar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; justify-content: center; z-index: 6; }
+        #char-confirm-bar .menu-btn { min-width: 150px; margin: 0; padding: 7px 26px; font-size: 1rem; }
+        #char-confirm-btn:disabled { opacity: 0.35; cursor: default; }
