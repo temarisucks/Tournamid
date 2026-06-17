@@ -3850,21 +3850,32 @@ function drawGamblerVoid(c, width, height, groundY) {
     // three spinning reels in a window
     let reelTop = my0 + mh * 0.2, reelH = mh * 0.5, reelW = (mw - 56) / 3;
     let symbols = ['7', '🍒', '★', '$', '💎', '🔔'];
+    let activeGambler = (typeof players !== 'undefined') ? players.find(p => p && p.charType === 'GAMBLER' && p.gamblerInstall) : null;
+    let installRoll = activeGambler && activeGambler._installRoll ? activeGambler._installRoll : null;
+    let installFinals = installRoll ? gamblerFinalSyms(installRoll.result) : null;
+    const installLockAt = [0.45, 0.72, 0.98];
     c.textBaseline = 'middle';
     for (let r = 0; r < 3; r++) {
         let rx = mx0 + 22 + r * (reelW + 6);
         c.save();
         c.beginPath(); c.rect(rx, reelTop, reelW, reelH); c.clip();
         c.fillStyle = '#0d0a05'; c.fillRect(rx, reelTop, reelW, reelH);
-        // scrolling symbol strip (each reel a different speed)
-        let speed = 220 + r * 80;
         let cell = reelH * 0.5;
-        let off = (t * speed) % cell;
         c.fillStyle = '#ffe9a8'; c.font = `bold ${Math.floor(cell * 0.6)}px Courier New`;
-        for (let k = -1; k < reelH / cell + 1; k++) {
-            let sy = reelTop + k * cell - off + cell / 2;
-            let sym = symbols[(k + r * 2 + Math.floor(t * speed / cell)) % symbols.length];
-            c.fillText(sym, rx + reelW / 2, sy);
+        let locked = installRoll && installRoll.t >= installLockAt[r];
+        if (locked) {
+            let bounce = Math.max(0, 1 - (installRoll.t - installLockAt[r]) / 0.14);
+            c.fillStyle = installRoll.result === 'jackpot' ? '#ffd24a' : installRoll.result === 'loss' ? '#ff6680' : '#ffe9a8';
+            c.fillText(installFinals[r], rx + reelW / 2, reelTop + reelH / 2 + bounce * 12);
+        } else {
+            // scrolling symbol strip (each reel a different speed)
+            let speed = installRoll ? 430 + r * 90 : 220 + r * 80;
+            let off = (t * speed) % cell;
+            for (let k = -1; k < reelH / cell + 1; k++) {
+                let sy = reelTop + k * cell - off + cell / 2;
+                let sym = symbols[(k + r * 2 + Math.floor(t * speed / cell)) % symbols.length];
+                c.fillText(sym, rx + reelW / 2, sy);
+            }
         }
         c.restore();
         c.strokeStyle = '#caa23e'; c.lineWidth = 3; c.strokeRect(rx, reelTop, reelW, reelH);
@@ -3872,6 +3883,20 @@ function drawGamblerVoid(c, width, height, groundY) {
     // payline
     c.strokeStyle = 'rgba(255,0,51,0.7)'; c.lineWidth = 2;
     c.beginPath(); c.moveTo(mx0 + 18, reelTop + reelH / 2); c.lineTo(mx0 + mw - 18, reelTop + reelH / 2); c.stroke();
+    if (installRoll && installRoll.t >= installLockAt[2]) {
+        let label = installRoll.result === 'jackpot' ? 'JACKPOT' : installRoll.result === 'loss' ? 'BUST' : 'MIX';
+        let la = Math.min(1, (installRoll.t - installLockAt[2]) / 0.18);
+        c.save();
+        c.globalAlpha = la;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.font = `900 ${Math.floor(mh * 0.07)}px Courier New`;
+        c.fillStyle = installRoll.result === 'jackpot' ? '#ffd24a' : installRoll.result === 'loss' ? '#ff6680' : '#ffe9a8';
+        c.shadowBlur = 18;
+        c.shadowColor = c.fillStyle;
+        c.fillText(label, width * 0.5, reelTop + reelH + mh * 0.08);
+        c.restore();
+    }
 
     // the lever on the right, bobbing as if freshly pulled
     let lvx = mx0 + mw + 6, lvy = my0 + mh * 0.34;

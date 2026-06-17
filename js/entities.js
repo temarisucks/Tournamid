@@ -1580,32 +1580,47 @@ class Fighter {
     updateGamblerInstall(dt) {
         this.gamblerTimer -= dt * this.gamblerDrainScale;
         this.meter = Math.max(0, this.meterMax * (this.gamblerTimer / GAMBLER_INSTALL_DUR));
-        if (this._installRoll) this._installRoll.t += dt;
+        if (this._installRoll) {
+            this._installRoll.t += dt;
+            if (!this._installRoll.paid && this._installRoll.t >= 1.45) {
+                this.resolveGamblerInstallRoll(this._installRoll.result);
+                this._installRoll.paid = true;
+            }
+            if (this._installRoll.t >= 2.15) this._installRoll = null;
+        }
         this.gamblerRollTimer -= dt;
-        if (this.gamblerRollTimer <= 0) {
-            this.gamblerRollTimer = GAMBLER_ROLL_INTERVAL;
+        if (this.gamblerRollTimer <= 0 && !this._installRoll) {
+            this.gamblerRollTimer = GAMBLER_ROLL_INTERVAL + 0.35;
             let r = Math.random();
             let result = r < 0.15 ? 'loss' : r < 0.35 ? 'jackpot' : 'mix';
-            this._installRoll = { t: 0, result };
-            if (result === 'loss') { playGamblerVoice('dang'); this.endGamblerInstall(); return; } // bust — install ends instantly
-            if (result === 'jackpot') {
-                this.gamblerJackpots++;
-                this.hp = Math.min(this.maxHp, this.hp + 50);   // massive heal
-                this.gamblerTimer = GAMBLER_INSTALL_DUR;        // refill the clock...
-                this.gamblerDrainScale *= 1.18;                 // ...but it drains a touch faster now
-                this.applyGamblerSpeed();
-                playGamblerVoice('winning');
-                spawnParticles(this.x, this.y - 56, 40, '#ffd24a');
-                spawnParticles(this.x, this.y - 56, 22, '#fff');
-            } else { // mix — a small stacking buff
-                this.gamblerMix++;
-                this.hp = Math.min(this.maxHp, this.hp + 4);
-                this.applyGamblerSpeed();
-                playGamblerVoice('winning');
-                spawnParticles(this.x, this.y - 50, 10, '#ffd24a');
-            }
+            this._installRoll = { t: 0, result, paid: false };
         }
-        if (this.gamblerTimer <= 0) this.endGamblerInstall();
+        if (this.gamblerTimer <= 0 && !this._installRoll) this.endGamblerInstall();
+    }
+
+    resolveGamblerInstallRoll(result) {
+        if (!this.gamblerInstall) return;
+        if (result === 'loss') {
+            playGamblerVoice('dang');
+            this.endGamblerInstall();
+            return;
+        }
+        if (result === 'jackpot') {
+            this.gamblerJackpots++;
+            this.hp = Math.min(this.maxHp, this.hp + 50);
+            this.gamblerTimer = GAMBLER_INSTALL_DUR;
+            this.gamblerDrainScale *= 1.18;
+            this.applyGamblerSpeed();
+            playGamblerVoice('winning');
+            spawnParticles(this.x, this.y - 56, 40, '#ffd24a');
+            spawnParticles(this.x, this.y - 56, 22, '#fff');
+        } else {
+            this.gamblerMix++;
+            this.hp = Math.min(this.maxHp, this.hp + 4);
+            this.applyGamblerSpeed();
+            playGamblerVoice('winning');
+            spawnParticles(this.x, this.y - 50, 10, '#ffd24a');
+        }
     }
 
     endGamblerInstall() {
@@ -4110,6 +4125,23 @@ class Fighter {
                     leftArmAngle = -0.45 + sway * 0.05; leftArmBend = 0.35;    // off-arm loose at his side
                     torsoLean = -0.02 + sway * 0.02;
                 }
+            } else if (this.charType === 'GAMBLER') {
+                // Meme-source idle: jittery redraws, hunched over the button, one foot
+                // compulsively stomping. The stepped keyframes keep it intentionally unclean.
+                let f = Math.floor(t * 11);
+                let stomp = f % 4;
+                let rawTwitch = Math.sin(f * 12.9898) * 43758.5453;
+                let twitch = rawTwitch - Math.floor(rawTwitch);
+                headY += [2, -1, 4, 0][stomp] + (twitch - 0.5) * 3;
+                torsoLean = [0.22, 0.34, 0.18, 0.30][stomp];
+                rightLegAngle = [0.72, 0.48, 0.82, 0.56][stomp];
+                rightLegBend = [0.32, 0.78, 0.22, 0.62][stomp];
+                leftLegAngle = [-0.34, -0.46, -0.28, -0.42][stomp];
+                leftLegBend = [0.44, 0.26, 0.52, 0.34][stomp];
+                rightArmAngle = [1.9, 2.18, 1.72, 2.05][stomp];
+                rightArmBend = [-0.26, -0.58, -0.16, -0.46][stomp];
+                leftArmAngle = [1.36, 1.06, 1.58, 1.22][stomp];
+                leftArmBend = [0.52, 0.22, 0.66, 0.36][stomp];
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -5499,6 +5531,13 @@ class Fighter {
         // `bend` flexes the joint: the upper bone rotates by +bend and the lower
         // by -bend, so a positive bend points the knee/elbow toward the facing
         // direction (anatomically forward) and lets the limb truly fold.
+        const gamblerRoughIdle = this.charType === 'GAMBLER' && this.state === 'IDLE';
+        const gamblerRoughFrame = Math.floor(t * 13);
+        function gamblerRough(seed, amp) {
+            if (!gamblerRoughIdle) return 0;
+            let v = Math.sin((gamblerRoughFrame + 1) * (seed * 12.9898) + seed * 78.233) * 43758.5453;
+            return (v - Math.floor(v) - 0.5) * amp;
+        }
         function limbEnd(startX, startY, angle, bend, upperLen, lowerLen) {
             let ua = angle + bend; // upper bone (shoulder/hip -> joint)
             let la = angle - bend; // lower bone (joint -> hand/foot)
@@ -5506,6 +5545,12 @@ class Fighter {
             let jointY = startY + Math.cos(ua) * upperLen;
             let endX = jointX + Math.sin(la) * lowerLen;
             let endY = jointY + Math.cos(la) * lowerLen;
+            if (gamblerRoughIdle) {
+                jointX += gamblerRough(angle + upperLen, 3.2);
+                jointY += gamblerRough(bend + lowerLen, 3.2);
+                endX += gamblerRough(angle + lowerLen + 9, 4.4);
+                endY += gamblerRough(bend + upperLen + 17, 4.4);
+            }
             return { jointX, jointY, endX, endY };
         }
         function drawBentLimb(startX, startY, angle, bend, upperLen, lowerLen) {
@@ -5576,6 +5621,29 @@ class Fighter {
             ctx.globalAlpha = baseA; ctx.lineWidth = baseW;
         } else {
             ctx.stroke();
+        }
+
+        if (this.charType === 'GAMBLER' && this.state === 'IDLE') {
+            let press = (Math.floor(t * 11) % 4 === 2) ? 1 : 0;
+            ctx.save();
+            ctx.translate(rightLeg.endX + 4, rightLeg.endY + 4);
+            ctx.fillStyle = '#171717';
+            ctx.strokeStyle = '#050505';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, 5, 20, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = press ? '#ff0033' : '#d20f2f';
+            ctx.strokeStyle = '#330009';
+            ctx.beginPath();
+            ctx.ellipse(0, -1 + press * 4, 13, 6 - press * 1.5, 0, Math.PI, 0);
+            ctx.lineTo(13, 5);
+            ctx.ellipse(0, 5, 13, 5, 0, 0, Math.PI);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
         }
 
         ctx.fillStyle = ctx.strokeStyle;
