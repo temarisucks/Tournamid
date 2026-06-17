@@ -633,7 +633,8 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
             DARK_RULER: 'heavy',
             TELEPATH: 'heavy',
             BEAST_TAMER: 'specNeutral',
-            TRAVELER: 'heavy'
+            TRAVELER: 'heavy',
+            GAMBLER: 'specNeutral'
         };
         let move = moveByCharacter[charType] || 'light';
         fighter.state = 'ATTACK';

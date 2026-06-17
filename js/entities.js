@@ -4126,22 +4126,37 @@ class Fighter {
                     torsoLean = -0.02 + sway * 0.02;
                 }
             } else if (this.charType === 'GAMBLER') {
-                // Meme-source idle: jittery redraws with loose arms at his sides.
-                // The stepped keyframes keep it intentionally unclean.
                 let f = Math.floor(t * 11);
                 let stomp = f % 4;
                 let rawTwitch = Math.sin(f * 12.9898) * 43758.5453;
                 let twitch = rawTwitch - Math.floor(rawTwitch);
-                headY += [2, -1, 4, 0][stomp] + (twitch - 0.5) * 3;
-                torsoLean = [-0.03, 0.02, -0.01, 0.03][stomp];
-                rightLegAngle = [0.18, 0.08, 0.26, 0.12][stomp];
-                rightLegBend = [0.36, 0.44, 0.30, 0.40][stomp];
-                leftLegAngle = [-0.22, -0.30, -0.16, -0.26][stomp];
-                leftLegBend = [0.38, 0.32, 0.44, 0.34][stomp];
-                rightArmAngle = [0.28, 0.18, 0.36, 0.24][stomp];
-                rightArmBend = [-0.12, -0.20, -0.08, -0.16][stomp];
-                leftArmAngle = [-0.26, -0.18, -0.34, -0.22][stomp];
-                leftArmBend = [0.12, 0.20, 0.08, 0.16][stomp];
+                if (this.isPreview) {
+                    // character-select pose: jittery showman bounce, arms popping up then dropping loose.
+                    let pop = Math.floor(t * 5) % 2;
+                    headY += [-2, 2, 0, 3][stomp] + (twitch - 0.5) * 2.5;
+                    torsoLean = [-0.02, 0.04, -0.01, 0.03][stomp];
+                    rightLegAngle = [0.22, 0.12, 0.28, 0.16][stomp];
+                    rightLegBend = [0.38, 0.50, 0.34, 0.44][stomp];
+                    leftLegAngle = [-0.28, -0.34, -0.22, -0.30][stomp];
+                    leftLegBend = [0.42, 0.34, 0.48, 0.38][stomp];
+                    rightArmAngle = pop ? 1.42 + twitch * 0.16 : 0.28 + twitch * 0.10;
+                    rightArmBend = pop ? -0.08 : -0.18;
+                    leftArmAngle = pop ? 1.18 - twitch * 0.14 : -0.24 - twitch * 0.10;
+                    leftArmBend = pop ? 0.08 : 0.18;
+                } else {
+                    // Meme-source idle: jittery redraws with loose arms at his sides.
+                    // The stepped keyframes keep it intentionally unclean.
+                    headY += [2, -1, 4, 0][stomp] + (twitch - 0.5) * 3;
+                    torsoLean = [-0.03, 0.02, -0.01, 0.03][stomp];
+                    rightLegAngle = [0.18, 0.08, 0.26, 0.12][stomp];
+                    rightLegBend = [0.36, 0.44, 0.30, 0.40][stomp];
+                    leftLegAngle = [-0.22, -0.30, -0.16, -0.26][stomp];
+                    leftLegBend = [0.38, 0.32, 0.44, 0.34][stomp];
+                    rightArmAngle = [0.28, 0.18, 0.36, 0.24][stomp];
+                    rightArmBend = [-0.12, -0.20, -0.08, -0.16][stomp];
+                    leftArmAngle = [-0.26, -0.18, -0.34, -0.22][stomp];
+                    leftArmBend = [0.12, 0.20, 0.08, 0.16][stomp];
+                }
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -4258,6 +4273,23 @@ class Fighter {
                     leftLegAngle = -0.42; rightLegAngle = 0.3; leftLegBend = 0.18; rightLegBend = 0.5;
                     torsoLean = -0.05 + (-0.2 + 0.05) * st2; headY += 2 + (-3 - 2) * st2;
                 }
+            } else if (this.charType === 'GAMBLER') {
+                // ugly victory jitter: hop, throw both arms up, then keep redrawing the cheer.
+                let wf = Math.floor(t * 13) % 4;
+                let rawWinTwitch = Math.sin(Math.floor(t * 18) * 78.233) * 43758.5453;
+                let twitch = rawWinTwitch - Math.floor(rawWinTwitch);
+                let raise = Math.min(1, wt / 0.45);
+                let settle = Math.min(1, Math.max(0, (wt - 0.55) / 0.35));
+                headY += [-8, -3, -6, -1][wf] * raise + (twitch - 0.5) * 3;
+                rightArmAngle = (0.26 + (2.55 - 0.26) * raise) + [0.08, -0.04, 0.12, -0.08][wf] * settle;
+                leftArmAngle = (-0.24 + (2.35 + 0.24) * raise) + [-0.06, 0.10, -0.08, 0.04][wf] * settle;
+                rightArmBend = (-0.16 + (0.02 + 0.16) * raise) + [-0.06, 0.02, -0.02, 0.04][wf] * settle;
+                leftArmBend = (0.16 + (-0.02 - 0.16) * raise) + [0.04, -0.03, 0.02, -0.05][wf] * settle;
+                leftLegAngle = [-0.42, -0.28, -0.36, -0.24][wf];
+                rightLegAngle = [0.38, 0.24, 0.46, 0.30][wf];
+                leftLegBend = [0.52, 0.34, 0.46, 0.38][wf];
+                rightLegBend = [0.34, 0.56, 0.40, 0.50][wf];
+                torsoLean = [-0.04, 0.05, -0.02, 0.03][wf] * settle;
             } else {
                 // generic triumphant cheer (Zombie etc.)
                 headY += -4 + Math.abs(pump) * 3;
