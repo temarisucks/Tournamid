@@ -4378,6 +4378,21 @@ class Fighter {
                     leftArmAngle = 1.2; rightArmAngle = -0.7; leftArmBend = 0.3; rightArmBend = -0.4;
                     torsoLean = -0.12;
                 }
+            } else if (this.charType === 'GAMBLER') {
+                // jittery meme-strut: legs snap between uneven sketches, arms hang loose.
+                let f = Math.floor(t * 12);
+                let step = f % 4;
+                let bob = [1, 4, 0, 3][step];
+                headY += bob;
+                torsoLean = isWalkingForward ? [0.04, 0.08, 0.02, 0.06][step] : [-0.04, -0.08, -0.02, -0.06][step];
+                leftLegAngle = [-0.44, -0.12, 0.34, 0.08][step];
+                rightLegAngle = [0.30, 0.06, -0.38, -0.10][step];
+                leftLegBend = [0.28, 0.58, 0.24, 0.48][step];
+                rightLegBend = [0.50, 0.24, 0.54, 0.28][step];
+                leftArmAngle = [-0.22, -0.30, -0.18, -0.26][step];
+                rightArmAngle = [0.24, 0.18, 0.30, 0.20][step];
+                leftArmBend = [0.14, 0.08, 0.18, 0.10][step];
+                rightArmBend = [-0.14, -0.08, -0.18, -0.10][step];
             } else {
                 headY += Math.abs(Math.sin(t * 12)) * 5;
             }
@@ -4413,6 +4428,13 @@ class Fighter {
                 rightArmAngle = 1.45 + Math.sin(t * 3) * 0.03; rightArmBend = -0.15; // fingertips to the ground
                 leftArmAngle = -0.85; leftArmBend = 0.65;                            // rear arm cocked behind
                 headY -= 1; torsoLean = 0.24;
+            } else if (this.charType === 'GAMBLER') {
+                // squat low but keep the same loose, awkward stickman silhouette.
+                leftArmAngle = -0.18; rightArmAngle = 0.18;
+                leftArmBend = 0.08; rightArmBend = -0.08;
+                leftLegAngle = -0.42; rightLegAngle = 0.42;
+                leftLegBend = 0.92; rightLegBend = 0.92;
+                headY += 3; torsoLean = 0.03;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -4527,6 +4549,22 @@ class Fighter {
                     leftArmAngle = -0.5; leftArmBend = -0.5;    // both hands relaxed at his sides
                     torsoLean = 0.0; headY += 1;
                 }
+            } else if (this.charType === 'GAMBLER') {
+                // jump is a messy panic-hop: limbs redraw into different loose silhouettes.
+                let air = Math.floor(t * 10) % 3;
+                if (rise) {
+                    leftLegAngle = [-0.62, -0.38, -0.52][air]; rightLegAngle = [0.18, 0.46, 0.26][air];
+                    leftLegBend = [0.72, 0.96, 0.80][air]; rightLegBend = [0.38, 0.62, 0.44][air];
+                    leftArmAngle = [-0.60, -0.36, -0.48][air]; rightArmAngle = [0.72, 0.46, 0.58][air];
+                    leftArmBend = [0.20, 0.12, 0.26][air]; rightArmBend = [-0.20, -0.12, -0.26][air];
+                    headY -= 2; torsoLean = 0.04;
+                } else {
+                    leftLegAngle = [-0.22, -0.44, -0.30][air]; rightLegAngle = [0.54, 0.30, 0.44][air];
+                    leftLegBend = [0.34, 0.54, 0.42][air]; rightLegBend = [0.78, 0.58, 0.70][air];
+                    leftArmAngle = [-0.16, -0.32, -0.24][air]; rightArmAngle = [0.18, 0.34, 0.26][air];
+                    leftArmBend = [0.08, 0.14, 0.10][air]; rightArmBend = [-0.08, -0.14, -0.10][air];
+                    headY += 2; torsoLean = -0.02;
+                }
             } else {
                 leftLegAngle = -0.32; rightLegAngle = 0.46; leftLegBend = 0.85; rightLegBend = 0.75;
                 leftArmAngle = -2.5; rightArmAngle = 2.5; leftArmBend = 0.5; rightArmBend = -0.5;
@@ -4595,6 +4633,14 @@ class Fighter {
                 rightArmAngle = 1.5; rightArmBend = 0.05 + brace;  // bracer arm extended, palm out
                 leftArmAngle = -0.35; leftArmBend = 0.25;          // off-arm staying loose
                 headY -= 1; torsoLean = -0.1;
+            } else if (this.charType === 'GAMBLER') {
+                // nervous guard: hands come up, but still drawn crooked and twitchy.
+                let g = Math.floor(t * 14) % 2;
+                rightArmAngle = [1.34, 1.50][g] + brace; rightArmBend = [-0.10, 0.02][g];
+                leftArmAngle = [1.82, 1.66][g] - brace; leftArmBend = [-0.22, -0.10][g];
+                leftLegAngle = -0.34; rightLegAngle = 0.30;
+                leftLegBend = 0.46; rightLegBend = 0.50;
+                headY += 5; torsoLean = -0.04;
             } else {
                 // BRAWLER / default: both forearms raised high in front of the face (tight guard)
                 leftArmAngle = 2.35 + brace; rightArmAngle = 2.58 - brace;
@@ -4808,17 +4854,20 @@ class Fighter {
                 leftLegAngle = -0.3; rightLegAngle = 0.26; leftLegBend = 0.3; rightLegBend = 0.32;
                 torsoLean = mix(0.02, -0.12, ex); headY -= 1;
             } else if (atk.type === 'coinJab') {
-                // a quick flick — snap the lead hand out like flipping a coin off the thumb
-                rightArmAngle = mix(2.1, 1.5, ex); rightArmBend = mix(-0.7, 0.05, ex);
-                leftArmAngle = 2.2; leftArmBend = -0.6;
-                leftLegAngle = -0.3; rightLegAngle = 0.3; rightLegBend = 0.4;
-                torsoLean = 0.06 + ex * 0.08; headY -= 1;
+                // messy thumb-flick jab, keeping the off-hand low instead of posed overhead.
+                let r = Math.floor(st * 22) % 2;
+                rightArmAngle = mix(0.28, 1.48 + r * 0.08, ex);
+                rightArmBend = mix(-0.16, 0.03, ex);
+                leftArmAngle = -0.20 + r * 0.04; leftArmBend = 0.10;
+                leftLegAngle = -0.32; rightLegAngle = 0.34; leftLegBend = 0.36; rightLegBend = 0.44;
+                torsoLean = mix(-0.03, 0.08, ex); headY -= ex * 1.5;
             } else if (atk.type === 'leverSlam') {
-                // both hands grab a slot lever overhead and CRANK it down
-                rightArmAngle = mix(3.0, 1.0, ex); rightArmBend = mix(-0.2, -0.05, ex);
-                leftArmAngle  = mix(2.9, 1.1, ex); leftArmBend  = mix(-0.2, -0.05, ex);
-                leftLegAngle = -0.36; rightLegAngle = 0.42; leftLegBend = 0.4; rightLegBend = 0.5;
-                torsoLean = mix(-0.12, 0.22, ex); headY += ex * 3;
+                // rough two-hand yank: arms lift, then snap down like pulling a slot lever.
+                let r = Math.floor(st * 20) % 2;
+                rightArmAngle = mix(2.20 + r * 0.12, 0.92, ex); rightArmBend = mix(-0.24, -0.02, ex);
+                leftArmAngle  = mix(2.05 - r * 0.10, 1.02, ex); leftArmBend  = mix(0.18, 0.02, ex);
+                leftLegAngle = -0.46; rightLegAngle = 0.48; leftLegBend = 0.40; rightLegBend = 0.58;
+                torsoLean = mix(-0.08, 0.16, ex); headY += ex * 3;
             } else if (atk.type === 'slotRoll') {
                 // slam an imaginary button, then throw both arms up as the reels spin
                 let up = Math.sin(Math.min(1, ex) * Math.PI);
@@ -4996,6 +5045,49 @@ class Fighter {
                     leftArmAngle = 0.7; leftArmBend = 0.35;
                     leftLegAngle = -0.42; rightLegAngle = 0.46; leftLegBend = 0.42; rightLegBend = 0.46;
                     torsoLean = mix(0.2, -0.14, ex); // torso whips around with the sweep
+                }
+            } else if (this.charType === 'GAMBLER') {
+                // Keep every attack in the loose, redrawn stickman style.
+                let r = Math.floor(st * 24) % 2;
+                leftLegAngle = -0.34 + r * 0.04;
+                rightLegAngle = 0.34 - r * 0.03;
+                leftLegBend = 0.38 + r * 0.08;
+                rightLegBend = 0.42 - r * 0.06;
+                leftArmAngle = -0.20 + r * 0.03;
+                leftArmBend = 0.10;
+
+                if (atk.combo === 'LH') {
+                    rightArmAngle = mix(0.30, 1.55 + r * 0.08, ex);
+                    rightArmBend = mix(-0.12, 0.04, ex);
+                    leftArmAngle = mix(-0.18, 1.30 - r * 0.05, ex);
+                    leftArmBend = mix(0.10, -0.04, ex);
+                    torsoLean = mix(-0.04, 0.11, ex);
+                    headY -= ex;
+                } else if (atk.combo === 'LLH' || atk.combo === 'LHL' || atk.combo === 'HLL') {
+                    rightArmAngle = mix(2.45 + r * 0.10, 0.86, ex);
+                    rightArmBend = mix(-0.18, 0.02, ex);
+                    leftArmAngle = mix(2.18 - r * 0.08, 1.08, ex);
+                    leftArmBend = mix(0.16, -0.02, ex);
+                    leftLegAngle = -0.48;
+                    rightLegAngle = mix(0.30, 0.60, ex);
+                    rightLegBend = mix(0.42, 0.62, ex);
+                    torsoLean = mix(-0.08, 0.18, ex);
+                    headY += ex * 3;
+                } else if (atk.name === 'heavy') {
+                    rightArmAngle = mix(2.30 + r * 0.10, 0.94, ex);
+                    rightArmBend = mix(-0.20, 0.00, ex);
+                    leftArmAngle = mix(2.05 - r * 0.08, 1.00, ex);
+                    leftArmBend = mix(0.16, 0.00, ex);
+                    leftLegAngle = -0.44;
+                    rightLegAngle = mix(0.36, 0.54, ex);
+                    rightLegBend = 0.56;
+                    torsoLean = mix(-0.08, 0.16, ex);
+                    headY += ex * 2.5;
+                } else {
+                    rightArmAngle = mix(0.24, 1.42 + r * 0.06, ex);
+                    rightArmBend = mix(-0.14, 0.04, ex);
+                    torsoLean = mix(-0.03, 0.08, ex);
+                    headY -= ex;
                 }
             } else if (bladed) {
                 // Slash family — each move has its own arc [windAng, strikeAng, windBend, strikeBend, lean]
