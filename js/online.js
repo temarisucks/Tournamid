@@ -534,7 +534,7 @@ function onlineInitCharSelect() {
     onlineState.localLocked = false;
     onlineState.remotePicks = [];
     onlineState.remoteLocked = false;
-    let bar = document.getElementById('online-confirm-bar');
+    let bar = document.getElementById('char-confirm-bar');
     if (bar) bar.classList.remove('hidden');
     onlineRenderPicks();
     updateOnlineSelectTitle();
@@ -555,7 +555,7 @@ function onlineRenderPicks() {
     let isHost = Number(onlineState.slot) === 0;
     if (p1l) p1l.innerText = onlineSquadLabel(isHost ? localPicks : remotePicks, isHost ? onlineState.localLocked : onlineState.remoteLocked);
     if (p2l) p2l.innerText = onlineSquadLabel(isHost ? remotePicks : localPicks, isHost ? onlineState.remoteLocked : onlineState.localLocked);
-    let cbtn = document.getElementById('online-confirm-btn');
+    let cbtn = document.getElementById('char-confirm-btn');
     if (cbtn) {
         cbtn.disabled = onlineState.localLocked || localPicks.length !== onlineState.squadSize;
         cbtn.innerText = onlineState.localLocked ? 'Locked' : 'Lock In';
