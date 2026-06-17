@@ -979,14 +979,26 @@ function loop(timestamp) {
     lastTime = timestamp;
 
     frameRealDt = realDt;
-    updateCinematics(realDt);
-    if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
-    else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
-    draw();
-    if (typeof updateTouchControlsVisibility === 'function') updateTouchControlsVisibility();
+
+    const activeCanvasState = gameState === 'PLAYING' || gameState === 'ROUND_END' ||
+        gameState === 'END' || gameState === 'PAUSED' || gameState === 'LADDER_SCREEN';
+    if (activeCanvasState) {
+        updateCinematics(realDt);
+        if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
+        else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
+        draw();
+    }
+
+    if (activeCanvasState && typeof updateTouchControlsVisibility === 'function') updateTouchControlsVisibility();
     drawCharacterSelectPreview(realDt);
 
-    requestID = requestAnimationFrame(loop);
+    // Static DOM menu screens do not need a 60fps JS/canvas loop. Keeping them on rAF
+    // made menu animations and input feel worse on slower GPUs while gameplay was fine.
+    if (activeCanvasState || gameState === 'CHAR_SELECT') {
+        requestID = requestAnimationFrame(loop);
+    } else {
+        requestID = setTimeout(() => requestAnimationFrame(loop), 120);
+    }
 }
 
 function updateCinematics(realDt) {
