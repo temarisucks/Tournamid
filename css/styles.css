@@ -361,3 +361,8 @@
         #mode-screen.online-open .online-modes-panel { opacity: 1; transform: translateX(0); pointer-events: auto; }
         .online-modes-panel .account-line { color: #fff; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; font-size: 0.95rem; margin-bottom: 1px; }
         .online-modes-panel .account-record { color: #9aa3b2; letter-spacing: 1px; font-size: 0.82rem; margin-bottom: 14px; }
+
+        /* online character-select: pick freely, then Lock In (no more instant binding) */
+        #online-confirm-bar { display: flex; gap: 14px; justify-content: center; margin: 8px 0 4px; }
+        #online-confirm-bar .menu-btn { min-width: 200px; }
+        #online-confirm-btn:disabled { opacity: 0.4; cursor: default; }

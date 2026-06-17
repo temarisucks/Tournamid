@@ -17,11 +17,12 @@ const ONLINE_REMOTE_BINDINGS = {
     atkL: 'OnlineRemoteLight',
     atkH: 'OnlineRemoteHeavy',
     special: 'OnlineRemoteSpecial',
-    ult: 'OnlineRemoteUlt'
+    ult: 'OnlineRemoteUlt',
+    tag: 'OnlineRemoteTag'
 };
 
-const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult'];
-const ONLINE_TAP_ACTIONS = ['u', 'atkL', 'atkH', 'special', 'ult']; // edge-triggered — never drop these
+const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult', 'tag'];
+const ONLINE_TAP_ACTIONS = ['u', 'atkL', 'atkH', 'special', 'ult', 'tag']; // edge-triggered — never drop these
 const ONLINE_SNAPSHOT_RATE = 1 / 30; // host → guest state, 30x/sec
 const ONLINE_INPUT_HEARTBEAT = 0.05; // guest → host inputs re-sent at least this often
 const ONLINE_PING_RATE = 1.0;
@@ -419,7 +420,7 @@ function onlineHandleMessage(event) {
     if (msg.type === 'peer-joined') {
         onlineState.peerConnected = true;
         onlineSetStatus(`Friend joined room ${onlineState.roomCode}.`);
-        if (onlineState.localSelection) onlineSend('select', { charType: onlineState.localSelection });
+        if ((onlineState.localPicks || []).length) onlineSend('select', { picks: [...onlineState.localPicks], locked: !!onlineState.localLocked });
         if (gameState === 'STAGE_SELECT') onlineSend('stage', { stageId: selectedStage });
         updateOnlineSelectTitle();
         return;
@@ -445,7 +446,7 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'select') {
         onlineState.peerConnected = true;
-        onlineApplyRemoteSelection(msg.charType);
+        onlineApplyRemoteSelection(msg);
         return;
     }
 
@@ -458,8 +459,12 @@ function onlineHandleMessage(event) {
 
     if (msg.type === 'start') {
         selectedStage = msg.stageId || selectedStage;
-        p1Selection = msg.p1Selection || p1Selection;
-        p2Selection = msg.p2Selection || p2Selection;
+        // squads (ranked 2v2) — fall back to single picks for casual/custom
+        onlineState.p1Picks = Array.isArray(msg.p1Picks) && msg.p1Picks.length ? msg.p1Picks : (msg.p1Selection ? [msg.p1Selection] : (onlineState.p1Picks || []));
+        onlineState.p2Picks = Array.isArray(msg.p2Picks) && msg.p2Picks.length ? msg.p2Picks : (msg.p2Selection ? [msg.p2Selection] : (onlineState.p2Picks || []));
+        onlineState.teamMatch = !!msg.team;
+        p1Selection = onlineState.p1Picks[0] || p1Selection;
+        p2Selection = onlineState.p2Picks[0] || p2Selection;
         onlineState.entSeed = typeof msg.entSeed === 'number' ? msg.entSeed : 0; // shared entrance-script pick
         onlineState.postMatchLocal = null;
         onlineState.postMatchRemote = null;
@@ -503,12 +508,12 @@ function onlineHandleMessage(event) {
     }
 
     if (msg.type === 'round-result' && onlineState.slot === 1 && currentMode === 'ONLINE') {
-        endRound(msg.winnerIdx, msg.subtitle || '');
+        if (msg.team) teamRoundEnd(msg.winnerIdx); else endRound(msg.winnerIdx, msg.subtitle || '');
         return;
     }
 
     if (msg.type === 'next-round' && onlineState.slot === 1 && currentMode === 'ONLINE') {
-        nextRound();
+        if (msg.team) nextTeamRound(); else nextRound();
         return;
     }
 
@@ -517,45 +522,112 @@ function onlineHandleMessage(event) {
     }
 }
 
-function onlineApplyRemoteSelection(charType) {
-    if (!CHARACTERS[charType]) return;
-    onlineState.remoteSelection = charType;
-    if (onlineState.slot === 0) {
-        p2Selection = charType;
-        charSelectPreview.p2 = charType;
-        charSelectPreview.p2Burst = 1;
-        markRosterSelection(charType, 'p2');
-    } else {
-        p1Selection = charType;
-        charSelectPreview.p1 = charType;
-        charSelectPreview.p1Burst = 1;
-        markRosterSelection(charType, 'p1');
+// Character select is now a PICK → CONFIRM flow: you choose freely (and can change your
+// mind) until you Lock In. Ranked picks a SQUAD of two (2v2 tag); everything else picks one.
+function onlineLocalKey() { return Number(onlineState.slot) === 0 ? 'p1' : 'p2'; }
+function onlineRemoteKey() { return Number(onlineState.slot) === 0 ? 'p2' : 'p1'; }
+
+function onlineInitCharSelect() {
+    if (currentMode !== 'ONLINE') return;
+    onlineState.squadSize = onlineState.matchKind === 'ranked' ? 2 : 1;
+    onlineState.localPicks = [];
+    onlineState.localLocked = false;
+    onlineState.remotePicks = [];
+    onlineState.remoteLocked = false;
+    let bar = document.getElementById('online-confirm-bar');
+    if (bar) bar.classList.remove('hidden');
+    onlineRenderPicks();
+    updateOnlineSelectTitle();
+}
+
+function onlineSquadLabel(picks, locked) {
+    if (!picks || !picks.length) return '---';
+    return picks.map(c => CHARACTERS[c] ? CHARACTERS[c].name.replace('THE ', '') : c).join(' + ') + (locked ? ' ✓' : '');
+}
+
+function onlineRenderPicks() {
+    let localPicks = onlineState.localPicks || [], remotePicks = onlineState.remotePicks || [];
+    let lk = onlineLocalKey(), rk = onlineRemoteKey();
+    // preview fighters = each side's first pick
+    charSelectPreview[lk] = localPicks[0] || null;
+    charSelectPreview[rk] = remotePicks[0] || null;
+    let p1l = document.getElementById('p1-select-label'), p2l = document.getElementById('p2-select-label');
+    let isHost = Number(onlineState.slot) === 0;
+    if (p1l) p1l.innerText = onlineSquadLabel(isHost ? localPicks : remotePicks, isHost ? onlineState.localLocked : onlineState.remoteLocked);
+    if (p2l) p2l.innerText = onlineSquadLabel(isHost ? remotePicks : localPicks, isHost ? onlineState.remoteLocked : onlineState.localLocked);
+    let cbtn = document.getElementById('online-confirm-btn');
+    if (cbtn) {
+        cbtn.disabled = onlineState.localLocked || localPicks.length !== onlineState.squadSize;
+        cbtn.innerText = onlineState.localLocked ? 'Locked' : 'Lock In';
     }
-    updateSelectionLabels();
+}
+
+// tentative pick — changeable until you Lock In
+function onlinePickCharacter(resolvedType) {
+    if (!CHARACTERS[resolvedType] || onlineState.localLocked) return;
+    if ((onlineState.localPicks || []).length >= onlineState.squadSize) onlineState.localPicks = [];
+    onlineState.localPicks.push(resolvedType);
+    playAudio(selectVoices[resolvedType]);
+    markRosterSelection(resolvedType, onlineLocalKey());
+    charSelectPreview[onlineLocalKey() + 'Burst'] = 1;
+    onlineSend('select', { picks: [...onlineState.localPicks], locked: false });
+    onlineRenderPicks();
+    updateOnlineSelectTitle();
+}
+
+function onlineResetPicks() {
+    onlineState.localPicks = [];
+    onlineState.localLocked = false;
+    onlineSend('select', { picks: [], locked: false });
+    onlineRenderPicks();
+    updateOnlineSelectTitle();
+}
+
+function onlineConfirmPicks() {
+    if (onlineState.localLocked || (onlineState.localPicks || []).length !== onlineState.squadSize) return;
+    onlineState.localLocked = true;
+    onlineSend('select', { picks: [...onlineState.localPicks], locked: true });
+    onlineRenderPicks();
     updateOnlineSelectTitle();
     onlineMaybeAdvanceFromCharacterSelect();
 }
 
-function onlineBothSelected() {
-    return !!(p1Selection && p2Selection);
+function onlineApplyRemoteSelection(data) {
+    let picks = Array.isArray(data && data.picks) ? data.picks.filter(c => CHARACTERS[c])
+              : (data && CHARACTERS[data.charType] ? [data.charType] : []); // legacy single-char fallback
+    onlineState.remotePicks = picks;
+    onlineState.remoteLocked = !!(data && data.locked);
+    onlineState.peerConnected = true;
+    onlineRenderPicks();
+    updateOnlineSelectTitle();
+    onlineMaybeAdvanceFromCharacterSelect();
+}
+
+function onlineBothLocked() {
+    return onlineState.localLocked && onlineState.remoteLocked &&
+        (onlineState.localPicks || []).length === onlineState.squadSize &&
+        (onlineState.remotePicks || []).length === onlineState.squadSize;
 }
 
 function updateOnlineSelectTitle() {
     if (currentMode !== 'ONLINE') return;
     let title = document.getElementById('char-select-title');
     if (!title) return;
-    if (!onlineState.peerConnected) title.innerText = `ROOM ${onlineState.roomCode} - WAITING FOR PLAYER 2`;
-    else if (!onlineState.localSelection) title.innerText = `ROOM ${onlineState.roomCode} - SELECT YOUR FIGHTER`;
-    else if (!onlineBothSelected()) title.innerText = `ROOM ${onlineState.roomCode} - WAITING FOR OPPONENT`;
-    else title.innerText = Number(onlineState.slot) === 0 ? 'SELECT STAGE' : 'WAITING FOR HOST';
+    let sq = onlineState.squadSize === 2 ? 'SQUAD' : 'FIGHTER';
+    if (!onlineState.peerConnected) title.innerText = 'WAITING FOR OPPONENT';
+    else if (onlineBothLocked()) title.innerText = Number(onlineState.slot) === 0 ? 'STARTING…' : 'WAITING FOR HOST';
+    else if (onlineState.localLocked) title.innerText = 'LOCKED IN - WAITING FOR OPPONENT';
+    else if ((onlineState.localPicks || []).length === onlineState.squadSize) title.innerText = `CONFIRM YOUR ${sq}`;
+    else if (onlineState.squadSize === 2) title.innerText = `PICK YOUR SQUAD (${(onlineState.localPicks || []).length}/2)`;
+    else title.innerText = `SELECT YOUR ${sq}`;
 }
 
 function onlineMaybeAdvanceFromCharacterSelect(delay = 450) {
-    if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothSelected()) return;
+    if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothLocked()) return;
     setTimeout(() => {
-        if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothSelected()) return;
+        if (currentMode !== 'ONLINE' || Number(onlineState.slot) !== 0 || !onlineBothLocked()) return;
         if (gameState === 'PLAYING' || gameState === 'STAGE_SELECT') return;
-        // ranked / casual: no host stage-pick — random arena, auto-start
+        // ranked / casual: random arena + auto-start. custom: the host still picks the stage.
         if (onlineState.matchKind === 'ranked' || onlineState.matchKind === 'casual') {
             let ids = Object.keys(STAGES);
             selectedStage = ids[Math.floor(Math.random() * ids.length)] || 'dojo';
@@ -564,27 +636,6 @@ function onlineMaybeAdvanceFromCharacterSelect(delay = 450) {
         }
         goToStageSelect();
     }, delay);
-}
-
-function onlineSelectCharacter(resolvedType) {
-    if (!CHARACTERS[resolvedType]) return;
-    onlineState.localSelection = resolvedType;
-    if (onlineState.slot === 0) {
-        p1Selection = resolvedType;
-        charSelectPreview.p1 = resolvedType;
-        charSelectPreview.p1Burst = 1;
-        markRosterSelection(resolvedType, 'p1');
-    } else {
-        p2Selection = resolvedType;
-        charSelectPreview.p2 = resolvedType;
-        charSelectPreview.p2Burst = 1;
-        markRosterSelection(resolvedType, 'p2');
-    }
-    playAudio(selectVoices[resolvedType]);
-    onlineSend('select', { charType: resolvedType });
-    updateSelectionLabels();
-    updateOnlineSelectTitle();
-    onlineMaybeAdvanceFromCharacterSelect();
 }
 
 function onlineSelectStage(stageId) {
@@ -599,7 +650,15 @@ function onlineSelectStage(stageId) {
 function onlineStartGame() {
     if (Number(onlineState.slot) !== 0) return false;
     onlineSetStatus('Starting online match...');
-    onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, entSeed: Math.floor(Math.random() * 1000) });
+    // host = P1 (its squad), guest = P2 (remote squad). Ranked = a 2v2 team match.
+    let p1Picks = (onlineState.localPicks || []).slice();
+    let p2Picks = (onlineState.remotePicks || []).slice();
+    onlineSend('start', {
+        stageId: selectedStage, p1Picks, p2Picks,
+        p1Selection: p1Picks[0], p2Selection: p2Picks[0],
+        team: onlineState.matchKind === 'ranked',
+        entSeed: Math.floor(Math.random() * 1000)
+    });
     return true;
 }
 
@@ -706,7 +765,11 @@ function onlineResolvePostMatch() {
         // both peers receive the relayed 'start' and reset together.
         showNetMessage('REMATCH', 'Starting…');
         if (Number(onlineState.slot) === 0) {
-            onlineSend('start', { stageId: selectedStage, p1Selection, p2Selection, entSeed: Math.floor(Math.random() * 1000) });
+            onlineSend('start', {
+                stageId: selectedStage, p1Selection, p2Selection,
+                p1Picks: onlineState.p1Picks, p2Picks: onlineState.p2Picks, team: !!onlineState.teamMatch,
+                entSeed: Math.floor(Math.random() * 1000)
+            });
         }
     }
 }
@@ -884,7 +947,15 @@ function onlineHostCaptureSnapshot() {
         traps: cultTraps.map(z => ({ x: z.x, t: z.t, arm: z.arm, life: z.life, triggered: z.triggered, radius: z.radius })),
         lumP: lumPortalFx.map(f => ({ x: f.x, y: f.y, t: f.t, life: f.life })),
         lumB: lumBeastFx.map(f => ({ x: f.x, y: f.y, t: f.t, life: f.life })),
-        cult: cultSummons.slice(0, 14).map(c => ({ x: c.x, y: c.y, dir: c.dir, t: c.t, life: c.life, kind: c.kind, mask: c.mask, scale: c.scale, phase: c.phase }))
+        cult: cultSummons.slice(0, 14).map(c => ({ x: c.x, y: c.y, dir: c.dir, t: c.t, life: c.life, kind: c.kind, mask: c.mask, scale: c.scale, phase: c.phase })),
+        // 2v2 (ranked): who is tagged in + the BENCHED fighter of each team (the two active
+        // ones already ride in `players`). Lets the guest sync the team HUD + tag swaps.
+        ...(function () {
+            let ok = teamBattle && teams[0] && teams[0].length === 2 && teams[1] && teams[1].length === 2;
+            if (!ok) return { tb: false, ai: null, bench: null };
+            return { tb: true, ai: [activeIdx[0], activeIdx[1]],
+                bench: [onlineHostCaptureFighter(teams[0][1 - activeIdx[0]]), onlineHostCaptureFighter(teams[1][1 - activeIdx[1]])] };
+        })()
     };
 }
 
@@ -920,6 +991,17 @@ function onlineGuestApplySnapshot(snap) {
         onlineGuestSpawnGibs(snap.ok.x, snap.ok.y);
     }
     overkillFx = snap.ok ? { ...snap.ok } : null;
+
+    // 2v2: adopt the host's tag state — re-point players to each team's active fighter and
+    // apply the benched fighters (host-verbatim) so the team HUD + a tag swap stay in sync.
+    if (snap.tb && teamBattle && teams && teams[0] && teams[0].length === 2 && teams[1] && teams[1].length === 2) {
+        if (Array.isArray(snap.ai)) activeIdx = [snap.ai[0] ? 1 : 0, snap.ai[1] ? 1 : 0];
+        players[0] = teams[0][activeIdx[0]];
+        players[1] = teams[1][activeIdx[1]];
+        if (Array.isArray(snap.bench)) {
+            snap.bench.forEach((bf, i) => { let t = teams[i] && teams[i][1 - activeIdx[i]]; if (t && bf) onlineGuestApplyFighter(t, bf, false); });
+        }
+    }
 
     for (let i = 0; i < Math.min(players.length, snap.players.length); i++) {
         let p = players[i], src = snap.players[i];

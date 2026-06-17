@@ -821,9 +821,11 @@ function checkWinCondition() {
         }
         let t0dead = teams[0].every(f => f.hp <= 0);
         let t1dead = teams[1].every(f => f.hp <= 0);
-        if (t0dead && t1dead) team2v2End(-1);
-        else if (t0dead) team2v2End(1);
-        else if (t1dead) team2v2End(0);
+        // ranked online is best-of-3 (squad reset between rounds); offline 2v2 is single-elimination
+        let teamEnd = (currentMode === 'ONLINE' && onlineState.teamMatch) ? teamRoundEnd : team2v2End;
+        if (t0dead && t1dead) teamEnd(-1);
+        else if (t0dead) teamEnd(1);
+        else if (t1dead) teamEnd(0);
         return;
     }
 
@@ -868,6 +870,65 @@ function endRound(winnerIdx, subtitle) {
     setTimeout(nextRound, 2000);
 }
 
+// Reset one fighter to its round-start state (HP, position, per-character kit). Shared by
+// the 1v1 round flow and the ranked-2v2 best-of-3 squad reset.
+function resetFighterForRound(p, x, dir) {
+    if (!p) return;
+    if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
+    if ('devotion' in p) p.devotion = 0;
+    p.puppet = null; p._portalSlam = null; p.portalCd = 0;
+    if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = stageGroundYAt(x + 60, GROUND_Y); p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } }
+    if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; }
+    if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._slotPending = null; p._installRoll = null; }
+    p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
+    p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
+    p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
+    p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
+    p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
+    p.overkillRed = false;
+    p.pose = null;
+}
+
+// Ranked 2v2 is best-of-3: a wiped squad scores a ROUND, both squads reset, until a team
+// reaches ROUNDS_TO_WIN. (Offline 2v2 stays single-elimination via team2v2End.)
+function teamRoundEnd(winnerIdx) {
+    if (gameState !== 'PLAYING') return;
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('round-result', { winnerIdx, subtitle: 'Squad Wiped', team: true });
+    gameState = 'ROUND_END';
+    if (winnerIdx >= 0) roundWins[winnerIdx]++;
+    renderRoundPips();
+    if (roundWins[0] >= ROUNDS_TO_WIN || roundWins[1] >= ROUNDS_TO_WIN) {
+        let p1Won = roundWins[0] > roundWins[1];
+        endGame(p1Won ? "PLAYER 1 WINS" : "PLAYER 2 WINS", `Match ${roundWins[0]} – ${roundWins[1]}`);
+        return;
+    }
+    let txt = winnerIdx === -1 ? "DRAW ROUND" : (winnerIdx === 0 ? "PLAYER 1" : "PLAYER 2") + " TAKES IT";
+    roundAnnounce = { text: txt, t: 0, dur: 2.0 };
+    setTimeout(nextTeamRound, 2000);
+}
+
+function nextTeamRound() {
+    if (gameState !== 'ROUND_END') return;
+    if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('next-round', { team: true });
+    currentRound++;
+    hitboxes = []; projectiles = []; particles = []; bodyParts = []; cultSummons = []; consecrateZones = []; cultTraps = []; lumBeastFx = []; lumPortalFx = [];
+    initStageActors();
+    let geo = getStageGeo();
+    let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
+    let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
+    teams[0].forEach(f => resetFighterForRound(f, lx, 1));
+    teams[1].forEach(f => resetFighterForRound(f, rx, -1));
+    activeIdx = [0, 0]; pendingTag = [0, 0];
+    players = [teams[0][0], teams[1][0]];
+    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
+    roundAnnounce = { text: "ROUND " + currentRound, t: 0, dur: 1.4 };
+    beginIntroSequence(currentRound >= 3 ? 'final' : currentRound === 2 ? 'round2' : 'round1');
+    matchTimer = 99; document.getElementById('timer').innerText = matchTimer; matchTimerAccumulator = 0;
+    setupTeamHud(true);
+    updateHUD();
+    gameState = 'PLAYING';
+}
+
 function nextRound() {
     if (gameState !== 'ROUND_END') return;
     if (currentMode === 'ONLINE' && onlineState.slot === 0 && !suppressRollbackEffects) onlineSend('next-round');
@@ -877,22 +938,7 @@ function nextRound() {
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
     let rx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.72 : WIDTH * 0.75;
-    [[players[0], lx, 1], [players[1], rx, -1]].forEach(([p, x, dir]) => {
-        // The Cult: winning/ending a round as Lumatrossia drops the install — revert and reset the bar
-        if (p.lumActive && p.revertFromLumatrossia) { p.revertFromLumatrossia(); p.meter = 0; }
-        if ('devotion' in p) p.devotion = 0;
-        p.puppet = null; p._portalSlam = null; p.portalCd = 0;
-        if (p.charType === 'TWINS') { p.tether = null; p.fastball = null; p.symBuff = 0; p.twinOffset = 60; p._twinLeaping = 0; if (p.partner) { p.partner.x = x + 60; p.partner.y = stageGroundYAt(x + 60, GROUND_Y); p.partner.state = 'IDLE'; p.partner.vx = 0; p.partner.vy = 0; } } // reset the pair beside each other
-        if (p.charType === 'TRAVELER') { p.posHistory = []; p._trail = []; p._echoHit = null; p.slipCd = 0; p.rewindCd = 0; p.vortexCd = 0; p._skipHide = 0; } // fresh timeline each round
-        if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._slotPending = null; p._installRoll = null; } // reset the table each round
-        p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
-        p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
-        p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
-        p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
-        p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
-        p.overkillRed = false;
-        p.pose = null;
-    });
+    [[players[0], lx, 1], [players[1], rx, -1]].forEach(([p, x, dir]) => resetFighterForRound(p, x, dir));
     ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
     roundAnnounce = { text: "ROUND " + currentRound, t: 0, dur: 1.4 };
     beginIntroSequence(currentRound >= 3 ? 'final' : currentRound === 2 ? 'round2' : 'round1');

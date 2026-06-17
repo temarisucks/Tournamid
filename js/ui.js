@@ -710,7 +710,9 @@ function goToCharSelect(mode) {
         : (currentMode === 'ONLINE' || currentMode === 'LADDER' || currentMode === 'PVE' || currentMode === 'TRAINING')
             ? "Select Your Fighter" : "Select Player 1";
     updateSelectionLabels();
-    if (currentMode === 'ONLINE') updateOnlineSelectTitle();
+    let confirmBar = document.getElementById('online-confirm-bar');
+    if (currentMode === 'ONLINE') { onlineInitCharSelect(); }
+    else if (confirmBar) { confirmBar.classList.add('hidden'); } // offline never shows the confirm bar
     showScreen('char-select-screen');
     gameState = 'CHAR_SELECT';
 }
@@ -718,9 +720,7 @@ function goToCharSelect(mode) {
 function selectCharacter(charType, cardEl) {
     let resolvedType = charType === 'RANDOM' ? getRandomCharacter() : charType;
     if (currentMode === 'ONLINE') {
-        if (!onlineState.peerConnected && onlineState.slot === 0) onlineSetStatus(`Room ${onlineState.roomCode}. Waiting for your friend.`);
-        if (onlineState.localSelection) return;
-        onlineSelectCharacter(resolvedType);
+        onlinePickCharacter(resolvedType); // tentative — changeable until you Lock In
         return;
     }
     if (isTeamSelectMode()) { selectTeamCharacter(resolvedType, cardEl); return; }
@@ -908,7 +908,8 @@ function startGame() {
     initStageActors(); // animated background figures for the chosen stage
 
     trainingMode = (currentMode === 'TRAINING');
-    teamBattle = (currentMode === 'VS2' || currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH');
+    teamBattle = (currentMode === 'VS2' || currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') ||
+                 (currentMode === 'ONLINE' && onlineState.teamMatch); // ranked online = 2v2 tag
     infiniteMeter = false;
     document.getElementById('training-ui').classList.toggle('hidden', !trainingMode);
     document.getElementById('training-panel').classList.add('hidden'); // panel opens via the button
@@ -919,7 +920,15 @@ function startGame() {
         document.querySelectorAll('#dummy-settings .dummy-btn').forEach(b => b.classList.toggle('on', b.dataset.dummy === 'idle'));
     }
 
-    if (teamBattle) {
+    if (teamBattle && currentMode === 'ONLINE') {
+        // Ranked 2v2: both squads are human-controlled (host sim drives team 0 from local
+        // input, team 1 from the relayed remote input — same id→slot mapping as 1v1).
+        buildTeams(onlineState.p1Picks.slice(0, 2), onlineState.p2Picks.slice(0, 2), null, false, false);
+        document.getElementById('timer').classList.remove('hidden');
+        document.getElementById('wave-counter').classList.add('hidden');
+        matchTimer = 99;
+        document.getElementById('timer').innerText = matchTimer;
+    } else if (teamBattle) {
         let p2Team = (currentMode === 'VS2_PVP' || currentMode === 'VS2_WATCH') && opponentTeam.length >= 2
             ? opponentTeam.slice(0, 2)
             : [getRandomCharacter(), getRandomCharacter()];
