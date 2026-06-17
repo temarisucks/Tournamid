@@ -932,8 +932,11 @@ function endGame(title, subtitle) {
     let winner = players[winnerIdx];
     if (winner && winner.state !== 'DEAD') {
         winner.startWinPose();
-        if (!overkillFx) playAudio(winVoices[winner.charType]);
+        if (winner.charType === 'GAMBLER') playGamblerVoice('winning');
+        else if (!overkillFx) playAudio(winVoices[winner.charType]);
     }
+    let loser = players[1 - winnerIdx];
+    if (loser && loser.charType === 'GAMBLER') playGamblerVoice('dang');
 
     // Hold on the celebration + "X WINS" banner before revealing the post-battle menu.
     let animMs = overkillFx ? 3200 : 2800;

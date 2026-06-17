@@ -1618,7 +1618,7 @@ class Fighter {
             this.gamblerMix++;
             this.hp = Math.min(this.maxHp, this.hp + 4);
             this.applyGamblerSpeed();
-            playGamblerVoice('winning');
+            playGamblerVoice('dang');
             spawnParticles(this.x, this.y - 50, 10, '#ffd24a');
         }
     }
