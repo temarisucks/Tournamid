@@ -4133,7 +4133,7 @@ class Fighter {
                 let rawTwitch = Math.sin(f * 12.9898) * 43758.5453;
                 let twitch = rawTwitch - Math.floor(rawTwitch);
                 headY += [2, -1, 4, 0][stomp] + (twitch - 0.5) * 3;
-                torsoLean = [0.22, 0.34, 0.18, 0.30][stomp];
+                torsoLean = [-0.03, 0.02, -0.01, 0.03][stomp];
                 rightLegAngle = [0.18, 0.08, 0.26, 0.12][stomp];
                 rightLegBend = [0.36, 0.44, 0.30, 0.40][stomp];
                 leftLegAngle = [-0.22, -0.30, -0.16, -0.26][stomp];
