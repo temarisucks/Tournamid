@@ -4126,22 +4126,22 @@ class Fighter {
                     torsoLean = -0.02 + sway * 0.02;
                 }
             } else if (this.charType === 'GAMBLER') {
-                // Meme-source idle: jittery redraws, hunched over the button, one foot
-                // compulsively stomping. The stepped keyframes keep it intentionally unclean.
+                // Meme-source idle: jittery redraws with loose arms at his sides.
+                // The stepped keyframes keep it intentionally unclean.
                 let f = Math.floor(t * 11);
                 let stomp = f % 4;
                 let rawTwitch = Math.sin(f * 12.9898) * 43758.5453;
                 let twitch = rawTwitch - Math.floor(rawTwitch);
                 headY += [2, -1, 4, 0][stomp] + (twitch - 0.5) * 3;
                 torsoLean = [0.22, 0.34, 0.18, 0.30][stomp];
-                rightLegAngle = [0.72, 0.48, 0.82, 0.56][stomp];
-                rightLegBend = [0.32, 0.78, 0.22, 0.62][stomp];
-                leftLegAngle = [-0.34, -0.46, -0.28, -0.42][stomp];
-                leftLegBend = [0.44, 0.26, 0.52, 0.34][stomp];
-                rightArmAngle = [1.9, 2.18, 1.72, 2.05][stomp];
-                rightArmBend = [-0.26, -0.58, -0.16, -0.46][stomp];
-                leftArmAngle = [1.36, 1.06, 1.58, 1.22][stomp];
-                leftArmBend = [0.52, 0.22, 0.66, 0.36][stomp];
+                rightLegAngle = [0.18, 0.08, 0.26, 0.12][stomp];
+                rightLegBend = [0.36, 0.44, 0.30, 0.40][stomp];
+                leftLegAngle = [-0.22, -0.30, -0.16, -0.26][stomp];
+                leftLegBend = [0.38, 0.32, 0.44, 0.34][stomp];
+                rightArmAngle = [0.28, 0.18, 0.36, 0.24][stomp];
+                rightArmBend = [-0.12, -0.20, -0.08, -0.16][stomp];
+                leftArmAngle = [-0.26, -0.18, -0.34, -0.22][stomp];
+                leftArmBend = [0.12, 0.20, 0.08, 0.16][stomp];
             } else {
                 headY += Math.sin(t * 5) * 2;
             }
@@ -5621,29 +5621,6 @@ class Fighter {
             ctx.globalAlpha = baseA; ctx.lineWidth = baseW;
         } else {
             ctx.stroke();
-        }
-
-        if (this.charType === 'GAMBLER' && this.state === 'IDLE') {
-            let press = (Math.floor(t * 11) % 4 === 2) ? 1 : 0;
-            ctx.save();
-            ctx.translate(rightLeg.endX + 4, rightLeg.endY + 4);
-            ctx.fillStyle = '#171717';
-            ctx.strokeStyle = '#050505';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.ellipse(0, 5, 20, 7, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = press ? '#ff0033' : '#d20f2f';
-            ctx.strokeStyle = '#330009';
-            ctx.beginPath();
-            ctx.ellipse(0, -1 + press * 4, 13, 6 - press * 1.5, 0, Math.PI, 0);
-            ctx.lineTo(13, 5);
-            ctx.ellipse(0, 5, 13, 5, 0, 0, Math.PI);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
         }
 
         ctx.fillStyle = ctx.strokeStyle;
