@@ -4000,14 +4000,26 @@ class Fighter {
                 torsoLean = -0.03;
             } else if (this.charType === 'MAGE') {
                 let hover = Math.sin(t * 3.8);
-                headY += hover * 5 - 7; // Hovering slightly
-                leftArmAngle = 0.62 + Math.sin(t * 2.3) * 0.18;
-                rightArmAngle = -0.72 + Math.cos(t * 2.1) * 0.16;
-                leftArmBend = -0.5 + hover * 0.15; rightArmBend = 0.45 - hover * 0.15;
-                leftLegAngle = 0.08 + hover * 0.08;
-                rightLegAngle = -0.16 - hover * 0.06; // Legs dangling
-                leftLegBend = 0.45; rightLegBend = -0.35;
-                torsoLean = Math.sin(t * 1.7) * 0.05;
+                if (this.isPreview) {
+                    // character-select pose: hovers with quiet command — scepter held upright at
+                    // his side while the free hand cradles a wisp of arcane light he turns over
+                    let sway = Math.sin(t * 1.5);
+                    headY += sway * 3 - 9;
+                    rightArmAngle = -0.18 + sway * 0.04; rightArmBend = 0.72;          // scepter upright beside him
+                    leftArmAngle = 1.4 + Math.sin(t * 1.8) * 0.1; leftArmBend = 0.55;  // free hand cupped, palm up
+                    leftLegAngle = 0.06 + sway * 0.05; rightLegAngle = -0.14 - sway * 0.04;
+                    leftLegBend = 0.45; rightLegBend = -0.35;
+                    torsoLean = sway * 0.03;
+                } else {
+                    headY += hover * 5 - 7; // Hovering slightly
+                    leftArmAngle = 0.62 + Math.sin(t * 2.3) * 0.18;
+                    rightArmAngle = -0.72 + Math.cos(t * 2.1) * 0.16;
+                    leftArmBend = -0.5 + hover * 0.15; rightArmBend = 0.45 - hover * 0.15;
+                    leftLegAngle = 0.08 + hover * 0.08;
+                    rightLegAngle = -0.16 - hover * 0.06; // Legs dangling
+                    leftLegBend = 0.45; rightLegBend = -0.35;
+                    torsoLean = Math.sin(t * 1.7) * 0.05;
+                }
             } else if (this.charType === 'RANGER') {
                 let scan = Math.sin(t * 4.5);
                 headY += scan * 1.8;
@@ -4183,14 +4195,15 @@ class Fighter {
                 torsoLean = -0.05 + flo * 0.05;
                 headY += -2;
             } else if (this.charType === 'MAGE') {
-                // ascend, robes adrift, arms thrown wide casting victory sparks
-                let hover = Math.sin(t * 3);
-                headY += -18 + hover * 4;
-                leftArmAngle = 1.5 + Math.sin(t * 2) * 0.2; rightArmAngle = -1.5 - Math.sin(t * 2) * 0.2;
-                leftArmBend = -0.3; rightArmBend = 0.3;
-                leftLegAngle = 0.1 + hover * 0.06; rightLegAngle = -0.14 - hover * 0.05;
-                leftLegBend = 0.4; rightLegBend = -0.3;
-                torsoLean = Math.sin(t * 1.6) * 0.04;
+                // ascends serenely, robes adrift, scepter thrust to the heavens raining victory
+                // sparks while the free hand sweeps a slow arc of magic
+                let hover = Math.sin(t * 2.4);
+                headY += -24 + hover * 5; // floats well above the ground
+                rightArmAngle = 3.02 + Math.sin(t * 2) * 0.06; rightArmBend = -0.1; // scepter raised overhead
+                leftArmAngle = 1.55 + Math.sin(t * 1.6) * 0.22; leftArmBend = -0.3;  // free hand sweeping wide
+                leftLegAngle = 0.12 + hover * 0.06; rightLegAngle = -0.14 - hover * 0.05;
+                leftLegBend = 0.42; rightLegBend = -0.32;
+                torsoLean = Math.sin(t * 1.3) * 0.05;
             } else if (this.charType === 'RANGER') {
                 // twirl the sidearm, then rest it cockily by the head
                 if (wt < 0.8) { rightArmAngle = (t * 16) % (Math.PI * 2) - Math.PI; rightArmBend = -0.4; }
@@ -4334,23 +4347,24 @@ class Fighter {
                     headY += 1;
                 }
             } else if (this.charType === 'MAGE') {
-                walkPhase = Math.sin(t * 5.2);
-                headY += walkPhase * 3 - 11; // Floating drift
+                // The Mage doesn't walk — he GLIDES, on a slow hover-bob; the legs trail
+                // limp like robe-hems rather than stepping.
+                walkPhase = Math.sin(t * 3.4);
+                headY += walkPhase * 2.5 - 12;
                 if (isWalkingForward) {
-                    leftLegAngle = 0.28 + Math.sin(t * 3) * 0.08;
-                    rightLegAngle = 0.48 + Math.cos(t * 3) * 0.08; // Legs trail behind
-                    leftArmAngle = 0.76 + walkPhase * 0.16; rightArmAngle = -1.1 + walkPhase * 0.12;
-                    leftArmBend = -0.35; rightArmBend = 0.5;
-                    leftLegBend = 0.55; rightLegBend = 0.45;
-                    torsoLean = 0.18;
+                    // leans into the drift, scepter swept forward to lead, robe-legs streaming behind
+                    leftLegAngle = 0.34 + walkPhase * 0.05; rightLegAngle = 0.52 + Math.cos(t * 3.4) * 0.06;
+                    leftLegBend = 0.6; rightLegBend = 0.48;
+                    leftArmAngle = 0.55 + walkPhase * 0.12; leftArmBend = -0.2;       // free hand trailing
+                    rightArmAngle = -1.25 + walkPhase * 0.08; rightArmBend = 0.4;     // scepter out front, leading the way
+                    torsoLean = 0.2;
                 } else {
-                    leftLegAngle = -0.22 + walkPhase * 0.08;
-                    rightLegAngle = -0.38 - walkPhase * 0.08; // Knees tuck during backward float
-                    leftArmAngle = -0.62 + walkPhase * 0.18; rightArmAngle = -0.2 + Math.cos(t * 4) * 0.12;
-                    leftArmBend = 0.55; rightArmBend = -0.45;
-                    leftLegBend = 0.95; rightLegBend = -0.85;
-                    torsoLean = -0.22;
-                    headY -= 2;
+                    // drifts back upright, scepter raised to guard, legs tucked under the robe
+                    leftLegAngle = -0.18 + walkPhase * 0.05; rightLegAngle = -0.34 - walkPhase * 0.05;
+                    leftLegBend = 0.85; rightLegBend = -0.75;
+                    leftArmAngle = -0.55 + walkPhase * 0.14; leftArmBend = 0.5;       // off-hand drawn in
+                    rightArmAngle = -0.35 + Math.cos(t * 3.4) * 0.1; rightArmBend = -0.45; // scepter up, warding
+                    torsoLean = -0.18; headY -= 2;
                 }
             } else if (this.charType === 'RANGER') {
                 walkPhase = Math.sin(t * 14);
@@ -4467,6 +4481,15 @@ class Fighter {
                 leftLegAngle = -0.42; rightLegAngle = 0.42;
                 leftLegBend = 0.92; rightLegBend = 0.92;
                 headY += 3; torsoLean = 0.03;
+            } else if (this.charType === 'MAGE') {
+                // sinks low and curls protectively — scepter braced across the body, free hand
+                // cupped at the hip gathering arcane light (he hovers, so he doesn't fully squat)
+                headY -= 7; // counter some of the global crouch drop — he floats low rather than squatting
+                let g = Math.sin(t * 3) * 0.04;
+                leftArmAngle = 1.45 + g; leftArmBend = 0.62;    // free hand cupped low, palm up
+                rightArmAngle = 1.9 + g; rightArmBend = 0.18;   // scepter braced across the front
+                leftLegAngle = -0.28; rightLegAngle = 0.3; leftLegBend = 0.7; rightLegBend = 0.62;
+                torsoLean = 0.12;
             } else {
                 leftArmAngle = 2.2; rightArmAngle = 2.0; // compact ducked guard
                 leftArmBend = -0.85; rightArmBend = -0.85;
@@ -4487,11 +4510,13 @@ class Fighter {
                 leftArmAngle = -1.4; leftArmBend = 0.4;
                 torsoLean = rise ? 0.16 : 0.04;
             } else if (this.charType === 'MAGE') {
-                // Floats — barely tucked, arms drifting out, robe-light hover
-                let hover = Math.sin(t * 5) * 0.06;
-                leftLegAngle = -0.1 + hover; rightLegAngle = 0.18 + hover; leftLegBend = 0.3; rightLegBend = 0.35;
-                leftArmAngle = -0.9; rightArmAngle = 0.9; leftArmBend = -0.4; rightArmBend = 0.4;
-                headY -= 4; torsoLean = hover;
+                // Rides an updraft of magic — scepter thrust skyward, robes billowing, the
+                // legs trailing loose beneath him (no tuck — he's lifted, not leaping)
+                let hover = Math.sin(t * 6) * 0.08;
+                leftLegAngle = -0.16 + hover; rightLegAngle = 0.12 + hover; leftLegBend = 0.42; rightLegBend = 0.38;
+                leftArmAngle = -0.7 + hover; leftArmBend = -0.5;        // free hand flung out for balance
+                rightArmAngle = -1.65 - hover; rightArmBend = -0.2;     // scepter raised into the lift
+                headY -= 5 + (rise ? 2 : 0); torsoLean = hover * 0.5 + (rise ? 0.04 : -0.05);
             } else if (this.charType === 'RANGER') {
                 // Athletic — one knee driven up, other leg trailing, arms balanced/ready
                 leftLegAngle = 0.5; rightLegAngle = -0.25; leftLegBend = 1.1; rightLegBend = 0.35;
@@ -5851,9 +5876,31 @@ class Fighter {
                 ctx.restore();
             }
         } else if (this.charType === 'MAGE') {
-            // Wizard hat
-            ctx.beginPath(); ctx.moveTo(-16, headY - 8); ctx.lineTo(16, headY - 8); ctx.lineTo(0, headY - 35); ctx.closePath();
-            ctx.fillStyle = '#111'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+            // White wizard hat: a wide brim and a tall cone that curls + droops at the tip,
+            // with a faint arcane band and a sparkle floating off the point.
+            ctx.save();
+            ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+            let tipX = 9 + Math.sin(t * 1.4) * 1.6, tipY = headY - 47; // the point sways gently
+            ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#c9c9c9'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-13, headY - 7);
+            ctx.quadraticCurveTo(-9, headY - 30, tipX - 4, tipY + 4);   // left side sweeping up to the tip
+            ctx.quadraticCurveTo(tipX + 5, tipY - 1, tipX + 1, tipY + 9); // curled, drooping point
+            ctx.quadraticCurveTo(7, headY - 26, 13, headY - 7);          // right side back down
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            // brim
+            ctx.beginPath(); ctx.ellipse(0, headY - 6, 19, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            // hatband — a soft grey so the hat still reads pure white
+            ctx.strokeStyle = '#bdbdbd'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(-11, headY - 11); ctx.quadraticCurveTo(0, headY - 13, 11, headY - 11); ctx.stroke();
+            // a little 4-point sparkle drifting off the tip (a hint of magic)
+            ctx.shadowBlur = 8; ctx.shadowColor = '#fff'; ctx.fillStyle = 'rgba(255,255,255,0.95)';
+            let sx = tipX + 3, sy = tipY + 4, ss = 2 + Math.sin(t * 4) * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - ss * 2); ctx.lineTo(sx + ss * 0.6, sy); ctx.lineTo(sx, sy + ss * 2); ctx.lineTo(sx - ss * 0.6, sy); ctx.closePath();
+            ctx.moveTo(sx - ss * 2, sy); ctx.lineTo(sx, sy - ss * 0.6); ctx.lineTo(sx + ss * 2, sy); ctx.lineTo(sx, sy + ss * 0.6); ctx.closePath();
+            ctx.fill();
+            ctx.restore();
         } else if (this.charType === 'RANGER') {
             ctx.save();
             // --- Fedora ---
@@ -6346,15 +6393,49 @@ class Fighter {
             ctx.beginPath(); ctx.moveTo(lHandX, lHandY - 13); ctx.lineTo(lHandX, lHandY + 15); ctx.stroke();
             ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(lHandX, lHandY - 15, 3, 0, Math.PI * 2); ctx.fill();
         } else if (this.charType === 'MAGE') {
-            // Staff/Wand
+            // Mystical scepter: a bound staff cradling a glowing faceted arcane crystal,
+            // ringed by orbiting motes of light.
+            ctx.save();
+            ctx.lineCap = 'round';
+            // shaft
+            ctx.strokeStyle = '#7a6a86'; ctx.lineWidth = 3.6;
+            ctx.beginPath(); ctx.moveTo(rHandX, rHandY + 22); ctx.lineTo(rHandX, rHandY - 14); ctx.stroke();
+            // binding wraps down the grip
+            ctx.strokeStyle = '#544861'; ctx.lineWidth = 1.6;
+            for (let i = 0; i < 3; i++) { let yy = rHandY + 10 - i * 8; ctx.beginPath(); ctx.moveTo(rHandX - 3, yy); ctx.lineTo(rHandX + 3, yy - 2.5); ctx.stroke(); }
+            // claw cradle (three prongs reaching up around the crystal)
+            let oy = rHandY - 25;
+            ctx.strokeStyle = '#a597b3'; ctx.lineWidth = 2.4;
             ctx.beginPath();
-            ctx.strokeStyle = '#888';
-            ctx.moveTo(rHandX, rHandY - 20);
-            ctx.lineTo(rHandX, rHandY + 20);
+            ctx.moveTo(rHandX - 1, rHandY - 13); ctx.quadraticCurveTo(rHandX - 8, oy + 4, rHandX - 5, oy - 3);
+            ctx.moveTo(rHandX + 1, rHandY - 13); ctx.quadraticCurveTo(rHandX + 8, oy + 4, rHandX + 5, oy - 3);
+            ctx.moveTo(rHandX, rHandY - 13); ctx.lineTo(rHandX, oy - 6);
             ctx.stroke();
-            // Glow
-            ctx.fillStyle = '#fff';
-            ctx.beginPath(); ctx.arc(rHandX, rHandY - 22, 4, 0, Math.PI*2); ctx.fill();
+            // the crystal — a faceted purple gem, glowing and pulsing
+            let pulse = 1 + Math.sin(t * 4) * 0.14;
+            ctx.shadowBlur = 16; ctx.shadowColor = '#c98bff';
+            let g = ctx.createRadialGradient(rHandX, oy - 1, 0.5, rHandX, oy, 9 * pulse);
+            g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, '#d3a6ff'); g.addColorStop(1, 'rgba(140,70,200,0.25)');
+            ctx.fillStyle = g; ctx.strokeStyle = '#ecdcff'; ctx.lineWidth = 1;
+            let gw = 5 * pulse, gh = 8 * pulse;
+            ctx.beginPath();
+            ctx.moveTo(rHandX, oy - gh); ctx.lineTo(rHandX + gw, oy - 1); ctx.lineTo(rHandX, oy + gh - 2); ctx.lineTo(rHandX - gw, oy - 1); ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(140,70,200,0.5)'; ctx.lineWidth = 0.8;
+            ctx.beginPath(); ctx.moveTo(rHandX, oy - gh); ctx.lineTo(rHandX, oy + gh - 2); ctx.moveTo(rHandX - gw, oy - 1); ctx.lineTo(rHandX + gw, oy - 1); ctx.stroke();
+            // orbiting motes of light
+            ctx.fillStyle = 'rgba(220,182,255,0.9)';
+            for (let i = 0; i < 3; i++) { let a = t * 2.2 + i * 2.1; ctx.beginPath(); ctx.arc(rHandX + Math.cos(a) * 12, oy + Math.sin(a) * 7, 1.5, 0, Math.PI * 2); ctx.fill(); }
+            // character-select pose: a wisp of light cradled in the free (left) hand
+            if (this.isPreview) {
+                let wob = Math.sin(t * 3) * 2;
+                ctx.shadowBlur = 12; ctx.shadowColor = '#c98bff';
+                ctx.fillStyle = 'rgba(220,182,255,0.95)';
+                ctx.beginPath(); ctx.arc(lHandX, lHandY - 6 + wob, 3.6 + Math.sin(t * 5) * 0.6, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0; ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(lHandX, lHandY - 6 + wob, 1.6, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore();
         }
 
         if (this.state === 'BLOCK') {
