@@ -3650,17 +3650,14 @@ class Fighter {
             let btlx = bx - 52, btly = by + 38 + Math.sin(t * 4 + 1) * 4;
             ctx.beginPath(); ctx.moveTo(bx - 14, by + 4); ctx.quadraticCurveTo(bx - 60, by + 6 + Math.sin(t * 4) * 7, btlx, btly); ctx.stroke();
             ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.moveTo(btlx + 2, btly - 10); ctx.lineTo(btlx - 10, btly + 5); ctx.lineTo(btlx + 10, btly + 5); ctx.closePath(); ctx.fill();
-            // driving legs
+            // spine + driving legs branching off the BASE of the spine (no belly)
+            let pelAX = bx + bLeanX * 0.4, pelAY = by;
             ctx.strokeStyle = '#ddd'; ctx.lineWidth = 11;
             ctx.beginPath();
-            limbA(bx + 9, by + 4, 0.42 + bLean * 0.6, 0.5, 26, 30);
-            limbA(bx - 9, by + 4, -0.42 + charge * 0.3, 0.5, 26, 30);
+            ctx.moveTo(pelAX, pelAY); ctx.lineTo(bx + bLeanX, bsh);          // spine
+            limbA(pelAX, pelAY, 0.42 + bLean * 0.6, 0.5, 26, 30);           // legs from the pelvis
+            limbA(pelAX, pelAY, -0.42 + charge * 0.3, 0.5, 26, 30);
             ctx.stroke();
-            // spine + broad belly
-            ctx.lineWidth = 11;
-            ctx.beginPath(); ctx.moveTo(bx + bLeanX * 0.4, by); ctx.lineTo(bx + bLeanX, bsh); ctx.stroke();
-            ctx.lineWidth = 6; ctx.fillStyle = 'rgba(8,8,8,0.7)';
-            ctx.beginPath(); ctx.ellipse(bx + 6 + bLeanX * 0.6, by - 22, 20, 25, bLean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
             // arms — ready when idle; reared straight overhead on the charge, hammered down on the smash
             let armA = brute ? (3.02 - smash * 1.75) : 1.45;
             ctx.strokeStyle = '#ddd'; ctx.lineWidth = 11;
@@ -3836,18 +3833,14 @@ class Fighter {
             ctx.fillStyle = '#ff0033';
             ctx.beginPath(); ctx.moveTo(tlx + 2, tly - 10); ctx.lineTo(tlx - 10, tly + 6); ctx.lineTo(tlx + 10, tly + 6); ctx.closePath(); ctx.fill();
 
-            // legs — thick two-bone, planted wide and heavy
+            // spine + thick legs branching straight off the BASE of the spine (no belly)
+            let pelX = bx + leanX * 0.4, pelY = by;
             ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 11;
             ctx.beginPath();
-            limb(bx + 9, by + 4, lLegA + lean * 0.5, lLegB, 26, 30);
-            limb(bx - 9, by + 4, rLegA, rLegB, 26, 30);
+            ctx.moveTo(pelX, pelY); ctx.lineTo(bx + leanX, shY);             // spine
+            limb(pelX, pelY, lLegA + lean * 0.5, lLegB, 26, 30);            // legs from the pelvis
+            limb(pelX, pelY, rLegA, rLegB, 26, 30);
             ctx.stroke();
-
-            // torso spine + broad rotund belly
-            ctx.lineWidth = 11;
-            ctx.beginPath(); ctx.moveTo(bx + leanX * 0.4, by); ctx.lineTo(bx + leanX, shY); ctx.stroke();
-            ctx.lineWidth = 6; ctx.fillStyle = 'rgba(10,10,10,0.6)';
-            ctx.beginPath(); ctx.ellipse(bx + 6 + leanX * 0.6, by - 22, 20 + breathe * 0.8, 25, lean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
             // arms — thick two-bone with big fists
             ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 11;
