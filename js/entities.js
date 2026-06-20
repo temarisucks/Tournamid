@@ -4001,13 +4001,13 @@ class Fighter {
             } else if (this.charType === 'MAGE') {
                 let hover = Math.sin(t * 3.8);
                 if (this.isPreview) {
-                    // character-select pose: hovers with quiet command — scepter held upright at
-                    // his side while the free hand cradles a wisp of arcane light he turns over
-                    let sway = Math.sin(t * 1.5);
-                    headY += sway * 3 - 9;
-                    rightArmAngle = -0.18 + sway * 0.04; rightArmBend = 0.72;          // scepter upright beside him
-                    leftArmAngle = 1.4 + Math.sin(t * 1.8) * 0.1; leftArmBend = 0.55;  // free hand cupped, palm up
-                    leftLegAngle = 0.06 + sway * 0.05; rightLegAngle = -0.14 - sway * 0.04;
+                    // character-select pose: hovers serenely — scepter relaxed upright at his
+                    // side, the free hand raised forward presenting a wisp of arcane light
+                    let sway = Math.sin(t * 1.6);
+                    headY += sway * 3 - 8;
+                    rightArmAngle = 0.32 + sway * 0.03; rightArmBend = 0.42;            // scepter held upright at his side
+                    leftArmAngle = 0.95 + Math.sin(t * 1.6) * 0.06; leftArmBend = 0.45; // free hand out front, palm up
+                    leftLegAngle = 0.08 + sway * 0.04; rightLegAngle = -0.16 - sway * 0.04;
                     leftLegBend = 0.45; rightLegBend = -0.35;
                     torsoLean = sway * 0.03;
                 } else {
@@ -4347,24 +4347,23 @@ class Fighter {
                     headY += 1;
                 }
             } else if (this.charType === 'MAGE') {
-                // The Mage doesn't walk — he GLIDES, on a slow hover-bob; the legs trail
-                // limp like robe-hems rather than stepping.
-                walkPhase = Math.sin(t * 3.4);
-                headY += walkPhase * 2.5 - 12;
+                // The Mage doesn't step — he GLIDES on a strong, slow hover-bob, feet hanging
+                // close together like a floating robe, body tilting the way he drifts.
+                walkPhase = Math.sin(t * 2.6);
                 if (isWalkingForward) {
-                    // leans into the drift, scepter swept forward to lead, robe-legs streaming behind
-                    leftLegAngle = 0.34 + walkPhase * 0.05; rightLegAngle = 0.52 + Math.cos(t * 3.4) * 0.06;
-                    leftLegBend = 0.6; rightLegBend = 0.48;
-                    leftArmAngle = 0.55 + walkPhase * 0.12; leftArmBend = -0.2;       // free hand trailing
-                    rightArmAngle = -1.25 + walkPhase * 0.08; rightArmBend = 0.4;     // scepter out front, leading the way
-                    torsoLean = 0.2;
+                    headY += walkPhase * 5 - 14;                                   // floats high, big bob
+                    leftLegAngle = -0.04 + walkPhase * 0.05; rightLegAngle = 0.1 + walkPhase * 0.05; // legs together, nearly straight
+                    leftLegBend = 0.2; rightLegBend = 0.16;
+                    rightArmAngle = 1.2 + walkPhase * 0.06; rightArmBend = 0.5;     // scepter extended forward, leading
+                    leftArmAngle = -0.7 + walkPhase * 0.1; leftArmBend = 0.3;       // free arm swept back like a trailing robe
+                    torsoLean = 0.26;                                              // leaning into the drift
                 } else {
-                    // drifts back upright, scepter raised to guard, legs tucked under the robe
-                    leftLegAngle = -0.18 + walkPhase * 0.05; rightLegAngle = -0.34 - walkPhase * 0.05;
-                    leftLegBend = 0.85; rightLegBend = -0.75;
-                    leftArmAngle = -0.55 + walkPhase * 0.14; leftArmBend = 0.5;       // off-hand drawn in
-                    rightArmAngle = -0.35 + Math.cos(t * 3.4) * 0.1; rightArmBend = -0.45; // scepter up, warding
-                    torsoLean = -0.18; headY -= 2;
+                    headY += walkPhase * 5 - 12;
+                    leftLegAngle = -0.14 + walkPhase * 0.05; rightLegAngle = 0.0 + walkPhase * 0.05; // feet drift forward, together
+                    leftLegBend = 0.22; rightLegBend = 0.18;
+                    rightArmAngle = -0.45 + walkPhase * 0.06; rightArmBend = 0.5;   // scepter raised to ward the retreat
+                    leftArmAngle = 0.5 + walkPhase * 0.1; leftArmBend = -0.3;       // off-hand drawn across the body
+                    torsoLean = -0.22;                                             // leaning back into the float
                 }
             } else if (this.charType === 'RANGER') {
                 walkPhase = Math.sin(t * 14);
