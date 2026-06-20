@@ -3627,30 +3627,62 @@ class Fighter {
                 i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
             }
             ctx.stroke();
-            // Brute: the horned, tailed bruiser — parks aside, then smashes across on its phase.
-            let bp = brute ? Math.min(1, alpha.t / 0.34) : 0;
-            let smash = Math.sin(bp * Math.PI);
-            let bx = brute ? -40 + smash * 150 : -64;
-            let by = -44 - smash * 14;
-            let bsh = by - 40, bhY = by - 58;
-            ctx.strokeStyle = '#ddd'; ctx.lineWidth = brute ? 7 : 5; ctx.shadowBlur = brute ? 18 : 6; ctx.shadowColor = '#ff0033';
-            ctx.fillStyle = 'rgba(8,8,8,0.7)';
-            ctx.beginPath(); ctx.ellipse(bx, by - 18, 18, 23, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // belly
-            ctx.fillStyle = '#070707';
-            ctx.beginPath(); ctx.arc(bx, bhY, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();                // head
-            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 4;                                                  // horns
+            // Brute: the horned, tailed bruiser — waits aside in a heavy ready stance, then
+            // CHARGES across and brings both fists down in an overhead smash on its phase.
+            let bp = brute ? Math.min(1, alpha.t / 0.4) : 0;
+            let charge = Math.min(1, bp * 1.6);
+            let smash = Math.max(0, (bp - 0.55) / 0.45);                  // 0 until the hammer falls
+            let bx = -56 + charge * 150;
+            let by = -46 - Math.sin(charge * Math.PI) * 16 + smash * 10;  // hops on the charge, drops on the smash
+            let bsh = by - 50, bhY = by - 72;
+            let bLean = smash * 0.5 + charge * 0.2, bLeanX = Math.sin(bLean) * 14;
+            const limbA = (x0, y0, ang, bend, l1, l2) => {
+                let ua = ang + bend, la = ang - bend;
+                let jx = x0 + Math.sin(ua) * l1, jy = y0 + Math.cos(ua) * l1;
+                let ex2 = jx + Math.sin(la) * l2, ey2 = jy + Math.cos(la) * l2;
+                ctx.moveTo(x0, y0); ctx.lineTo(jx, jy); ctx.lineTo(ex2, ey2);
+                return { ex: ex2, ey: ey2 };
+            };
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.shadowColor = '#ff0033'; ctx.shadowBlur = brute ? 18 : 8;
+            // tail with spade tip
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 6;
+            let btlx = bx - 52, btly = by + 38 + Math.sin(t * 4 + 1) * 4;
+            ctx.beginPath(); ctx.moveTo(bx - 14, by + 4); ctx.quadraticCurveTo(bx - 60, by + 6 + Math.sin(t * 4) * 7, btlx, btly); ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.moveTo(btlx + 2, btly - 10); ctx.lineTo(btlx - 10, btly + 5); ctx.lineTo(btlx + 10, btly + 5); ctx.closePath(); ctx.fill();
+            // driving legs
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 11;
             ctx.beginPath();
-            ctx.moveTo(bx - 9, bhY - 10); ctx.quadraticCurveTo(bx - 22, bhY - 21, bx - 13, bhY - 29);
-            ctx.moveTo(bx + 9, bhY - 10); ctx.quadraticCurveTo(bx + 22, bhY - 21, bx + 13, bhY - 29);
-            ctx.moveTo(bx - 14, by + 2); ctx.quadraticCurveTo(bx - 44, by + 6, bx - 40, by + 32);           // tail
+            limbA(bx + 9, by + 4, 0.42 + bLean * 0.6, 0.5, 26, 30);
+            limbA(bx - 9, by + 4, -0.42 + charge * 0.3, 0.5, 26, 30);
             ctx.stroke();
-            ctx.strokeStyle = '#ddd'; ctx.lineWidth = brute ? 8 : 6;
+            // spine + broad belly
+            ctx.lineWidth = 11;
+            ctx.beginPath(); ctx.moveTo(bx + bLeanX * 0.4, by); ctx.lineTo(bx + bLeanX, bsh); ctx.stroke();
+            ctx.lineWidth = 6; ctx.fillStyle = 'rgba(8,8,8,0.7)';
+            ctx.beginPath(); ctx.ellipse(bx + 6 + bLeanX * 0.6, by - 22, 20, 25, bLean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            // arms — ready when idle; reared straight overhead on the charge, hammered down on the smash
+            let armA = brute ? (3.02 - smash * 1.75) : 1.45;
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 11;
             ctx.beginPath();
-            ctx.moveTo(bx + 6, bsh); ctx.lineTo(bx + 22 + bp * 28, bsh + 14); ctx.lineTo(bx + 30 + bp * 52, bsh + 20); // smash arm
-            ctx.moveTo(bx - 6, bsh); ctx.lineTo(bx - 20, bsh + 16); ctx.lineTo(bx - 26, bsh + 30);
-            ctx.moveTo(bx + 7, by + 2); ctx.lineTo(bx + 16 + bp * 20, by + 26); ctx.lineTo(bx + 22 + bp * 30, by + 48); // legs
-            ctx.moveTo(bx - 7, by + 2); ctx.lineTo(bx - 18, by + 26); ctx.lineTo(bx - 24, by + 48);
+            let bfa = limbA(bx + bLeanX, bsh, armA + 0.12, -0.35, 22, 24);
+            let bra = limbA(bx + bLeanX, bsh, armA - 0.12, -0.35, 22, 24);
             ctx.stroke();
+            ctx.fillStyle = '#ddd';
+            ctx.beginPath(); ctx.arc(bfa.ex, bfa.ey, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(bra.ex, bra.ey, 8, 0, Math.PI * 2); ctx.fill();
+            // head + big horns + eye
+            let bhx = bx + bLeanX * 1.1;
+            ctx.strokeStyle = '#ddd'; ctx.lineWidth = 7; ctx.fillStyle = '#070707';
+            ctx.beginPath(); ctx.arc(bhx, bhY, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(bhx - 11, bhY - 12); ctx.quadraticCurveTo(bhx - 31, bhY - 26, bhx - 17, bhY - 39);
+            ctx.moveTo(bhx + 11, bhY - 12); ctx.quadraticCurveTo(bhx + 31, bhY - 26, bhx + 17, bhY - 39);
+            ctx.stroke();
+            ctx.fillStyle = '#ff0033'; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(bhx + 6, bhY - 1, 3, 0, Math.PI * 2); ctx.fill();
+            // smash impact shockwave
+            if (smash > 0.4) { ctx.strokeStyle = 'rgba(255,0,51,0.8)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(bx + 18, by + 54, 20 + smash * 70, 0.1, Math.PI - 0.1); ctx.stroke(); }
             // Raven: the bird itself, swooping in on its phase.
             let rp = raven ? Math.min(1, alpha.t / 0.38) : 0;
             let rx = raven ? -80 + rp * 200 : -28 + Math.sin(t * 2.4) * 8;
@@ -3720,19 +3752,16 @@ class Fighter {
             ctx.fillStyle = '#ff0033';
             ctx.beginPath(); ctx.arc(head.x + 3, head.y - 1, 2.2 + flash, 0, Math.PI * 2); ctx.fill();
         } else if (beast === 1) {
-            // Brute: a big, heavy, horned & tailed stickman standing just IN FRONT of the
-            // Tamer (so its specials read as the Brute itself attacking). Fully articulated.
+            // === THE BRUTE — a hulking horned, tailed demon bruiser. Built HEAVY (thick
+            // bones, broad belly, big fists) and now it MIRRORS the Tamer: lumbers when
+            // walking, leaps on a jump, hunkers to guard on block, slams on its specials. ===
+            let st = this.state, rise = this.vy < 0;
             let rushP  = atk && atk.type === 'beastBruteRush'  ? Math.sin(atkProgress * Math.PI) : 0;
             let upperP = atk && atk.type === 'beastBruteUpper' ? Math.sin(atkProgress * Math.PI) : 0;
             let stompP = atk && atk.type === 'beastBruteStomp' ? Math.sin(atkProgress * Math.PI) : 0;
-            let sway = Math.sin(t * 1.8), breathe = Math.sin(t * 2.2) * 2;
-            let bx = 36 + sway * 3 + rushP * 78;                 // a little ahead; lunges on rush
-            let by = -46 - upperP * 22 + stompP * 14 + breathe * 0.4; // pelvis
-            let shY = by - 46, hY = by - 66;                      // shoulders / head
-            let lean = rushP * 0.5 + stompP * 0.3;               // pitches into hits
-            let leanX = Math.sin(lean) * 12;
+            let breathe = Math.sin(t * 2.2);
 
-            // local two-bone limb (matches the main fighter rig: 0 = down, +ang toward facing)
+            // two-bone limb helper (0 = down, +ang toward facing) — returns the hand/foot point
             const limb = (x0, y0, ang, bend, l1, l2) => {
                 let ua = ang + bend, la = ang - bend;
                 let jx = x0 + Math.sin(ua) * l1, jy = y0 + Math.cos(ua) * l1;
@@ -3741,58 +3770,96 @@ class Fighter {
                 return { ex: ex2, ey: ey2 };
             };
 
+            // ---- pose params, posed per the Tamer's current state ----
+            let bob = breathe * 2.2, rock = Math.sin(t * 1.7) * 3, crouch = 0, headTuck = 0, tailWag = 5;
+            let lLegA = 0.34, lLegB = 0.5, rLegA = -0.34, rLegB = 0.5;
+            let fAng = 1.42, fBend = -0.5, rAng = -0.5, rBend = 0.55;
+            if (st === 'WALK') {
+                let fwd = ((this.vx || 0) * this.dir >= 0) ? 1 : -1;          // lumber forward vs retreat
+                let ph = Math.sin(t * 7.5);
+                bob = -Math.abs(ph) * 5; rock = ph * 6; tailWag = 10;          // heavy plodding gait
+                lLegA = 0.3 + ph * 0.62 * fwd; rLegA = -0.3 - ph * 0.62 * fwd;
+                lLegB = 0.42 + Math.max(0, ph) * 0.34; rLegB = 0.42 + Math.max(0, -ph) * 0.34;
+                fAng = 1.28 - ph * 0.5 * fwd; fBend = -0.6;                    // arms swing counter to the legs
+                rAng = -0.62 + ph * 0.5 * fwd; rBend = -0.55; headTuck = 2;
+            } else if (st === 'JUMP' || st === 'FALL') {
+                if (rise) { lLegA = -0.22; rLegA = 0.32; lLegB = 1.15; rLegB = 1.05; fAng = 2.5; fBend = -0.4; rAng = 2.3; rBend = -0.4; bob = -2; headTuck = -2; } // knees tucked, fists up
+                else      { lLegA = -0.55; rLegA = 0.55; lLegB = 0.45; rLegB = 0.5; fAng = 1.75; fBend = -0.5; rAng = -0.85; rBend = 0.4; bob = 3; }                 // splayed brace on the way down
+                tailWag = 13;
+            } else if (st === 'BLOCK') {
+                crouch = 10; headTuck = 7; tailWag = 2;                        // hunkers down
+                lLegA = -0.5; rLegA = 0.5; lLegB = 0.72; rLegB = 0.72;         // braced wide
+                fAng = 2.25; fBend = -0.95; rAng = 2.05; rBend = -0.95;        // both forearms crossed up, guarding
+            } else if (st === 'CROUCH') {
+                crouch = 12; headTuck = 4;
+                lLegA = -0.52; rLegA = 0.52; lLegB = 0.95; rLegB = 0.95;
+                fAng = 1.6; fBend = -0.3; rAng = 1.4; rBend = -0.3;
+            } else {
+                // IDLE — heaving breath, weight rolling shoulder to shoulder, fists hanging heavy
+                fAng = 1.4 + breathe * 0.06; rAng = -0.5 - breathe * 0.06;
+                lLegA = 0.34 + rock * 0.008; rLegA = -0.34 + rock * 0.008;
+            }
+            // layer the special-attack contributions on top of the state pose
+            fAng += rushP * 0.45 + upperP * 1.35 - stompP * 1.15;
+            fBend += rushP * 0.4 + stompP * 0.15;
+            rAng += rushP * 0.2 + stompP * 0.5 - upperP * 0.3;
+            lLegA += rushP * 0.45; rLegA += rushP * 0.18;
+            let lean = rushP * 0.5 + stompP * 0.3, leanX = Math.sin(lean) * 13;
+
+            let bx = 36 + rock + rushP * 80;                                   // a little ahead; lunges on rush
+            let by = -46 + crouch + bob - upperP * 22 + stompP * 14 + ((st === 'JUMP' || st === 'FALL') && rise ? -8 : 0);
+            let shY = by - 48, hY = by - 70 + headTuck;
+
             ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.shadowColor = '#ff0033'; ctx.shadowBlur = 9 + flash * 8;
+            ctx.shadowColor = '#ff0033'; ctx.shadowBlur = 10 + flash * 8;
 
-            // tail (curls out behind, swaying) with a spade tip
-            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.moveTo(bx - 14, by + 4);
-            ctx.quadraticCurveTo(bx - 56, by + 6 + Math.sin(t * 4) * 8, bx - 50, by + 38 + Math.sin(t * 4 + 1) * 5);
-            ctx.stroke();
+            // demon tail — thick, curling out behind with a heavy spade tip, wagging
+            let tlx = bx - 52, tly = by + 40 + Math.sin(t * 4 + 1) * (tailWag * 0.6);
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.moveTo(bx - 15, by + 4);
+            ctx.quadraticCurveTo(bx - 60, by + 6 + Math.sin(t * 4) * tailWag, tlx, tly); ctx.stroke();
             ctx.fillStyle = '#ff0033';
-            ctx.beginPath(); ctx.moveTo(bx - 50, by + 31); ctx.lineTo(bx - 58, by + 44); ctx.lineTo(bx - 43, by + 44); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(tlx + 2, tly - 10); ctx.lineTo(tlx - 10, tly + 6); ctx.lineTo(tlx + 10, tly + 6); ctx.closePath(); ctx.fill();
 
-            // legs (thick two-bone, planted wide; lead leg drives on rush, brace on stomp)
-            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 9;
+            // legs — thick two-bone, planted wide and heavy
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 11;
             ctx.beginPath();
-            limb(bx + 8, by + 4, 0.34 + lean + rushP * 0.45, 0.45, 24, 28);
-            limb(bx - 8, by + 4, -0.34 + rushP * 0.18, 0.45, 24, 28);
+            limb(bx + 9, by + 4, lLegA + lean * 0.5, lLegB, 26, 30);
+            limb(bx - 9, by + 4, rLegA, rLegB, 26, 30);
             ctx.stroke();
 
-            // torso spine + rotund belly
-            ctx.lineWidth = 9;
+            // torso spine + broad rotund belly
+            ctx.lineWidth = 11;
             ctx.beginPath(); ctx.moveTo(bx + leanX * 0.4, by); ctx.lineTo(bx + leanX, shY); ctx.stroke();
-            ctx.lineWidth = 5; ctx.fillStyle = 'rgba(10,10,10,0.55)';
-            ctx.beginPath(); ctx.ellipse(bx + 6 + leanX * 0.6, by - 22, 18 + breathe * 0.4, 23, lean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.lineWidth = 6; ctx.fillStyle = 'rgba(10,10,10,0.6)';
+            ctx.beginPath(); ctx.ellipse(bx + 6 + leanX * 0.6, by - 22, 20 + breathe * 0.8, 25, lean, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-            // arms (thick two-bone): rush punches forward, upper swings overhead, stomp slams down
-            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 9;
+            // arms — thick two-bone with big fists
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 11;
             ctx.beginPath();
-            let fAng = 1.5 + rushP * 0.45 + upperP * 1.35 - stompP * 1.15;
-            let fBend = -0.55 + rushP * 0.4 + stompP * 0.15;
-            let fArm = limb(bx + leanX, shY, fAng, fBend, 20, 22);
-            let rAng = -0.5 + rushP * 0.2 + stompP * 0.5 - upperP * 0.3;
-            let rArm = limb(bx + leanX, shY, rAng, 0.55, 20, 22);
+            let fArm = limb(bx + leanX, shY, fAng, fBend, 22, 24);
+            let rArm = limb(bx + leanX, shY, rAng, rBend, 22, 24);
             ctx.stroke();
             ctx.fillStyle = '#dcdcdc';
-            ctx.beginPath(); ctx.arc(fArm.ex, fArm.ey, 6.5, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(rArm.ex, rArm.ey, 6.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(fArm.ex, fArm.ey, 7.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(rArm.ex, rArm.ey, 7.5, 0, Math.PI * 2); ctx.fill();
 
-            // head + curved horns + glowing eye
+            // head + big curved demon horns + glowing eye
             let hx = bx + leanX * 1.1;
-            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 6; ctx.fillStyle = '#070707';
-            ctx.beginPath(); ctx.arc(hx, hY, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 5;
+            ctx.strokeStyle = '#dcdcdc'; ctx.lineWidth = 7; ctx.fillStyle = '#070707';
+            ctx.beginPath(); ctx.arc(hx, hY, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 6;
             ctx.beginPath();
-            ctx.moveTo(hx - 10, hY - 11); ctx.quadraticCurveTo(hx - 27, hY - 24, hx - 15, hY - 34);
-            ctx.moveTo(hx + 10, hY - 11); ctx.quadraticCurveTo(hx + 27, hY - 24, hx + 15, hY - 34);
+            ctx.moveTo(hx - 11, hY - 12); ctx.quadraticCurveTo(hx - 31, hY - 26, hx - 17, hY - 39);
+            ctx.moveTo(hx + 11, hY - 12); ctx.quadraticCurveTo(hx + 31, hY - 26, hx + 17, hY - 39);
             ctx.stroke();
-            ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(hx + 6, hY - 1, 2.6 + flash, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ff0033'; ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.arc(hx + 6, hY - 1, 3 + flash, 0, Math.PI * 2); ctx.fill();
 
+            // shockwave ring on a stomp landing
             if (stompP > 0) {
                 ctx.strokeStyle = 'rgba(255,0,51,0.75)'; ctx.lineWidth = 5;
-                ctx.beginPath(); ctx.arc(bx, by + 52, 18 + stompP * 64, 0.12, Math.PI - 0.12); ctx.stroke();
+                ctx.beginPath(); ctx.arc(bx, by + 54, 18 + stompP * 66, 0.12, Math.PI - 0.12); ctx.stroke();
             }
         } else {
             // Raven: scout that carries the Tamer aloft (Up) or dives at the foe and snaps back (Side).
