@@ -3770,21 +3770,41 @@ class Fighter {
                 return { ex: ex2, ey: ey2 };
             };
 
-            // ---- pose params, posed per the Tamer's current state ----
-            let bob = breathe * 2.2, rock = Math.sin(t * 1.7) * 3, crouch = 0, headTuck = 0, tailWag = 5;
+            // ---- pose params: a SPECIAL takes priority (its own full animation), otherwise
+            // the brute poses to the Tamer's state. (angle 0 = down, +ang toward facing) ----
+            let bob = breathe * 2.2, rock = Math.sin(t * 1.7) * 3, crouch = 0, headTuck = 0, tailWag = 5, lean = 0;
             let lLegA = 0.34, lLegB = 0.5, rLegA = -0.34, rLegB = 0.5;
-            let fAng = 1.42, fBend = -0.5, rAng = -0.5, rBend = 0.55;
-            if (st === 'WALK') {
+            let fAng = 0.55, fBend = -0.12, rAng = -0.55, rBend = 0.12;       // default = a heavy idle hang
+            let bxOff = 0, byOff = 0;
+            if (rushP > 0) {
+                // SIDE SPECIAL — Rush: charges in low and drives the lead fist STRAIGHT out
+                bxOff = rushP * 80; lean = 0.4 + rushP * 0.15; headTuck = 3; tailWag = 12; bob = -rushP * 3;
+                lLegA = 0.8; rLegA = -0.18; lLegB = 0.46 + rushP * 0.2; rLegB = 0.42; // deep lunging stance
+                fAng = 1.5; fBend = -0.6 + rushP * 0.62;                       // lead fist: cocked -> thrust fully forward
+                rAng = -0.75; rBend = 0.45;                                    // rear fist drawn back
+            } else if (upperP > 0) {
+                // UP SPECIAL — Upper: explodes upward, lead fist ripping up overhead
+                byOff = -upperP * 24; lean = -upperP * 0.18; tailWag = 13; headTuck = -upperP * 3;
+                lLegA = -0.12; rLegA = 0.26; lLegB = 0.6 - upperP * 0.34; rLegB = 0.55 - upperP * 0.28; // legs spring straight
+                fAng = 1.45 + upperP * 1.5; fBend = -0.35;                     // fist arcs from guard up to overhead
+                rAng = -0.5 + upperP * 0.25; rBend = 0.3;
+            } else if (stompP > 0) {
+                // DOWN SPECIAL — Stomp: braces wide and SLAMS both fists down (shockwave)
+                byOff = stompP * 14; lean = stompP * 0.35; headTuck = 2; tailWag = 8;
+                lLegA = -0.5; rLegA = 0.5; lLegB = 0.6; rLegB = 0.6;          // braced wide
+                fAng = 1.5 - stompP * 1.15; fBend = -0.35;                     // fists hammer down
+                rAng = -0.5 + stompP * 0.6; rBend = 0.3;
+            } else if (st === 'WALK') {
                 let fwd = ((this.vx || 0) * this.dir >= 0) ? 1 : -1;          // lumber forward vs retreat
                 let ph = Math.sin(t * 7.5);
                 bob = -Math.abs(ph) * 5; rock = ph * 6; tailWag = 10;          // heavy plodding gait
                 lLegA = 0.3 + ph * 0.62 * fwd; rLegA = -0.3 - ph * 0.62 * fwd;
                 lLegB = 0.42 + Math.max(0, ph) * 0.34; rLegB = 0.42 + Math.max(0, -ph) * 0.34;
-                fAng = 1.28 - ph * 0.5 * fwd; fBend = -0.6;                    // arms swing counter to the legs
-                rAng = -0.62 + ph * 0.5 * fwd; rBend = -0.55; headTuck = 2;
+                fAng = 0.6 - ph * 0.4 * fwd; fBend = -0.12;                    // heavy arms swing low, counter to the legs
+                rAng = -0.6 + ph * 0.4 * fwd; rBend = 0.12; headTuck = 2;
             } else if (st === 'JUMP' || st === 'FALL') {
-                if (rise) { lLegA = -0.22; rLegA = 0.32; lLegB = 1.15; rLegB = 1.05; fAng = 2.5; fBend = -0.4; rAng = 2.3; rBend = -0.4; bob = -2; headTuck = -2; } // knees tucked, fists up
-                else      { lLegA = -0.55; rLegA = 0.55; lLegB = 0.45; rLegB = 0.5; fAng = 1.75; fBend = -0.5; rAng = -0.85; rBend = 0.4; bob = 3; }                 // splayed brace on the way down
+                if (rise) { lLegA = -0.22; rLegA = 0.32; lLegB = 1.15; rLegB = 1.05; fAng = 2.4; fBend = -0.4; rAng = 2.2; rBend = -0.4; bob = -2; headTuck = -2; } // knees tucked, fists up
+                else      { lLegA = -0.55; rLegA = 0.55; lLegB = 0.45; rLegB = 0.5; fAng = 1.0; fBend = -0.3; rAng = -0.8; rBend = 0.25; bob = 3; }                  // splayed brace on the way down
                 tailWag = 13;
             } else if (st === 'BLOCK') {
                 crouch = 10; headTuck = 7; tailWag = 2;                        // hunkers down
@@ -3793,21 +3813,16 @@ class Fighter {
             } else if (st === 'CROUCH') {
                 crouch = 12; headTuck = 4;
                 lLegA = -0.52; rLegA = 0.52; lLegB = 0.95; rLegB = 0.95;
-                fAng = 1.6; fBend = -0.3; rAng = 1.4; rBend = -0.3;
+                fAng = 1.0; fBend = -0.2; rAng = 0.7; rBend = -0.2;
             } else {
-                // IDLE — heaving breath, weight rolling shoulder to shoulder, fists hanging heavy
-                fAng = 1.4 + breathe * 0.06; rAng = -0.5 - breathe * 0.06;
+                // IDLE — heaving breath, weight rolling shoulder to shoulder, big arms hanging
+                // heavy and low at the sides, fists by the knees
+                fAng = 0.55 + breathe * 0.05; rAng = -0.55 - breathe * 0.05;
                 lLegA = 0.34 + rock * 0.008; rLegA = -0.34 + rock * 0.008;
             }
-            // layer the special-attack contributions on top of the state pose
-            fAng += rushP * 0.45 + upperP * 1.35 - stompP * 1.15;
-            fBend += rushP * 0.4 + stompP * 0.15;
-            rAng += rushP * 0.2 + stompP * 0.5 - upperP * 0.3;
-            lLegA += rushP * 0.45; rLegA += rushP * 0.18;
-            let lean = rushP * 0.5 + stompP * 0.3, leanX = Math.sin(lean) * 13;
-
-            let bx = 36 + rock + rushP * 80;                                   // a little ahead; lunges on rush
-            let by = -46 + crouch + bob - upperP * 22 + stompP * 14 + ((st === 'JUMP' || st === 'FALL') && rise ? -8 : 0);
+            let leanX = Math.sin(lean) * 13;
+            let bx = 36 + rock + bxOff;                                        // a little ahead; lunges on rush
+            let by = -46 + crouch + bob + byOff + ((st === 'JUMP' || st === 'FALL') && rise ? -8 : 0);
             let shY = by - 48, hY = by - 70 + headTuck;
 
             ctx.lineCap = 'round'; ctx.lineJoin = 'round';
