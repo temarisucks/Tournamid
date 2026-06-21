@@ -31,6 +31,7 @@ class Particle {
         }
     }
     draw(ctx) {
+        if (!settings.particles) return;
         ctx.fillStyle = this.color;
         ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
         ctx.beginPath();
@@ -2985,6 +2986,16 @@ class Fighter {
                     hb.atk = atk; hitboxes.push(hb);
                     spawnParticles(this.x, GROUND_Y - 12, 14, '#9be3ff');
                 }
+            } else if (atk.type === 'graveGrasp') {
+                // Two clawed hands erupt separately, so the attack reads as two grabs instead of a flat box.
+                for (let side of [0.48, 1.12]) {
+                    let hx = this.x + (atk.ox + atk.w * side) * this.dir - (this.dir < 0 ? atk.w * 0.44 : 0);
+                    let hy = this.y + atk.oy;
+                    let hb = new Hitbox(hx, hy, atk.w * 0.44, atk.h, atk.dmg * dmgMod, { x: 0, y: atk.kb.y }, atk.stun, this, atk.active);
+                    hb.grab = true;
+                    hb.atk = atk;
+                    hitboxes.push(hb);
+                }
             } else if (atk.isProj) {
                 this.spawnProjectile(atk, dmgMod);
                 // Mage passive Wild Magic: chance for a bonus projectile
@@ -2998,6 +3009,7 @@ class Fighter {
                 let hb = new Hitbox(hx, hy, atk.w, atk.h, atk.dmg * dmgMod, {x: atk.kb.x * this.dir, y: atk.kb.y}, atk.stun, this, atk.active);
                 if (atk.grab) hb.grab = true; // unblockable command grab
                 if (atk.type === 'abyssalGrab') hb.grabThrow = this; // seize, then throw
+                else if (atk.type === 'graveDrag') { hb.phantomYank = this; hb.atk = atk; }
                 else if (atk.type === 'catDash') { hb.catPin = this; hb.atk = atk; } // pounce → pin & slash
                 else hb.atk = atk; // remember the move so its sound can play on contact
                 hitboxes.push(hb);
@@ -5173,7 +5185,14 @@ class Fighter {
                 leftLegAngle = -0.3; rightLegAngle = mix(0.2, 0.46, ex);
                 leftLegBend = 0.3; rightLegBend = 0.42; torsoLean = mix(0.02, 0.1, ex);
                 headY -= 1;
-            } else if (atk.type === 'mistClaw' || atk.type === 'scytheLash' || atk.type === 'graveDrag') {
+            } else if (atk.type === 'graveDrag') {
+                // Grave Drag: the body anchors while one spectral arm shoots straight out to grab.
+                rightArmAngle = mix(2.35, 1.57, ex); rightArmBend = mix(-0.45, 0.0, ex);
+                leftArmAngle = 0.95; leftArmBend = 0.48;
+                leftLegAngle = -0.44; rightLegAngle = mix(0.24, 0.58, ex);
+                leftLegBend = 0.42; rightLegBend = 0.52; torsoLean = mix(-0.08, 0.16, ex);
+                headY -= ex * 2;
+            } else if (atk.type === 'mistClaw' || atk.type === 'scytheLash') {
                 // Phantom — a long spectral claw whips out forward
                 rightArmAngle = mix(2.5, 1.12, ex); rightArmBend = mix(-0.7, 0.06, ex);
                 leftArmAngle = 1.5; leftArmBend = 0.4;
@@ -5182,17 +5201,19 @@ class Fighter {
                 headY -= 1;
             } else if (atk.type === 'graveGrasp') {
                 // hunches low and slams both claws down — hands erupt from the floor
-                rightArmAngle = mix(2.0, 0.45, ex); rightArmBend = -0.3;
-                leftArmAngle = mix(-2.0, -0.45, ex); leftArmBend = 0.3;
-                headY += 6;
-                leftLegAngle = -0.4; rightLegAngle = 0.4; leftLegBend = 0.7; rightLegBend = 0.7;
-                torsoLean = 0.18;
+                let dig = Math.sin(Math.min(1, ex) * Math.PI);
+                rightArmAngle = mix(1.95, 0.16, ex); rightArmBend = mix(-0.35, 0.1, ex);
+                leftArmAngle = mix(-1.95, -0.16, ex); leftArmBend = mix(0.35, -0.1, ex);
+                headY += 8 + dig * 4;
+                leftLegAngle = -0.5; rightLegAngle = 0.5; leftLegBend = 0.82; rightLegBend = 0.82;
+                torsoLean = mix(0.1, 0.34, ex);
             } else if (atk.type === 'wraithRise') {
                 // rising spectral grab — claws thrust overhead as he floats up
-                rightArmAngle = mix(1.2, 3.1, ex); rightArmBend = mix(-0.4, -0.05, ex);
-                leftArmAngle = mix(0.8, 2.7, ex); leftArmBend = -0.5;
-                leftLegAngle = -0.15; rightLegAngle = 0.18; leftLegBend = 0.3; rightLegBend = 0.35;
-                headY -= ex * 3; torsoLean = -0.06;
+                rightArmAngle = mix(1.1, 3.1, ex); rightArmBend = mix(-0.45, -0.05, ex);
+                leftArmAngle = mix(0.75, 2.75, ex); leftArmBend = mix(-0.45, -0.18, ex);
+                leftLegAngle = mix(-0.03, -0.28, ex); rightLegAngle = mix(0.03, 0.3, ex);
+                leftLegBend = mix(0.04, 0.38, ex); rightLegBend = mix(0.04, 0.4, ex);
+                headY -= ex * 8; torsoLean = mix(0.1, -0.06, ex);
             } else if (atk.type === 'catDash') {
                 // pouncing lunge — claws thrown forward, body stretched into the dash
                 rightArmAngle = mix(2.2, 1.35, ex); rightArmBend = mix(-0.5, 0.1, ex);
@@ -6107,35 +6128,51 @@ class Fighter {
         // regardless of which pose set the bend value.
         leftLegBend = Math.abs(leftLegBend);
         rightLegBend = Math.abs(rightLegBend);
-        const upperLegLen = 19;
-        const lowerLegLen = 20;
+        let upperLegLen = 19;
+        let lowerLegLen = 20;
+        if (this.charType === 'PHANTOM' && this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'wraithRise') {
+            let ca = this.currentAttack;
+            let launch = Math.max(0.01, ca.startup + ca.active * 0.5);
+            let stretch = Math.max(0, 1 - this.stateTimer / launch);
+            upperLegLen += stretch * 28;
+            lowerLegLen += stretch * 50;
+        }
         let leftLeg = drawBentLimb(0, pelvisY, leftLegAngle, leftLegBend, upperLegLen, lowerLegLen);
         let rightLeg = drawBentLimb(0, pelvisY, rightLegAngle, rightLegBend, upperLegLen, lowerLegLen);
 
         // Arms (shoulder at neckY + 5)
         const upperArmLen = 16;
         const lowerArmLen = 17;
-        let leftArm = drawBentLimb(0, shoulderY, leftArmAngle, leftArmBend, upperArmLen, lowerArmLen);
+        let lUp = upperArmLen, lLow = lowerArmLen;
 
         // Phantom — his mist limbs stretch unnaturally: the front claw reaches far on
         // Soul Siphon (and stays fully extended through the Soul Train grab).
         let rUp = upperArmLen, rLow = lowerArmLen;
         if (this.charType === 'PHANTOM') {
             let stretch = 0;
+            let leftStretch = 0;
             let ca = this.currentAttack;
             if (this.state === 'ATTACK' && ca) {
                 let prog = Math.max(0, Math.min(1, (this.stateTimer - ca.startup) / Math.max(0.01, ca.active + ca.recovery)));
                 let reach = Math.sin(Math.min(1, prog) * Math.PI); // 0 -> 1 -> 0
                 if (ca.type === 'soulSiphon') stretch = reach * 50;
+                else if (ca.type === 'graveDrag') stretch = reach * 190;
+                else if (ca.type === 'graveGrasp') {
+                    let plunge = Math.max(0, Math.min(1, this.stateTimer / Math.max(0.01, ca.startup + ca.active * 0.35)));
+                    stretch = Math.sin(plunge * Math.PI * 0.5) * 70;
+                    leftStretch = stretch;
+                }
                 else if (ca.type === 'scytheLash') stretch = reach * 20;
                 else if (ca.type === 'mistClaw') stretch = reach * 12;
             } else if (this.state === 'ULT' && this.ult && (this.ult.phase === 'rush' || this.ult.phase === 'seize' || this.ult.phase === 'shatter')) {
                 stretch = 44; // long grab arm, held out
             }
+            lUp += leftStretch * 0.5; lLow += leftStretch * 0.5;
             rUp += stretch * 0.5; rLow += stretch * 0.5;
         }
 
         // Draw weapon/effect on right arm (front arm)
+        let leftArm = drawBentLimb(0, shoulderY, leftArmAngle, leftArmBend, lUp, lLow);
         let rightArm = drawBentLimb(0, shoulderY, rightArmAngle, rightArmBend, rUp, rLow);
         let rHandX = rightArm.endX;
         let rHandY = rightArm.endY;
@@ -6157,6 +6194,25 @@ class Fighter {
             ctx.globalAlpha = baseA; ctx.lineWidth = baseW;
         } else {
             ctx.stroke();
+        }
+
+        if (this.charType === 'PHANTOM' && this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'graveDrag') {
+            let ca = this.currentAttack;
+            let prog = Math.max(0, Math.min(1, (this.stateTimer - ca.startup) / Math.max(0.01, ca.active + ca.recovery)));
+            let reach = Math.sin(Math.min(1, prog) * Math.PI);
+            if (reach > 0.03) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(223,228,242,${0.38 + reach * 0.34})`;
+                ctx.lineWidth = 5 + reach * 4;
+                ctx.shadowBlur = 14; ctx.shadowColor = '#dfe4f2';
+                ctx.beginPath();
+                ctx.moveTo(rHandX - this.dir * 28 * reach, rHandY);
+                ctx.quadraticCurveTo(rHandX + this.dir * 26 * reach, rHandY - 10 * reach, rHandX + this.dir * 42 * reach, rHandY);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(223,228,242,0.78)';
+                ctx.beginPath(); ctx.arc(rHandX + this.dir * 2, rHandY, 6 + reach * 3, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
         }
 
         ctx.fillStyle = ctx.strokeStyle;
@@ -6274,13 +6330,17 @@ class Fighter {
                 ctx.globalAlpha = wa * 0.95;
                 ctx.strokeStyle = '#cfd8ff'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
                 ctx.shadowBlur = 8; ctx.shadowColor = '#9aa6c8';
-                [26, 62, 100, 138].forEach((hx, k) => {
-                    let topY = gY - (30 + (k % 2) * 12) * rise;
-                    ctx.beginPath(); ctx.moveTo(hx, gY + 8); ctx.lineTo(hx, topY); ctx.stroke();       // straight forearm
-                    ctx.beginPath();                                                                    // symmetric gripping fingers
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx - 8, topY - 9);
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx, topY - 12);
-                    ctx.moveTo(hx, topY); ctx.lineTo(hx + 8, topY - 9);
+                [62, 132].forEach((hx, k) => {
+                    let topY = gY - (36 + k * 7) * rise;
+                    let wristY = gY + 10;
+                    ctx.beginPath(); ctx.moveTo(hx, wristY); ctx.lineTo(hx, topY + 8); ctx.stroke();
+                    ctx.beginPath(); ctx.ellipse(hx, topY + 5, 10, 6, 0, 0, Math.PI * 2); ctx.stroke();
+                    ctx.beginPath();
+                    for (let f = -2; f <= 2; f++) {
+                        let fx = hx + f * 4.5;
+                        ctx.moveTo(fx, topY + 4);
+                        ctx.lineTo(fx + f * 1.6, topY - 10 - (2 - Math.abs(f)) * 3);
+                    }
                     ctx.stroke();
                 });
                 ctx.restore();

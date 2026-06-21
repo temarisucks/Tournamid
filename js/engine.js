@@ -2,6 +2,7 @@
 
 function spawnParticles(x, y, amount, color) {
     if (suppressRollbackEffects) return;
+    if (!settings.particles) return;
     for (let i = 0; i < amount; i++) {
         let vx = (Math.random() - 0.5) * 600;
         let vy = -200 - Math.random() * 500;
@@ -490,6 +491,83 @@ function splitLogic(self, dt) {
     }
 }
 
+let travelerBurstFx = [];
+
+// Traveler combo: Tachyon Echo detonates Time Vortex on projectile contact.
+function updateTravelerProjectileCombos() {
+    for (let i = 0; i < projectiles.length; i++) {
+        let a = projectiles[i];
+        if (!a || !a.active) continue;
+        for (let j = i + 1; j < projectiles.length; j++) {
+            let b = projectiles[j];
+            if (!b || !b.active) continue;
+            let vortex = null, echo = null;
+            if (a.subtype === 'vortex' && b.subtype === 'echoBolt') { vortex = a; echo = b; }
+            else if (a.subtype === 'echoBolt' && b.subtype === 'vortex') { vortex = b; echo = a; }
+            if (!vortex || !echo || vortex.owner !== echo.owner) continue;
+            if (echo.x < vortex.x + vortex.w && echo.x + echo.w > vortex.x &&
+                echo.y < vortex.y + vortex.h && echo.y + echo.h > vortex.y) {
+                triggerTravelerVortexBurst(vortex, echo);
+                return;
+            }
+        }
+    }
+}
+
+function triggerTravelerVortexBurst(vortex, echo) {
+    let owner = vortex.owner || echo.owner;
+    let cx = (vortex.x + vortex.w / 2 + echo.x + echo.w / 2) * 0.5;
+    let cy = (vortex.y + vortex.h / 2 + echo.y + echo.h / 2) * 0.5;
+    vortex.active = false;
+    echo.active = false;
+    if (owner) owner.vortexCd = Math.max(owner.vortexCd || 0, 2.6);
+
+    const radius = 185;
+    for (let p of players) {
+        if (!p || !owner || p.team === owner.team || p.state === 'DEAD' || p.state === 'ULT') continue;
+        let dx = p.x - cx, dy = (p.y - 45) - cy;
+        let dist = Math.hypot(dx, dy);
+        if (dist > radius) continue;
+        let falloff = 1 - dist / radius;
+        let dir = Math.sign(dx) || (owner ? owner.dir : 1);
+        p.takeDamage(16 + falloff * 8, { x: dir * (430 + falloff * 190), y: -420 - falloff * 180 }, 0.62, owner, { unblockable: true });
+    }
+
+    for (let i = 0; i < 3; i++) spawnParticles(cx, cy, 28, i === 0 ? '#6fd0ff' : i === 1 ? '#fff' : '#9be3ff');
+    travelerBurstFx.push({ x: cx, y: cy, t: 0, life: 0.48, radius });
+    playAudio(attackSfx.timeHit);
+}
+
+function updateTravelerBurstFx(dt) {
+    travelerBurstFx.forEach(fx => fx.t += dt);
+    travelerBurstFx = travelerBurstFx.filter(fx => fx.t < fx.life);
+}
+
+function drawTravelerBurstFx(c) {
+    for (let fx of travelerBurstFx) {
+        let p = Math.max(0, Math.min(1, fx.t / fx.life));
+        let a = 1 - p;
+        c.save();
+        c.globalAlpha = a;
+        c.strokeStyle = '#6fd0ff';
+        c.fillStyle = `rgba(111,208,255,${0.16 * a})`;
+        c.shadowBlur = 28; c.shadowColor = '#6fd0ff';
+        c.lineWidth = 5;
+        c.beginPath(); c.arc(fx.x, fx.y, fx.radius * (0.18 + p * 0.82), 0, Math.PI * 2); c.fill(); c.stroke();
+        c.lineWidth = 2;
+        for (let i = 0; i < 12; i++) {
+            let ang = i / 12 * Math.PI * 2 + p * 2.8;
+            let r1 = fx.radius * (0.24 + p * 0.55);
+            let r2 = fx.radius * (0.42 + p * 0.78);
+            c.beginPath();
+            c.moveTo(fx.x + Math.cos(ang) * r1, fx.y + Math.sin(ang) * r1);
+            c.lineTo(fx.x + Math.cos(ang) * r2, fx.y + Math.sin(ang) * r2);
+            c.stroke();
+        }
+        c.restore();
+    }
+}
+
 function checkCollisions() {
     // Hitboxes vs Players
     for (let h of hitboxes) {
@@ -518,6 +596,10 @@ function checkCollisions() {
                         let landed = p.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab || !!h.unblockableUlt });
                         if (landed && h.ultActivator) h.ultActivator.onUltConnect(p);
                         if (landed && h.atk && h.atk.type === 'graveGrasp' && p.startRoot) p.startRoot(); // hands clamp the foe in place
+                        if (landed && h.phantomYank && p.startYank) {
+                            p.startYank(h.phantomYank);
+                            h.active = false;
+                        }
                     }
                 }
             }
@@ -617,6 +699,10 @@ function checkCollisions() {
                 if (h.atk && h.owner) h.owner.playAttackSound(h.atk);
                 let landed = owner.takeDamage(h.damage, h.knockback, h.stun, h.owner, { isUlt: !!h.ultActivator, unblockable: !!h.grab || !!h.unblockableUlt, hitBody: 'partner' });
                 if (landed && h.ultActivator) h.ultActivator.onUltConnect(owner);
+                if (landed && h.phantomYank && owner.startYank) {
+                    owner.startYank(h.phantomYank);
+                    h.active = false;
+                }
             }
         }
         for (let proj of projectiles) {
@@ -1441,7 +1527,9 @@ function updateGameplay(dt) {
     hitboxes = hitboxes.filter(h => h.active);
     
     projectiles.forEach(p => p.update(dt));
+    updateTravelerProjectileCombos();
     projectiles = projectiles.filter(p => p.active);
+    updateTravelerBurstFx(dt);
     
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => p.life > 0);
@@ -2854,6 +2942,7 @@ function draw() {
     drawLumFx(ctx);       // Lumatrossia's drop-portals + fire-breathing beast maws
     drawYankChains(ctx); // Grave Drag chains, world space, on top of the fighters
     drawRootGrips(ctx);  // Grave Grasp hands clamping a rooted foe
+    drawTravelerBurstFx(ctx); // Traveler vortex + echo detonation
     projectiles.forEach(p => p.draw(ctx));
     hitboxes.forEach(h => h.draw(ctx));
     particles.forEach(p => p.draw(ctx));
@@ -2871,7 +2960,7 @@ function draw() {
     drawEntranceDialogue(ctx); // pre-fight banter bubbles
 }
 
-// Grave Grasp: clawed spectral hands clamped straight up around a rooted foe's legs.
+// Grave Grasp: two clawed spectral hands clamp around a rooted foe's legs.
 function drawRootGrips(c) {
     for (let p of players) {
         if (!p || !(p.rootTimer > 0)) continue;
@@ -2879,14 +2968,17 @@ function drawRootGrips(c) {
         c.strokeStyle = '#cfd8ff'; c.lineWidth = 3; c.lineCap = 'round'; c.lineJoin = 'round';
         c.shadowBlur = 8; c.shadowColor = '#9aa6c8';
         let wob = Math.sin(performance.now() / 90) * 1.5;
-        [-20, -7, 7, 20].forEach((dx, k) => {
+        [-16, 16].forEach((dx, k) => {
             let hx = p.x + dx;
-            let topY = GROUND_Y - 34 - (k % 2) * 8 + wob;
-            c.beginPath(); c.moveTo(hx, GROUND_Y + 6); c.lineTo(hx, topY); c.stroke(); // straight forearm
-            c.beginPath();                                                              // symmetric gripping fingers
-            c.moveTo(hx, topY); c.lineTo(hx - 7, topY - 8);
-            c.moveTo(hx, topY); c.lineTo(hx, topY - 11);
-            c.moveTo(hx, topY); c.lineTo(hx + 7, topY - 8);
+            let topY = GROUND_Y - 38 - k * 6 + wob;
+            c.beginPath(); c.moveTo(hx, GROUND_Y + 6); c.lineTo(hx, topY + 8); c.stroke();
+            c.beginPath(); c.ellipse(hx, topY + 5, 10, 6, 0, 0, Math.PI * 2); c.stroke();
+            c.beginPath();
+            for (let f = -2; f <= 2; f++) {
+                let fx = hx + f * 4.5;
+                c.moveTo(fx, topY + 4);
+                c.lineTo(fx + f * 1.8, topY - 10 - (2 - Math.abs(f)) * 3);
+            }
             c.stroke();
         });
         c.restore();

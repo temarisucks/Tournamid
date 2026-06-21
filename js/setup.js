@@ -345,10 +345,11 @@ const roundVoices = {
 };
 
 // --- SETTINGS: per-category volume + custom key bindings (persisted) ---
-let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, blood: true, cpuLevel: 'normal' };
+let settings = { master: 1, music: 0.6, sfx: 0.85, voice: 0.9, touchControls: false, particles: true, blood: true, cpuLevel: 'normal' };
 // CPU difficulty → aiLevel scalar. Ladder/tower modes ignore this (they ramp on their own).
 function cpuLevelValue() { return { easy: 0.25, normal: 0.55, hard: 0.92 }[settings.cpuLevel] || 0.55; }
 try { let s = JSON.parse(localStorage.getItem('massacreSettings')); if (s) Object.assign(settings, s); } catch (e) {}
+if (settings.particles === false) settings.blood = false;
 // First-time mobile players get on-screen controls turned on by default (still toggleable in Settings)
 if (isMobileDevice && !localStorage.getItem('massacreSettings')) settings.touchControls = true;
 function saveSettings() { try { localStorage.setItem('massacreSettings', JSON.stringify(settings)); } catch (e) {} }
@@ -1112,9 +1113,9 @@ const CHARACTERS = {
             light: { startup: 0.1, active: 0.1, recovery: 0.2, dmg: 6, w: 66, h: 26, ox: 32, oy: -56, kb: {x: 120, y: -60}, stun: 0.26, type: 'mistClaw' },       // reaching mist swipe
             heavy: { startup: 0.24, active: 0.16, recovery: 0.32, dmg: 12, w: 96, h: 40, ox: 36, oy: -52, kb: {x: 240, y: -150}, stun: 0.45, type: 'scytheLash' },   // wide reaping lash
             specNeutral: { startup: 0.16, active: 0.18, recovery: 0.34, dmg: 8, w: 108, h: 28, ox: 44, oy: -58, kb: {x: 120, y: -80}, stun: 0.4, type: 'soulSiphon' }, // long claw, drains HP
-            specSide: { startup: 0.22, active: 0.14, recovery: 0.4, dmg: 8, isProj: true, pSpeed: 900, pLife: 1.15, w: 30, h: 22, oy: -56, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // fast mist-chain that reels the foe in (blockable)
-            specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 96, ox: 8, oy: -104, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
-            specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 134, h: 40, ox: 30, oy: -20, kb: {x: 0, y: 0}, stun: 0.3, grab: true, type: 'graveGrasp' } // ground hands ROOT the foe in place (unblockable)
+            specSide: { startup: 0.22, active: 0.14, recovery: 0.4, dmg: 8, w: 235, h: 38, ox: 34, oy: -64, kb: {x: 0, y: 0}, stun: 0.55, type: 'graveDrag' }, // stretches his spectral arm forward to grab and reel the foe in (blockable)
+            specUp: { startup: 0.12, active: 0.2, recovery: 0.34, dmg: 11, w: 72, h: 110, ox: 8, oy: -116, kb: {x: 90, y: -600}, stun: 0.5, type: 'wraithRise' },       // rising anti-air grab + recovery
+            specDown: { startup: 0.2, active: 0.16, recovery: 0.38, dmg: 7, w: 154, h: 46, ox: 30, oy: -24, kb: {x: 0, y: 0}, stun: 0.3, grab: true, type: 'graveGrasp' } // two ground hands ROOT the foe in place (unblockable)
         }
     },
     COPYCAT: {

@@ -374,7 +374,8 @@ function renderGameplaySettings() {
     if (!el) return;
     el.innerHTML =
         `<div class="settings-toggle"><span>Touch Screen Controls</span><button class="toggle-btn${settings.touchControls ? ' on' : ''}" onclick="toggleSetting('touchControls')">${settings.touchControls ? 'ON' : 'OFF'}</button></div>` +
-        `<div class="settings-toggle"><span>Blood</span><button class="toggle-btn${settings.blood ? ' on' : ''}" onclick="toggleSetting('blood')">${settings.blood ? 'ON' : 'OFF'}</button></div>` +
+        `<div class="settings-toggle"><span>Particles</span><button class="toggle-btn${settings.particles ? ' on' : ''}" onclick="toggleSetting('particles')">${settings.particles ? 'ON' : 'OFF'}</button></div>` +
+        `<div class="settings-toggle"><span>Blood</span><button class="toggle-btn${settings.blood ? ' on' : ''}${!settings.particles ? ' disabled' : ''}" onclick="toggleSetting('blood')" ${!settings.particles ? 'disabled' : ''}>${settings.blood ? 'ON' : 'OFF'}</button></div>` +
         `<div class="settings-toggle"><span>CPU Difficulty</span><button class="toggle-btn${settings.cpuLevel !== 'easy' ? ' on' : ''}" onclick="cycleCpuLevel()">${(settings.cpuLevel || 'normal').toUpperCase()}</button></div>`;
 }
 
@@ -386,7 +387,14 @@ function cycleCpuLevel() {
     renderGameplaySettings();
 }
 function toggleSetting(key) {
+    if (key === 'blood' && !settings.particles) return;
     settings[key] = !settings[key];
+    if (key === 'particles' && !settings.particles) {
+        settings.blood = false;
+        particles = [];
+        bloodStains = [];
+        bodyParts = [];
+    }
     if (key === 'blood' && !settings.blood) {
         bloodStains = [];
         bodyParts = [];
