@@ -594,6 +594,8 @@ class Fighter {
         this.animTimer = 0;
         this.inputTimer = 0;
         this.idleTime = 0; // seconds held still & untouched → triggers the signature idle flourish
+        this.idleCastFx = 0; // Mage idle-cast particle intensity (0..~1)
+        this.idleGestureActive = false; // true while a periodic idle gesture is playing
 
         // The Twins — spin up the second body right beside the first (drawn + synced, never self-driven)
         if (typeName === 'TWINS' && !isPartner) {
@@ -3608,6 +3610,7 @@ class Fighter {
         let atk = this.state === 'ATTACK' ? this.currentAttack : null;
         let atkProgress = atk ? Math.max(0, Math.min(1, (this.stateTimer - atk.startup) / Math.max(0.01, atk.active))) : 0;
         let alpha = this.state === 'ULT' && this.ult && this.ult.kind === 'beaststorm' ? this.ult : null;
+        let idleAct = this.idleBeastAction && this.idleBeastAction.beast === beast ? this.idleBeastAction : null;
         ctx.save();
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -3706,6 +3709,8 @@ class Fighter {
             let attacking = atk && (atk.type === 'beastSerpentBite' || atk.type === 'beastSerpentSwing' || atk.type === 'beastSerpentVenom');
             let swinging = (atk && atk.type === 'beastSerpentSwing') || this.beastSnakeSwingTimer > 0;
             let swingP = swinging ? Math.max(0, Math.min(1, 1 - (this.beastSnakeSwingTimer || 0) / 0.9)) : 0;
+            let idleP = idleAct ? idleAct.p : 0;
+            let idleCoil = idleAct ? Math.sin(idleP * Math.PI) : 0;
             let segs = swinging ? 22 : 13;
             let pts = [];
             for (let i = 0; i < segs; i++) {
@@ -3715,6 +3720,14 @@ class Fighter {
                 let radius = attacking ? 22 + u * 42 : 38 + Math.sin(t * 2 + u * 5) * 5;
                 let x = Math.cos(angle) * radius + sweep * u;
                 let y = -54 + Math.sin(angle) * 18 + Math.sin(t * 8 + u * 10) * 5;
+                if (idleAct) {
+                    x = 12 + u * 86 + Math.sin(u * Math.PI * 5 + idleP * 12) * (8 + idleCoil * 10);
+                    y = -42 + Math.sin(u * Math.PI * 3 + idleP * 8) * (9 + idleCoil * 9) + u * 10;
+                    if (u < 0.18) {
+                        x += idleCoil * 20;
+                        y -= idleCoil * 18;
+                    }
+                }
                 if (swinging) {
                     // a taut grapple-line: head (u=0) bites the top of the stage, tail (u=1)
                     // stays in the Tamer's hand — a straight line that pivots as he swings
@@ -3774,7 +3787,17 @@ class Fighter {
             let lLegA = 0.34, lLegB = 0.5, rLegA = -0.34, rLegB = 0.5;
             let fAng = 0.55, fBend = -0.12, rAng = -0.55, rBend = 0.12;       // default = a heavy idle hang
             let bxOff = 0, byOff = 0;
-            if (rushP > 0) {
+            if (idleAct) {
+                let ip = idleAct.p;
+                let stomp = Math.sin(Math.min(1, ip / 0.36) * Math.PI);
+                let flex = ip < 0.30 ? ip / 0.30 : ip < 0.78 ? 1 : (1 - ip) / 0.22;
+                bob = stomp * 9 - flex * 2; rock = -6 + flex * 10; lean = 0.18 + flex * 0.16; headTuck = 4;
+                tailWag = 14;
+                lLegA = -0.58; rLegA = 0.62; lLegB = 0.72; rLegB = 0.78;
+                fAng = 1.95 - flex * 0.58; fBend = -0.55 + flex * 0.24;
+                rAng = 1.78 - flex * 0.50; rBend = -0.42 + flex * 0.18;
+                byOff = stomp * 8;
+            } else if (rushP > 0) {
                 // SIDE SPECIAL — Rush: charges in low and drives the lead fist STRAIGHT out
                 bxOff = rushP * 80; lean = 0.4 + rushP * 0.15; headTuck = 3; tailWag = 12; bob = -rushP * 3;
                 lLegA = 0.8; rLegA = -0.18; lLegB = 0.46 + rushP * 0.2; rLegB = 0.42; // deep lunging stance
@@ -3891,6 +3914,12 @@ class Fighter {
             } else if (carrying) {
                 rx = 4 + Math.sin(t * 3) * 3;          // hovering right above the Tamer's hand
                 ry = -142 + Math.cos(t * 8) * 4;
+            } else if (idleAct) {
+                let ip = idleAct.p;
+                let call = Math.sin(ip * Math.PI);
+                rx = -18 + Math.sin(ip * Math.PI * 2) * 56;
+                ry = -130 + Math.cos(ip * Math.PI * 2) * 22 - call * 22;
+                flap += call * 18;
             } else {
                 rx = -28 + Math.sin(t * 2.6) * 12;     // perched scout near the shoulder
                 ry = -100 + Math.cos(t * 3.1) * 7;
@@ -4057,6 +4086,10 @@ class Fighter {
         // Tracked here in draw so the periodic gesture behaves the same online + off.
         if (this.state === 'IDLE' && Math.abs(this.vx) < 6 && !this.isPreview) this.idleTime = (this.idleTime || 0) + (typeof frameRealDt === 'number' && frameRealDt > 0 ? Math.min(0.05, frameRealDt) : 0.016);
         else this.idleTime = 0;
+        this.idleCastFx = 0; // set >0 by the Mage idle gesture so the scepter blooms cast particles
+        this.idleBeastAction = null; // set by Beast Tamer idle gestures so the companion can react
+        this.idleGamblerAction = null; // set by Gambler idle gesture for coin/reel flair
+        this.idleGestureActive = false; // true while a periodic idle gesture is playing
 
         // Animation States mapping
         if (this.state === 'IDLE') {
@@ -4258,72 +4291,266 @@ class Fighter {
             // Once a fighter has stood still & untouched for a moment, it performs a brief
             // signature action every few seconds, easing back into its normal idle between.
             if (this.idleTime > 2.6 && !this.isPreview) {
-                const GAP = 6.5, DUR = 1.4;            // a DUR-second gesture every GAP seconds
+                const GAP = 6.8, DUR = 1.8;            // a DUR-second gesture every GAP seconds
                 let cyc = (this.idleTime - 2.6) % GAP;
                 if (cyc < DUR) {
+                    this.idleGestureActive = true;      // let the pose smoother track these tightly
                     let p = cyc / DUR;                  // 0..1 progress through the gesture
                     let env = Math.sin(p * Math.PI);   // 0 -> 1 -> 0, eases in and out
+                    // plateau window: ramps in/out at the edges, full (=1) through the middle —
+                    // lets a scripted action fully take over the body instead of only peaking once.
+                    let gate = Math.min(1, Math.min(p, 1 - p) / 0.16);
                     const mix = (a, b) => a + (b - a) * env;
                     if (this.charType === 'BRAWLER') {
-                        // snaps out a quick jab with the lead hand
-                        rightArmAngle = mix(rightArmAngle, 1.55); rightArmBend = mix(rightArmBend, -0.05);
-                        torsoLean = mix(torsoLean, 0.12); headY += env * -2;
+                        // a real shadow-box combo: jab, jab, then a big cross — arms fully take
+                        // over the bouncing guard so each punch snaps out and retracts.
+                        const pulse = (c, w) => { let d = Math.abs(p - c) / w; return d < 1 ? Math.cos(d * Math.PI) * 0.5 + 0.5 : 0; };
+                        let p1 = pulse(0.2, 0.13), p2 = pulse(0.44, 0.13), p3 = pulse(0.74, 0.16);
+                        let rP = Math.max(p1, p3), lP = p2;                 // R jab, L jab, R cross
+                        // tight fighting guard, then thrust the punching arm fully forward
+                        let gRA = 1.3, gRB = -1.3, gLA = -1.05, gLB = 1.3;
+                        let rA = gRA + (1.6 - gRA) * rP,  rB = gRB + (0.0 - gRB) * rP;
+                        let lA = gLA + (1.6 - gLA) * lP,  lB = gLB + (0.0 - gLB) * lP;
+                        rightArmAngle += (rA - rightArmAngle) * gate;
+                        rightArmBend  += (rB - rightArmBend)  * gate;
+                        leftArmAngle  += (lA - leftArmAngle)  * gate;
+                        leftArmBend   += (lB - leftArmBend)   * gate;
+                        torsoLean += ((0.1 + (rP - lP) * 0.2) - torsoLean) * gate;
+                        headY += gate * Math.sin(p * Math.PI * 6) * 2.5;   // quick head weave
+                        leftLegAngle += (0.46 - leftLegAngle) * gate;
+                        rightLegAngle += (-0.46 - rightLegAngle) * gate;
+                        leftLegBend += (-0.18 - leftLegBend) * gate;
+                        rightLegBend += (0.2 - rightLegBend) * gate;
                     } else if (this.charType === 'SWORDSMAN') {
-                        // raises the blade for a sharp flourish
-                        rightArmAngle = mix(rightArmAngle, -1.45);
-                        rightArmBend = mix(rightArmBend, 0.15) + env * Math.sin(p * Math.PI * 2) * 0.15;
-                        headY += env * -2;
+                        // a big committed overhead slash: rear the blade high behind the shoulder,
+                        // chop it down and through, then hold the low follow-through.
+                        let bladeA;
+                        if (p < 0.42)      bladeA = -2.5 + (p / 0.42) * 0.25;            // wind up high behind
+                        else if (p < 0.6)  bladeA = -2.25 + ((p - 0.42) / 0.18) * 4.4;   // slash down & through
+                        else               bladeA = 2.15 - ((p - 0.6) / 0.4) * 0.35;     // hold follow-through
+                        rightArmAngle += (bladeA - rightArmAngle) * gate;
+                        rightArmBend  += (0.0 - rightArmBend) * gate;                     // straight arm through swing
+                        let offA = p < 0.42 ? 1.25 : 0.75;                                // off-hand braces, then opens
+                        leftArmAngle  += (offA - leftArmAngle) * gate;
+                        leftArmBend   += (0.4 - leftArmBend) * gate;
+                        torsoLean += ((p < 0.42 ? -0.16 : 0.18) - torsoLean) * gate;      // coil back, drive forward
+                        leftLegAngle += ((p < 0.42 ? 0.36 : 0.58) - leftLegAngle) * gate; // lunge into the cut
+                        rightLegAngle += (-0.4 - rightLegAngle) * gate;
+                        headY += gate * (p < 0.42 ? -2 : 3);
                     } else if (this.charType === 'MAGE') {
-                        // conjures a spark in the free palm, lifting slightly
-                        leftArmAngle = mix(leftArmAngle, 1.75); leftArmBend = mix(leftArmBend, 0.05);
-                        headY += env * -4;
+                        // channels the scepter overhead, then thrusts it forward to cast a burst
+                        let thrust = p < 0.5 ? 0 : Math.sin((p - 0.5) / 0.5 * Math.PI);
+                        rightArmAngle = mix(rightArmAngle, 2.7 - thrust * 1.3);
+                        rightArmBend = mix(rightArmBend, -0.25 + thrust * 0.45);
+                        leftArmAngle = mix(leftArmAngle, 1.6 - thrust * 0.5);
+                        leftArmBend = mix(leftArmBend, 0.3);
+                        torsoLean = mix(torsoLean, -0.07 + thrust * 0.18);  // lean back to charge, snap forward
+                        headY += env * -3 - thrust * 3;
+                        // intensity for the scepter draw to bloom magical particles/trails on the cast
+                        this.idleCastFx = 0.35 * env + thrust;
                     } else if (this.charType === 'RANGER') {
-                        // twirls the pistol once on the trigger finger
-                        rightArmAngle = mix(rightArmAngle, -0.5) + env * Math.sin(p * Math.PI * 5) * 0.45;
-                        rightArmBend = mix(rightArmBend, -0.3); headY += env * -1;
+                        // pistol flourish into a hard aim: twirl, draw, sightline, holster.
+                        let twirl = Math.sin(p * Math.PI * 8) * (p < 0.42 ? 1 : 0);
+                        let aim = p < 0.35 ? 0 : p < 0.58 ? (p - 0.35) / 0.23 : p < 0.82 ? 1 : (1 - p) / 0.18;
+                        let knifeGuard = Math.sin(p * Math.PI * 2);
+                        leftArmAngle += ((1.52 - twirl * 0.9) - leftArmAngle) * gate;   // gun hand spins up, then levels
+                        leftArmBend  += ((-1.35 + aim * 1.25) - leftArmBend) * gate;     // straightens into aim
+                        rightArmAngle += ((0.22 + aim * 0.72 + knifeGuard * 0.18) - rightArmAngle) * gate;
+                        rightArmBend  += ((-0.10 + aim * 0.40) - rightArmBend) * gate;   // knife hand crosses the chest
+                        leftLegAngle += ((-0.22 - aim * 0.18) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.42 + aim * 0.26) - rightLegAngle) * gate;
+                        leftLegBend += ((0.18 + aim * 0.18) - leftLegBend) * gate;
+                        rightLegBend += ((0.46 + aim * 0.28) - rightLegBend) * gate;
+                        torsoLean += ((-0.06 + aim * 0.20) - torsoLean) * gate;
+                        headY += gate * (-2 - aim * 3);
                     } else if (this.charType === 'DARK_RULER') {
-                        // raises a clawed hand and clenches it
-                        leftArmAngle = mix(leftArmAngle, 1.95); leftArmBend = mix(leftArmBend, -0.4);
-                        torsoLean = mix(torsoLean, -0.04); headY += env * -2;
+                        // tyrant's command: sword hand drags low while the claw rises and crushes the air.
+                        let lift = p < 0.35 ? p / 0.35 : 1;
+                        let crush = p < 0.48 ? 0 : p < 0.72 ? Math.sin((p - 0.48) / 0.24 * Math.PI) : 0;
+                        let release = p > 0.74 ? (p - 0.74) / 0.26 : 0;
+                        leftArmAngle += ((0.72 + lift * 1.75 - release * 0.45) - leftArmAngle) * gate;
+                        leftArmBend += ((0.35 - lift * 0.82 + crush * 0.30) - leftArmBend) * gate;
+                        rightArmAngle += ((-2.18 - lift * 0.28 + crush * 0.18) - rightArmAngle) * gate;
+                        rightArmBend += ((-0.55 + crush * 0.18) - rightArmBend) * gate;
+                        leftLegAngle += ((0.58 + crush * 0.10) - leftLegAngle) * gate;
+                        rightLegAngle += ((-0.56 - crush * 0.06) - rightLegAngle) * gate;
+                        leftLegBend += ((-0.42 - crush * 0.08) - leftLegBend) * gate;
+                        rightLegBend += ((0.46 + crush * 0.10) - rightLegBend) * gate;
+                        torsoLean += ((-0.10 - lift * 0.08 + crush * 0.12) - torsoLean) * gate;
+                        headY += gate * (-4 - crush * 3);
                     } else if (this.charType === 'TELEPATH') {
-                        // a quick telekinetic flick of the hand
-                        rightArmAngle = mix(rightArmAngle, 1.25) + env * Math.sin(p * Math.PI * 3) * 0.2;
-                        rightArmBend = mix(rightArmBend, 0.3); headY += env * -3;
+                        // psychic lift: floats cross-legged, pulls both hands apart, then snaps them inward.
+                        let rise = Math.sin(Math.min(1, p / 0.34) * Math.PI * 0.5);
+                        let spread = p < 0.42 ? p / 0.42 : p < 0.74 ? 1 : (1 - p) / 0.26;
+                        let snap = p < 0.58 ? 0 : p < 0.74 ? Math.sin((p - 0.58) / 0.16 * Math.PI) : 0;
+                        leftArmAngle += ((0.72 + spread * 1.22 - snap * 0.48) - leftArmAngle) * gate;
+                        leftArmBend += ((0.34 - spread * 0.44 + snap * 0.30) - leftArmBend) * gate;
+                        rightArmAngle += ((1.90 - spread * 1.18 + snap * 0.52) - rightArmAngle) * gate;
+                        rightArmBend += ((-0.34 + spread * 0.44 - snap * 0.30) - rightArmBend) * gate;
+                        leftLegAngle += ((-0.62 + snap * 0.12) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.66 - snap * 0.12) - rightLegAngle) * gate;
+                        leftLegBend += ((1.10 - snap * 0.18) - leftLegBend) * gate;
+                        rightLegBend += ((1.06 - snap * 0.18) - rightLegBend) * gate;
+                        torsoLean += ((-0.03 + snap * 0.08) - torsoLean) * gate;
+                        headY += gate * (-18 * rise - snap * 4);
                     } else if (this.charType === 'BEAST_TAMER') {
-                        // winds the whip arm up and cracks it
-                        rightArmAngle = mix(rightArmAngle, 2.2) + env * Math.sin(p * Math.PI * 3) * 0.5;
-                        rightArmBend = mix(rightArmBend, -0.35); torsoLean = mix(torsoLean, 0.1);
+                        let beast = this.beastIndex || 0;
+                        this.idleBeastAction = { beast, p, gate };
+                        if (beast === 0) {
+                            // serpent command: low crouch, one hand guiding the coil, whip hand tracing a snap.
+                            let coil = Math.sin(p * Math.PI * 4);
+                            leftArmAngle += ((1.45 + coil * 0.22) - leftArmAngle) * gate;
+                            leftArmBend += ((-0.12 + coil * 0.10) - leftArmBend) * gate;
+                            rightArmAngle += ((2.15 - env * 1.05) - rightArmAngle) * gate;
+                            rightArmBend += ((-0.55 + env * 0.22) - rightArmBend) * gate;
+                            leftLegAngle += ((-0.54 + env * 0.10) - leftLegAngle) * gate;
+                            rightLegAngle += ((0.58 + env * 0.08) - rightLegAngle) * gate;
+                            leftLegBend += ((0.82 - env * 0.12) - leftLegBend) * gate;
+                            rightLegBend += ((0.74 - env * 0.10) - rightLegBend) * gate;
+                            torsoLean += ((0.20 + coil * 0.04) - torsoLean) * gate;
+                            headY += gate * (5 - env * 3);
+                        } else if (beast === 1) {
+                            // brute command: plant hard, brace both arms, then punch a command forward.
+                            let order = p < 0.38 ? p / 0.38 : p < 0.72 ? 1 : (1 - p) / 0.28;
+                            let stomp = Math.sin(Math.min(1, p / 0.34) * Math.PI);
+                            leftArmAngle += ((0.70 + order * 1.00) - leftArmAngle) * gate;
+                            leftArmBend += ((0.36 - order * 0.50) - leftArmBend) * gate;
+                            rightArmAngle += ((-0.20 + order * 1.52) - rightArmAngle) * gate;
+                            rightArmBend += ((0.34 - order * 0.28) - rightArmBend) * gate;
+                            leftLegAngle += ((-0.64 - stomp * 0.08) - leftLegAngle) * gate;
+                            rightLegAngle += ((0.70 + stomp * 0.12) - rightLegAngle) * gate;
+                            leftLegBend += ((0.42 + stomp * 0.14) - leftLegBend) * gate;
+                            rightLegBend += ((0.58 + stomp * 0.18) - rightLegBend) * gate;
+                            torsoLean += ((-0.10 + order * 0.22) - torsoLean) * gate;
+                            headY += gate * (stomp * 5 - order * 2);
+                        } else {
+                            // raven command: falconer perch, arm high, body leaning back as the bird swoops by.
+                            let call = p < 0.32 ? p / 0.32 : p < 0.76 ? 1 : (1 - p) / 0.24;
+                            let sweep = Math.sin(p * Math.PI * 2);
+                            leftArmAngle += ((2.26 + sweep * 0.12) - leftArmAngle) * gate;
+                            leftArmBend += ((-0.10 - call * 0.16) - leftArmBend) * gate;
+                            rightArmAngle += ((0.30 + call * 0.88) - rightArmAngle) * gate;
+                            rightArmBend += ((0.26 - call * 0.34) - rightArmBend) * gate;
+                            leftLegAngle += ((-0.34 - call * 0.16) - leftLegAngle) * gate;
+                            rightLegAngle += ((0.30 + call * 0.12) - rightLegAngle) * gate;
+                            leftLegBend += ((0.28 + call * 0.08) - leftLegBend) * gate;
+                            rightLegBend += ((0.48 + call * 0.12) - rightLegBend) * gate;
+                            torsoLean += ((-0.16 + sweep * 0.04) - torsoLean) * gate;
+                            headY += gate * (-6 * call + sweep * 1.5);
+                        }
                     } else if (this.charType === 'PHANTOM') {
-                        // a ghostly phase-shudder, arms spreading like smoke
-                        leftArmAngle = mix(leftArmAngle, 0.7); rightArmAngle = mix(rightArmAngle, -0.7);
-                        leftArmBend = mix(leftArmBend, 0.2); rightArmBend = mix(rightArmBend, -0.2);
-                        headY += env * (4 + Math.sin(p * Math.PI * 6) * 2);
+                        // conductor's haunt: rises, pulls a soul-string, then opens like smoke.
+                        let rise = Math.sin(Math.min(1, p / 0.38) * Math.PI * 0.5);
+                        let pull = p < 0.38 ? 0 : p < 0.66 ? Math.sin((p - 0.38) / 0.28 * Math.PI) : 0;
+                        let spread = p < 0.58 ? 0 : p < 0.86 ? (p - 0.58) / 0.28 : (1 - p) / 0.14;
+                        leftArmAngle += ((1.18 + spread * 0.82 - pull * 0.50) - leftArmAngle) * gate;
+                        leftArmBend += ((0.45 - spread * 0.12 + pull * 0.20) - leftArmBend) * gate;
+                        rightArmAngle += ((-1.05 - spread * 0.82 + pull * 1.65) - rightArmAngle) * gate;
+                        rightArmBend += ((-0.45 + spread * 0.12 - pull * 0.22) - rightArmBend) * gate;
+                        leftLegAngle += ((0.10 + rise * 0.10) - leftLegAngle) * gate;
+                        rightLegAngle += ((-0.14 - rise * 0.10) - rightLegAngle) * gate;
+                        leftLegBend += ((0.38 - spread * 0.18) - leftLegBend) * gate;
+                        rightLegBend += ((-0.26 + spread * 0.14) - rightLegBend) * gate;
+                        torsoLean += ((0.16 - pull * 0.20 + spread * 0.10) - torsoLean) * gate;
+                        headY += gate * (-16 * rise + Math.sin(p * Math.PI * 8) * 2);
                     } else if (this.charType === 'COPYCAT') {
-                        // pops into a quick dance move
-                        let beat = Math.sin(p * Math.PI * 4);
-                        headY += env * (6 + beat * 3);
-                        leftArmAngle = mix(leftArmAngle, 1.1) + env * beat * 0.3;
-                        rightArmAngle = mix(rightArmAngle, -1.1) - env * beat * 0.3;
-                        leftArmBend = mix(leftArmBend, 0.9); rightArmBend = mix(rightArmBend, -0.9);
-                        torsoLean = mix(torsoLean, 0) + env * beat * 0.08;
+                        // imitation roulette: fake boxer, fake swordsman, then cat pounce.
+                        let phase = p < 0.34 ? 0 : p < 0.67 ? 1 : 2;
+                        let local = phase === 0 ? p / 0.34 : phase === 1 ? (p - 0.34) / 0.33 : (p - 0.67) / 0.33;
+                        let snap = Math.sin(local * Math.PI);
+                        if (phase === 0) {
+                            leftArmAngle += ((2.20 - snap * 0.72) - leftArmAngle) * gate;
+                            rightArmAngle += ((2.05 + snap * 0.45) - rightArmAngle) * gate;
+                            leftArmBend += ((-1.05 + snap * 0.95) - leftArmBend) * gate;
+                            rightArmBend += ((-1.00 + snap * 0.18) - rightArmBend) * gate;
+                            leftLegAngle += ((-0.36) - leftLegAngle) * gate;
+                            rightLegAngle += ((0.42) - rightLegAngle) * gate;
+                            torsoLean += ((0.12 + snap * 0.12) - torsoLean) * gate;
+                            headY += gate * (snap * -2);
+                        } else if (phase === 1) {
+                            leftArmAngle += ((0.92 + snap * 0.35) - leftArmAngle) * gate;
+                            rightArmAngle += ((-1.70 + snap * 3.05) - rightArmAngle) * gate;
+                            leftArmBend += ((0.28) - leftArmBend) * gate;
+                            rightArmBend += ((0.78 - snap * 0.72) - rightArmBend) * gate;
+                            leftLegAngle += ((0.46) - leftLegAngle) * gate;
+                            rightLegAngle += ((-0.48) - rightLegAngle) * gate;
+                            torsoLean += ((-0.08 + snap * 0.24) - torsoLean) * gate;
+                            headY += gate * (-3 + snap * 2);
+                        } else {
+                            leftArmAngle += ((0.82 - snap * 1.40) - leftArmAngle) * gate;
+                            rightArmAngle += ((-0.82 + snap * 1.40) - rightArmAngle) * gate;
+                            leftArmBend += ((0.92 + snap * 0.28) - leftArmBend) * gate;
+                            rightArmBend += ((-0.92 - snap * 0.28) - rightArmBend) * gate;
+                            leftLegAngle += ((-0.62 + snap * 0.12) - leftLegAngle) * gate;
+                            rightLegAngle += ((0.62 - snap * 0.12) - rightLegAngle) * gate;
+                            leftLegBend += ((0.92) - leftLegBend) * gate;
+                            rightLegBend += ((0.88) - rightLegBend) * gate;
+                            torsoLean += ((0.30 - snap * 0.08) - torsoLean) * gate;
+                            headY += gate * (8 - snap * 6);
+                        }
                     } else if (this.charType === 'CULT') {
-                        // lifts both arms in a brief invocation
-                        leftArmAngle = mix(leftArmAngle, 2.3); rightArmAngle = mix(rightArmAngle, 2.5);
-                        leftArmBend = mix(leftArmBend, -0.3); rightArmBend = mix(rightArmBend, -0.3);
-                        headY += env * -4;
+                        // sermon convulsion: kneel into a mask-bowed prayer, then snap arms wide in invocation.
+                        let kneel = Math.sin(Math.min(1, p / 0.42) * Math.PI * 0.5);
+                        let invoke = p < 0.38 ? 0 : p < 0.72 ? Math.sin((p - 0.38) / 0.34 * Math.PI) : 0;
+                        let recoil = p > 0.72 ? (p - 0.72) / 0.28 : 0;
+                        leftArmAngle += ((1.02 + invoke * 1.65 - recoil * 0.45) - leftArmAngle) * gate;
+                        rightArmAngle += ((1.14 + invoke * 1.48 - recoil * 0.35) - rightArmAngle) * gate;
+                        leftArmBend += ((0.70 - invoke * 0.95 + recoil * 0.32) - leftArmBend) * gate;
+                        rightArmBend += ((0.55 - invoke * 0.75 + recoil * 0.28) - rightArmBend) * gate;
+                        leftLegAngle += ((-0.36 - kneel * 0.18) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.38 + kneel * 0.18) - rightLegAngle) * gate;
+                        leftLegBend += ((0.34 + kneel * 0.62) - leftLegBend) * gate;
+                        rightLegBend += ((0.32 + kneel * 0.58) - rightLegBend) * gate;
+                        torsoLean += ((0.06 + kneel * 0.22 - invoke * 0.18) - torsoLean) * gate;
+                        headY += gate * (kneel * 12 - invoke * 9);
                     } else if (this.charType === 'TWINS') {
-                        // a confident synced flex
-                        leftArmAngle = mix(leftArmAngle, 1.5); rightArmAngle = mix(rightArmAngle, 1.5);
-                        leftArmBend = mix(leftArmBend, -1.3); rightArmBend = mix(rightArmBend, 1.3);
-                        headY += env * 3;
+                        // mirrored feint game: duck, point across the gap, then spring into a matching high-five.
+                        let duck = p < 0.30 ? Math.sin(p / 0.30 * Math.PI) : 0;
+                        let point = p < 0.28 ? 0 : p < 0.58 ? Math.sin((p - 0.28) / 0.30 * Math.PI) : 0;
+                        let clap = p < 0.58 ? 0 : p < 0.84 ? Math.sin((p - 0.58) / 0.26 * Math.PI) : 0;
+                        let side = this.isPartner ? -1 : 1;
+                        leftArmAngle += (((side > 0 ? 1.62 : 0.56) + clap * 0.62 - point * 0.22) - leftArmAngle) * gate;
+                        rightArmAngle += (((side > 0 ? 0.56 : 1.62) + clap * 0.62 + point * 0.22) - rightArmAngle) * gate;
+                        leftArmBend += (((side > 0 ? -0.18 : 0.72) - clap * 0.40) - leftArmBend) * gate;
+                        rightArmBend += (((side > 0 ? -0.72 : 0.18) + clap * 0.40) - rightArmBend) * gate;
+                        leftLegAngle += ((-0.42 + point * 0.10) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.42 - point * 0.10) - rightLegAngle) * gate;
+                        leftLegBend += ((0.44 + duck * 0.48 - clap * 0.16) - leftLegBend) * gate;
+                        rightLegBend += ((0.40 + duck * 0.44 - clap * 0.14) - rightLegBend) * gate;
+                        torsoLean += ((side * (point * 0.10 - clap * 0.08)) - torsoLean) * gate;
+                        headY += gate * (duck * 9 - clap * 8);
                     } else if (this.charType === 'TRAVELER') {
-                        // glances down at the holo-watch
-                        rightArmAngle = mix(rightArmAngle, 1.0); rightArmBend = mix(rightArmBend, 1.35);
-                        torsoLean = mix(torsoLean, -0.05); headY += env * 3;
+                        // timeline stutter: checks the holo-watch, freezes, then skips through afterimages.
+                        let check = p < 0.34 ? p / 0.34 : p < 0.62 ? 1 : (1 - p) / 0.38;
+                        let skip = p < 0.45 ? 0 : p < 0.82 ? Math.sin((p - 0.45) / 0.37 * Math.PI) : 0;
+                        let glitch = Math.sin(p * Math.PI * 10) * skip;
+                        rightArmAngle += ((0.88 + check * 0.35 - skip * 1.30) - rightArmAngle) * gate;
+                        rightArmBend += ((0.68 + check * 0.70 - skip * 0.88) - rightArmBend) * gate;
+                        leftArmAngle += ((-0.42 + skip * 1.65) - leftArmAngle) * gate;
+                        leftArmBend += ((0.24 - skip * 0.48) - leftArmBend) * gate;
+                        leftLegAngle += ((-0.40 + skip * 0.16) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.22 + skip * 0.24) - rightLegAngle) * gate;
+                        leftLegBend += ((0.20 + skip * 0.14) - leftLegBend) * gate;
+                        rightLegBend += ((0.52 - skip * 0.10) - rightLegBend) * gate;
+                        torsoLean += ((-0.08 - skip * 0.18 + glitch * 0.06) - torsoLean) * gate;
+                        headY += gate * (check * 2 - skip * 7 + glitch * 2);
                     } else if (this.charType === 'GAMBLER') {
-                        // flips a coin up off his thumb and watches it
-                        rightArmAngle = mix(rightArmAngle, 0.45); rightArmBend = mix(rightArmBend, -0.15);
-                        headY += env * -3;
+                        // slot panic: coin toss, bad read, then a crooked jackpot celebration.
+                        this.idleGamblerAction = { p, gate };
+                        let toss = p < 0.32 ? Math.sin(p / 0.32 * Math.PI) : 0;
+                        let bust = p < 0.38 ? 0 : p < 0.58 ? Math.sin((p - 0.38) / 0.20 * Math.PI) : 0;
+                        let win = p < 0.58 ? 0 : p < 0.88 ? Math.sin((p - 0.58) / 0.30 * Math.PI) : 0;
+                        let jitter = Math.sin(p * Math.PI * 18);
+                        rightArmAngle += ((0.22 + toss * 1.34 + win * 1.70 - bust * 0.38) - rightArmAngle) * gate;
+                        rightArmBend += ((-0.16 + toss * 0.20 - win * 0.10 + jitter * 0.04) - rightArmBend) * gate;
+                        leftArmAngle += ((-0.22 + bust * 1.05 + win * 1.52) - leftArmAngle) * gate;
+                        leftArmBend += ((0.18 - bust * 0.25 + win * 0.06 - jitter * 0.04) - leftArmBend) * gate;
+                        leftLegAngle += ((-0.30 - bust * 0.16 + win * 0.10) - leftLegAngle) * gate;
+                        rightLegAngle += ((0.24 + bust * 0.22 + win * 0.16) - rightLegAngle) * gate;
+                        leftLegBend += ((0.38 + bust * 0.18 - win * 0.08) - leftLegBend) * gate;
+                        rightLegBend += ((0.40 + bust * 0.22 - win * 0.10) - rightLegBend) * gate;
+                        torsoLean += ((-0.02 + bust * 0.18 - win * 0.08 + jitter * 0.025) - torsoLean) * gate;
+                        headY += gate * (-toss * 8 + bust * 8 - win * 5 + jitter * win * 2);
                     } else {
                         // default — a slow overhead stretch
                         leftArmAngle = mix(leftArmAngle, 2.6); rightArmAngle = mix(rightArmAngle, 2.6);
@@ -5695,7 +5922,7 @@ class Fighter {
         // read as a ready guard instead of a T-pose. The Mage (casting) and
         // Zombie (reaching) keep their own characterful arm poses.
         const meleeGuard = this.charType === 'BRAWLER' || this.charType === 'SWORDSMAN' || this.charType === 'RANGER' || this.charType === 'DARK_RULER' || this.charType === 'BEAST_TAMER';
-        if (meleeGuard && !this.stageSeat && (this.state === 'IDLE' || this.state === 'WALK')) {
+        if (meleeGuard && !this.idleGestureActive && !this.stageSeat && (this.state === 'IDLE' || this.state === 'WALK')) {
             // Each fighter carries their arms differently. Hands ride up/forward
             // with elbows bowing below (consistent direction), but the height,
             // symmetry and rhythm are unique per character.
@@ -5753,7 +5980,8 @@ class Fighter {
                           ll:leftLegAngle, rl:rightLegAngle, llb:leftLegBend, rlb:rightLegBend,
                           hy:headY, tl:torsoLean, cd:crouchDrop };
         }
-        let sm = this.state === 'ATTACK' ? 0.7                              // snappy strikes
+        let sm = this.idleGestureActive ? 0.85                              // idle gestures track tightly so fast actions read
+               : this.state === 'ATTACK' ? 0.7                              // snappy strikes
                : (this.state === 'HITSTUN' || this.state === 'DEAD') ? 0.55
                : 0.4;
         let P = this.pose;
@@ -5979,6 +6207,29 @@ class Fighter {
                 let cf = Math.abs(Math.sin(t * 3.2));
                 ctx.fillStyle = 'rgba(255,210,74,0.9)';
                 ctx.beginPath(); ctx.ellipse(14, headY + 2 - cf * 11, 3, 3 * cf + 0.7, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            if (this.idleGamblerAction) {
+                let gp = this.idleGamblerAction.p;
+                let spin = Math.sin(gp * Math.PI);
+                let burst = gp > 0.58 && gp < 0.88 ? Math.sin((gp - 0.58) / 0.30 * Math.PI) : 0;
+                ctx.save();
+                ctx.translate(24, headY - 30 - spin * 18);
+                ctx.rotate(t * 10);
+                ctx.fillStyle = burst > 0 ? '#ffd24a' : '#ff6680';
+                ctx.shadowBlur = 10 + burst * 16; ctx.shadowColor = ctx.fillStyle;
+                ctx.beginPath(); ctx.ellipse(0, 0, 5 + burst * 2, 2 + Math.abs(Math.cos(t * 16)) * 4, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+                if (burst > 0.05) {
+                    ctx.save();
+                    ctx.globalAlpha = burst * 0.75;
+                    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.shadowBlur = 14; ctx.shadowColor = '#ffd24a';
+                    for (let i = 0; i < 3; i++) {
+                        ctx.beginPath();
+                        ctx.arc(-12 + i * 12, headY - 34, 5 + burst * 4, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
             }
             // Luck pips stacking toward a rigged jackpot
             for (let i = 0; i < 3; i++) {
@@ -6585,6 +6836,33 @@ class Fighter {
             // orbiting motes of light
             ctx.fillStyle = 'rgba(220,182,255,0.9)';
             for (let i = 0; i < 3; i++) { let a = t * 2.2 + i * 2.1; ctx.beginPath(); ctx.arc(rHandX + Math.cos(a) * 12, oy + Math.sin(a) * 7, 1.5, 0, Math.PI * 2); ctx.fill(); }
+            // idle-cast bloom: during the Mage's idle spellcast the crystal erupts with arcane
+            // particles trailing upward and a swelling glow.
+            let castFx = this.idleCastFx || 0;
+            if (castFx > 0.02) {
+                ctx.save();
+                ctx.shadowBlur = 18; ctx.shadowColor = '#c98bff';
+                let bloom = Math.min(1.5, castFx + 0.35);
+                ctx.globalAlpha = Math.min(1, castFx) * 0.55;
+                let bg = ctx.createRadialGradient(rHandX, oy, 0.5, rHandX, oy, 24 * bloom);
+                bg.addColorStop(0, 'rgba(255,255,255,0.95)'); bg.addColorStop(0.5, 'rgba(211,166,255,0.55)'); bg.addColorStop(1, 'rgba(140,70,200,0)');
+                ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(rHandX, oy, 24 * bloom, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+                for (let i = 0; i < 10; i++) {
+                    let seed = i * 1.7;
+                    let life = (t * 1.5 + seed) % 1;                       // 0..1 along its flight
+                    let ang = -Math.PI / 2 + (i / 9 - 0.5) * 2.6 + Math.sin(t * 2 + seed) * 0.18; // fan upward
+                    let dist = 5 + life * (22 + castFx * 18);
+                    let px = rHandX + Math.cos(ang) * dist, py = oy + Math.sin(ang) * dist;
+                    let a = (1 - life) * Math.min(1, castFx);
+                    ctx.strokeStyle = 'rgba(220,182,255,' + (a * 0.5).toFixed(3) + ')'; ctx.lineWidth = 1.4;
+                    let td = Math.max(0, dist - 7);
+                    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(rHandX + Math.cos(ang) * td, oy + Math.sin(ang) * td); ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,248,255,' + a.toFixed(3) + ')';
+                    ctx.beginPath(); ctx.arc(px, py, 1.3 + (1 - life) * 1.5, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            }
             // character-select pose: a wisp of light cradled in the free (left) hand
             if (this.isPreview) {
                 let wob = Math.sin(t * 3) * 2;
