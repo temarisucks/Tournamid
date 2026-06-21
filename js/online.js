@@ -910,7 +910,7 @@ function onlineFixedUpdate(realDt) {
 // ---------------- HOST: SNAPSHOT CAPTURE ----------------
 const ONLINE_FIGHTER_FIELDS = [
     'x', 'y', 'vx', 'vy', 'dir', 'state', 'stateTimer', 'animTimer',
-    'hp', 'maxHp', 'meter', 'meterMax', 'blockHealth', 'blockMax', 'charType',
+    'hp', 'maxHp', 'recoverableHp', 'meter', 'meterMax', 'blockHealth', 'blockMax', 'charType',
     'comboHits', 'comboHitTimer', 'invulnTimer', '_thrown',
     'tumbleTimer', '_tumbleAngle', '_tumbleDir',
     'slipCd', 'rewindCd', 'vortexCd', '_skipHide',

@@ -461,6 +461,7 @@ class Fighter {
         this.vx = 0; this.vy = 0;
         this.width = stats.width; this.height = stats.height;
         this.hp = stats.hp; this.maxHp = stats.hp;
+        this.recoverableHp = 0;   // tag-team "red" health: damage recoverable while benched
         this.speed = stats.speed; this.jumpForce = stats.jump;
         
         this.state = 'IDLE'; // IDLE, WALK, CROUCH, JUMP, FALL, ATTACK, HITSTUN, BLOCK, DEAD
@@ -593,6 +594,8 @@ class Fighter {
         this.grab = null;         // universal grab (light + block): { target, t, launched }
         this.grabbedBy = null;    // set on a fighter currently held in someone's grab
         this.grabCd = 0;          // recovery between grab attempts
+        this.grabWhiff = 0;       // plays the reach animation when a grab misses
+        this.grabBuffer = 0;      // input buffer so light+block needn't be frame-perfect
 
         // Animation variables
         this.animTimer = 0;
@@ -744,6 +747,8 @@ class Fighter {
 
         // Universal grab (light + block) plays out over a few frames
         if (this.grabCd > 0) this.grabCd -= dt;
+        if (this.grabWhiff > 0) this.grabWhiff -= dt;
+        if (this.grabBuffer > 0) this.grabBuffer -= dt;
         if (this.grab) this.updateGrab(dt);
 
         // An ultimate cinematic fully drives this fighter
@@ -1010,16 +1015,34 @@ class Fighter {
     }
 
     // ---------------- UNIVERSAL GRAB (light + block) ----------------
+    // How far each fighter can snatch a foe — casters/wraiths reach far, the Tamer's reach
+    // depends on which beast he has out.
+    grabReach() {
+        if (this.charType === 'MAGE') return 150;
+        if (this.charType === 'TELEPATH') return 168;
+        if (this.charType === 'PHANTOM') return 150;
+        if (this.charType === 'BEAST_TAMER') return [128, 90, 178][this.beastIndex] != null ? [128, 90, 178][this.beastIndex] : 90;
+        return 82;
+    }
+    // Where the gripped foe is held (out at arm's length for melee, suspended far for ranged).
+    grabHoldDist() {
+        if (this.charType === 'MAGE') return 120;
+        if (this.charType === 'TELEPATH') return 138;
+        if (this.charType === 'PHANTOM') return 122;
+        if (this.charType === 'BEAST_TAMER') return [96, 54, 150][this.beastIndex] != null ? [96, 54, 150][this.beastIndex] : 54;
+        return 50;
+    }
     findGrabTarget() {
         let best = null, bestDx = 999;
+        let reach = this.grabReach(), yTol = reach > 90 ? 80 : 52;
         for (let other of players) {
             if (!other || other === this || other.team === this.team) continue;
             if (other.state === 'DEAD' || other.hp <= 0 || other.invulnTimer > 0) continue;
             if (other.grabbedBy || other.throwHold || other.grab) continue;
             if (other.state === 'ULT' || other.state === 'LEDGE') continue;
-            if (Math.abs(other.y - this.y) > 52) continue;   // roughly level
+            if (Math.abs(other.y - this.y) > yTol) continue;   // roughly level
             let dx = Math.abs(other.x - this.x);
-            if (dx > 66) continue;                            // within reach
+            if (dx > reach) continue;                          // within reach
             if (dx < bestDx) { bestDx = dx; best = other; }
         }
         return best;
@@ -1028,7 +1051,7 @@ class Fighter {
     tryGrab() {
         this.grabCd = 0.55; // recovery whether it lands or whiffs
         let foe = this.findGrabTarget();
-        if (!foe) { spawnParticles(this.x + this.dir * 36, this.y - 44, 4, '#bbb'); return; }
+        if (!foe) { this.grabWhiff = 0.3; spawnParticles(this.x + this.dir * 36, this.y - 44, 4, '#bbb'); return; }
         this.dir = foe.x >= this.x ? 1 : -1;
         this.state = 'IDLE'; this.stateTimer = 0; // leave BLOCK/WALK cleanly
         this.grab = { target: foe, t: 0, launched: false };
@@ -1058,10 +1081,10 @@ class Fighter {
 
         g.t += dt;
         this.vx = 0;
-        // hold the foe helpless out in front
+        // hold the foe helpless out in front (at this fighter's reach)
         tg.state = 'HITSTUN'; tg.stateTimer = Math.max(tg.stateTimer, 0.25);
         tg.vx = 0; tg.vy = 0;
-        tg.x = this.x + this.dir * 50; tg.y = this.y; tg.dir = -this.dir; tg.grabbedBy = this;
+        tg.x = this.x + this.dir * this.grabHoldDist(); tg.y = this.y; tg.dir = -this.dir; tg.grabbedBy = this;
 
         // 2v2 TAG-LAUNCH: tilt a direction (with ≥⅓ meter) to hurl them out and force their tag
         if (teamBattle && g.t > 0.15 && !this.gamblerInstall) {
@@ -1097,6 +1120,111 @@ class Fighter {
     releaseGrab() {
         if (this.grab && this.grab.target && this.grab.target.grabbedBy === this) this.grab.target.grabbedBy = null;
         this.grab = null;
+    }
+
+    // Per-character grab visual effects, drawn in the fighter's local space (forward = +x).
+    // rhx/rhy = right hand, lhx/lhy = left hand. The gripped foe sits at (hold, -42).
+    drawGrabFx(ctx, rhx, rhy, lhx, lhy) {
+        let phase = null, gp = 0;
+        if (this.grabWhiff > 0) { phase = 'reach'; gp = 1 - this.grabWhiff / 0.3; }
+        else if (this.grab) {
+            let gt = this.grab.t;
+            if (this.grab.launched) { phase = 'throw'; gp = Math.min(1, gt / 0.36); }
+            else if (gt < 0.13) { phase = 'reach'; gp = gt / 0.13; }
+            else if (gt < 0.3) { phase = 'grip'; gp = (gt - 0.13) / 0.17; }
+            else { phase = 'throw'; gp = (gt - 0.3) / 0.1; }
+        }
+        if (!phase) return;
+        let connected = this.grab && this.grab.target;        // only show contact FX on a real grip
+        let t = this.animTimer, hold = this.grabHoldDist();
+        let fx = hold, fy = -42;                                // foe centre in local space
+        ctx.save();
+        ctx.lineCap = 'round';
+
+        if (this.charType === 'MAGE') {
+            // a beam of arcane force lances from the crystal to the suspended foe
+            let cx = rhx, cy = rhy - 22; // crystal sits above the hand
+            ctx.shadowBlur = 14; ctx.shadowColor = '#c98bff';
+            let beamA = phase === 'throw' ? (1 - gp) : 1;
+            if (connected || phase === 'reach') {
+                ctx.strokeStyle = `rgba(201,139,255,${0.75 * beamA})`; ctx.lineWidth = 3 + Math.sin(t * 30);
+                let mx = (cx + fx) / 2, my = (cy + fy) / 2 + Math.sin(t * 20) * 6;
+                ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(mx, my, fx, fy); ctx.stroke();
+            }
+            if (connected) {
+                if (phase === 'throw') {
+                    ctx.strokeStyle = `rgba(211,166,255,${beamA})`; ctx.lineWidth = 3;
+                    ctx.beginPath(); ctx.arc(fx, fy, 14 + gp * 30, 0, Math.PI * 2); ctx.stroke();
+                } else {
+                    ctx.strokeStyle = 'rgba(211,166,255,0.85)'; ctx.lineWidth = 2;
+                    for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.arc(fx, fy, 16 + i * 6, t * (i ? -3 : 3), t * (i ? -3 : 3) + 4.2); ctx.stroke(); }
+                }
+            }
+        } else if (this.charType === 'RANGER') {
+            if (phase !== 'throw') {
+                // the knife (right hand) is buried in the foe
+                ctx.strokeStyle = '#e8edf2'; ctx.lineWidth = 3; ctx.shadowBlur = 4; ctx.shadowColor = '#fff';
+                ctx.beginPath(); ctx.moveTo(rhx, rhy); ctx.lineTo(rhx + (fx - rhx) * 0.94, rhy + (fy - rhy) * 0.94); ctx.stroke();
+                if (connected) { ctx.fillStyle = '#ff0033'; ctx.beginPath(); ctx.arc(fx - 6, fy + 2, 2.5, 0, Math.PI * 2); ctx.fill(); }
+            } else {
+                // pistol (left hand) muzzle-flash + tracer to the foe
+                ctx.fillStyle = `rgba(255,210,63,${1 - gp})`; ctx.shadowBlur = 14; ctx.shadowColor = '#ffd23f';
+                ctx.beginPath(); ctx.moveTo(lhx, lhy); ctx.lineTo(lhx + 16, lhy - 5); ctx.lineTo(lhx + 15, lhy + 5); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = `rgba(255,240,200,${0.8 * (1 - gp)})`; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(lhx + 14, lhy); ctx.lineTo(fx, fy); ctx.stroke();
+                ctx.fillStyle = `rgba(255,90,60,${1 - gp})`; ctx.beginPath(); ctx.arc(fx, fy, 4 + gp * 8, 0, Math.PI * 2); ctx.fill();
+            }
+        } else if (this.charType === 'TELEPATH') {
+            // foe sheathed in a telekinetic field, fed by tendrils from the temple + hand
+            ctx.shadowBlur = 12; ctx.shadowColor = '#9be3ff';
+            ctx.strokeStyle = 'rgba(155,227,255,0.5)'; ctx.lineWidth = 1.6;
+            ctx.beginPath(); ctx.moveTo(0, -54); ctx.lineTo(fx, fy); ctx.moveTo(rhx, rhy); ctx.lineTo(fx, fy); ctx.stroke();
+            if (connected || phase === 'reach') {
+                let aura = phase === 'throw' ? 1 + gp : 1;
+                ctx.strokeStyle = `rgba(155,227,255,${phase === 'throw' ? 1 - gp : 0.85})`; ctx.lineWidth = 2.4;
+                ctx.beginPath(); ctx.arc(fx, fy, 18 * aura, 0, Math.PI * 2); ctx.stroke();
+                ctx.globalAlpha = 0.12; ctx.fillStyle = '#9be3ff'; ctx.beginPath(); ctx.arc(fx, fy, 18 * aura, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+            }
+        } else if (this.charType === 'PHANTOM') {
+            // spectral claws closing on the foe at the end of the long mist arms
+            if (connected || phase === 'reach') {
+                ctx.strokeStyle = 'rgba(223,228,242,0.7)'; ctx.lineWidth = 3; ctx.shadowBlur = 10; ctx.shadowColor = '#dfe4f2';
+                for (let s = -1; s <= 1; s += 2) { ctx.beginPath(); ctx.moveTo(fx - 8, fy + s * 10); ctx.quadraticCurveTo(fx + 4, fy + s * 6, fx + 8, fy + s * 2); ctx.stroke(); }
+            }
+            if (phase === 'throw') { ctx.globalAlpha = 1 - gp; ctx.fillStyle = '#dfe4f2'; for (let i = 0; i < 4; i++) { let a = i * 1.7 + t; ctx.beginPath(); ctx.arc(fx + Math.cos(a) * gp * 22, fy + Math.sin(a) * gp * 22, 2, 0, Math.PI * 2); ctx.fill(); } ctx.globalAlpha = 1; }
+        } else if (this.charType === 'BEAST_TAMER') {
+            ctx.shadowBlur = 8; ctx.shadowColor = '#ff0033';
+            if (this.beastIndex === 0) {
+                // serpent lunges from the hand and coils the foe
+                ctx.strokeStyle = '#9be36b'; ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.moveTo(rhx, rhy);
+                let segs = 8; for (let i = 1; i <= segs; i++) { let f = i / segs; ctx.lineTo(rhx + (fx - rhx) * f, rhy + (fy - rhy) * f + Math.sin(f * 6 + t * 10) * 8 * (1 - f)); } ctx.stroke();
+                if (connected) { ctx.fillStyle = '#9be36b'; ctx.beginPath(); ctx.arc(fx, fy, 7, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#9be36b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(fx, fy, 13, t * 4, t * 4 + 5); ctx.stroke(); }
+            } else if (this.beastIndex === 1) {
+                // the brute's huge clawed fist clamps the foe (short range)
+                ctx.fillStyle = '#dcdcdc'; ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(fx, fy, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.strokeStyle = '#9a9a9a'; ctx.lineWidth = 4;
+                for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(fx - 12, fy + k * 7); ctx.lineTo(fx + 6, fy + k * 5); ctx.stroke(); }
+            } else {
+                // the raven snatches the foe from afar, talons sunk in, wings beating
+                let flap = Math.sin(t * 16) * 9;
+                ctx.fillStyle = '#0a0a0a'; ctx.strokeStyle = '#cfcfcf'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.ellipse(fx, fy - 12, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(fx - 9, fy - 12); ctx.lineTo(fx - 24, fy - 12 - flap); ctx.moveTo(fx + 9, fy - 12); ctx.lineTo(fx + 24, fy - 12 + flap); ctx.stroke();
+                ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(fx - 4, fy - 6); ctx.lineTo(fx - 4, fy + 2); ctx.moveTo(fx + 4, fy - 6); ctx.lineTo(fx + 4, fy + 2); ctx.stroke();
+            }
+        } else if (this.charType === 'GAMBLER' && phase === 'throw') {
+            // flings a fan of spinning cards along with the foe
+            ctx.fillStyle = '#fff'; ctx.strokeStyle = '#ff0033'; ctx.lineWidth = 1;
+            for (let i = 0; i < 4; i++) { let f = (gp + i * 0.25) % 1; let cx = rhx + (fx - rhx) * f, cy = rhy + (fy - rhy) * f - Math.sin(f * Math.PI) * 14; ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 8 + i); ctx.fillRect(-4, -6, 8, 12); ctx.strokeRect(-4, -6, 8, 12); ctx.restore(); }
+        } else if (this.charType === 'CULT') {
+            // a dark ritual wisp swirls around the offered foe
+            ctx.strokeStyle = 'rgba(150,50,200,0.6)'; ctx.shadowBlur = 10; ctx.shadowColor = '#7a2da0'; ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) { let a = t * 2 + i * 2.1; ctx.beginPath(); ctx.arc(fx, fy, 16, a, a + 1.6); ctx.stroke(); }
+        }
+        ctx.restore();
     }
 
     // ---------------- COPY CAT: Cat Dash pin & Piano Drop ----------------
@@ -2394,9 +2522,13 @@ class Fighter {
 
     handleInput() {
         if (this.catPin) return; // locked while pinning a foe with Cat Dash
-        if (this.grab) return;   // locked while gripping a foe
+        if (this.grab || this.grabWhiff > 0) return; // locked while gripping a foe / recovering from a whiffed grab
         let controls = this.playerControls();
         let grounded = this.isGrounded();
+
+        // Buffer a fresh light/block press for a moment so a grab doesn't need the two keys
+        // pressed on the exact same frame — pressing them close together, in any order, works.
+        if (keyPressed(controls.atkL) || keyPressed(controls.block)) this.grabBuffer = 0.18;
 
         // Tag out to the benched team-mate (2v2)
         if (teamBattle && controls.tag && keyPressed(controls.tag)) { if (switchActive(this.team, false)) return; }
@@ -2404,10 +2536,12 @@ class Fighter {
         // Ultimate (highest priority — can be invoked from neutral states)
         if (keyPressed(controls.ult)) { this.tryUltimate(); return; }
 
-        // GRAB — light + block together (beats block). A throw in 1v1; in 2v2 a tilt during
-        // the grip spends ⅓ meter to hurl the foe out and force them to tag out.
-        if (grounded && this.grabCd <= 0 && !this.lumActive &&
-            ((keys[controls.block] && keyPressed(controls.atkL)) || (keyPressed(controls.block) && keys[controls.atkL]))) {
+        // GRAB — light + block held together (beats block). A throw in 1v1; in 2v2 a tilt during
+        // the grip spends ⅓ meter to hurl the foe out and force them to tag out. The buffer above
+        // means you only have to press both within ~0.18s of each other, in either order.
+        if (grounded && this.grabCd <= 0 && !this.lumActive && this.grabBuffer > 0 &&
+            keys[controls.block] && keys[controls.atkL]) {
+            this.grabBuffer = 0;
             this.tryGrab();
             return;
         }
@@ -3534,6 +3668,11 @@ class Fighter {
         }
 
         this.hp -= amount;
+        // Tag-team "red" health: the damage just taken becomes recoverable while this fighter is
+        // benched (capped so red + green never exceeds max). Marvel-vs-Capcom-style.
+        if (teamBattle && amount > 0 && this.hp > 0) {
+            this.recoverableHp = Math.min(this.maxHp - this.hp, (this.recoverableHp || 0) + amount);
+        }
         if (!this._twinKbApplied) { this.vx = kb.x; this.vy = kb.y; this.y -= 1; } // (partner-hit already took the knockback)
         this._twinKbApplied = false;
 
@@ -6087,17 +6226,91 @@ class Fighter {
             }
         }
 
-        // Universal grab: clamp the foe out front, then heave/launch them
-        if (this.grab) {
-            if (this.grab.launched || this.grab.t >= 0.4) { // explosive release
-                rightArmAngle = 2.5; rightArmBend = -0.4;
-                leftArmAngle = 2.55; leftArmBend = -0.4;
-                torsoLean = -0.18; headY += 2;
-            } else { // clamped grip
-                rightArmAngle = 1.5; rightArmBend = 0.1;
-                leftArmAngle = 1.45; leftArmBend = -0.1;
-                leftLegAngle = -0.4; rightLegAngle = 0.42; leftLegBend = 0.45; rightLegBend = 0.45;
-                torsoLean = 0.1; headY += 2;
+        // Universal grab — every fighter reaches, grips, and throws in their own distinct style.
+        let grabPhase = null;
+        if (this.grabWhiff > 0) grabPhase = 'reach';
+        else if (this.grab) {
+            let gt = this.grab.t;
+            if (this.grab.launched) grabPhase = 'throw';
+            else if (gt < 0.13) grabPhase = 'reach';
+            else if (gt < 0.3) grabPhase = 'grip';
+            else grabPhase = 'throw';
+        }
+        if (grabPhase) {
+            let reach = grabPhase === 'reach', grip = grabPhase === 'grip', heave = grabPhase === 'throw';
+            if (this.charType === 'BRAWLER') {
+                // boxer clinch → uppercut launch
+                if (reach) { leftArmAngle = 1.42; leftArmBend = -0.1; rightArmAngle = 1.55; rightArmBend = -0.1; torsoLean = 0.16; headY -= 2; leftLegAngle = 0.42; rightLegAngle = -0.3; }
+                else if (grip) { leftArmAngle = 1.5; leftArmBend = 0.25; rightArmAngle = 1.5; rightArmBend = 0.25; torsoLean = -0.06; headY -= 3; }
+                else { rightArmAngle = -1.7; rightArmBend = -0.3; leftArmAngle = 1.3; leftArmBend = 0.35; torsoLean = -0.2; headY -= 2; }
+            } else if (this.charType === 'SWORDSMAN') {
+                // off-hand collar snatch, sword reared back → pommel shove
+                if (reach) { leftArmAngle = 1.5; leftArmBend = 0.0; rightArmAngle = -1.5; rightArmBend = -0.4; torsoLean = 0.1; leftLegAngle = 0.42; rightLegAngle = -0.35; }
+                else if (grip) { leftArmAngle = 1.45; leftArmBend = 0.1; rightArmAngle = -2.1; rightArmBend = -0.5; torsoLean = -0.06; }
+                else { leftArmAngle = 2.35; leftArmBend = -0.2; rightArmAngle = 1.0; rightArmBend = 0.1; torsoLean = 0.18; headY -= 2; }
+            } else if (this.charType === 'MAGE') {
+                // CASTS a binding spell at range — scepter levelled at the foe, free hand shaping it —
+                // then flings the magic away to throw (he never physically touches them)
+                if (reach) { rightArmAngle = 1.35; rightArmBend = 0.15; leftArmAngle = 1.1; leftArmBend = 0.4; torsoLean = -0.05; headY -= 2; }
+                else if (grip) { rightArmAngle = 1.45; rightArmBend = 0.1; leftArmAngle = 1.25; leftArmBend = 0.35; }
+                else { rightArmAngle = 0.85; rightArmBend = 0.05; leftArmAngle = 0.7; leftArmBend = 0.25; torsoLean = 0.14; headY -= 2; }
+            } else if (this.charType === 'RANGER') {
+                // STABS with the knife (right) to seize, then raises the pistol (left) and FIRES to throw
+                if (reach) { rightArmAngle = 1.5; rightArmBend = 0.0; leftArmAngle = 1.4; leftArmBend = -1.3; torsoLean = 0.12; leftLegAngle = 0.4; rightLegAngle = -0.3; }
+                else if (grip) { rightArmAngle = 1.45; rightArmBend = 0.05; leftArmAngle = 1.45; leftArmBend = -1.2; torsoLean = 0.04; }
+                else { leftArmAngle = 1.5; leftArmBend = 0.0; rightArmAngle = 0.4; rightArmBend = 0.5; torsoLean = 0.06; }
+            } else if (this.charType === 'DARK_RULER') {
+                // seizes the throat one-handed and hauls them up, then SLAMS them straight down
+                // (distinct from his side-special's horizontal hurl)
+                if (reach) { rightArmAngle = 1.5; rightArmBend = -0.15; leftArmAngle = 0.7; leftArmBend = 0.3; torsoLean = 0.08; }
+                else if (grip) { rightArmAngle = 1.2; rightArmBend = -0.1; leftArmAngle = 0.85; leftArmBend = 0.25; headY -= 4; torsoLean = -0.04; }
+                else { rightArmAngle = 0.35; rightArmBend = -0.05; leftArmAngle = 0.8; leftArmBend = 0.3; torsoLean = 0.22; headY += 3; }
+            } else if (this.charType === 'TELEPATH') {
+                // pure telekinesis at long range — fingers pressed to the temple, the foe wrenched
+                // about in mid-air, then hurled with a flick of the off-hand
+                if (reach) { rightArmAngle = 2.05; rightArmBend = -0.55; leftArmAngle = 1.4; leftArmBend = 0.3; headY -= 2; }
+                else if (grip) { rightArmAngle = 2.0; rightArmBend = -0.55; leftArmAngle = 1.5; leftArmBend = 0.35; }
+                else { rightArmAngle = 2.0; rightArmBend = -0.5; leftArmAngle = 0.5; leftArmBend = 0.2; torsoLean = 0.14; headY -= 2; }
+            } else if (this.charType === 'BEAST_TAMER') {
+                // the active beast does the seizing — the Tamer just gestures the command
+                if (reach) { rightArmAngle = 1.55; rightArmBend = -0.05; leftArmAngle = 0.7; leftArmBend = 0.3; torsoLean = 0.12; }
+                else if (grip) { rightArmAngle = 1.5; rightArmBend = 0.05; leftArmAngle = 0.8; leftArmBend = 0.25; }
+                else { rightArmAngle = 2.4; rightArmBend = -0.3; leftArmAngle = 1.0; leftArmBend = 0.3; torsoLean = -0.16; }
+            } else if (this.charType === 'PHANTOM') {
+                // BOTH stretched mist arms reach the whole way out to seize the distant foe,
+                // then sweep wide to fling them
+                if (reach) { leftArmAngle = 1.45; leftArmBend = 0.05; rightArmAngle = 1.55; rightArmBend = 0.0; torsoLean = 0.06; }
+                else if (grip) { leftArmAngle = 1.48; leftArmBend = 0.08; rightArmAngle = 1.52; rightArmBend = 0.05; }
+                else { leftArmAngle = 2.5; leftArmBend = -0.4; rightArmAngle = 2.45; rightArmBend = -0.4; torsoLean = -0.16; }
+            } else if (this.charType === 'COPYCAT') {
+                // playful paws-out catch, low judo grip → a shoulder toss over the back
+                if (reach) { leftArmAngle = 1.5; rightArmAngle = 1.5; leftArmBend = -0.1; rightArmBend = -0.1; torsoLean = 0.12; leftLegAngle = 0.42; rightLegAngle = -0.3; }
+                else if (grip) { leftArmAngle = 1.45; rightArmAngle = 1.5; leftArmBend = 0.2; rightArmBend = 0.2; torsoLean = 0.1; headY += 2; }
+                else { leftArmAngle = 2.6; rightArmAngle = 2.5; leftArmBend = -0.3; rightArmBend = -0.3; torsoLean = -0.24; headY -= 2; }
+            } else if (this.charType === 'CULT') {
+                // ritual seize — hoists the foe overhead like an offering — then a downward slam
+                if (reach) { leftArmAngle = 1.8; rightArmAngle = 1.7; leftArmBend = -0.2; rightArmBend = -0.2; torsoLean = 0.08; headY -= 2; }
+                else if (grip) { leftArmAngle = 2.6; rightArmAngle = 2.7; leftArmBend = -0.3; rightArmBend = -0.3; headY -= 4; }
+                else { leftArmAngle = 1.2; rightArmAngle = 1.1; leftArmBend = 0.2; rightArmBend = 0.2; torsoLean = 0.2; headY += 2; }
+            } else if (this.charType === 'TWINS') {
+                // a synced two-handed grab → a spinning sideways toss
+                if (reach) { leftArmAngle = 1.5; rightArmAngle = 1.5; leftArmBend = -0.05; rightArmBend = -0.05; torsoLean = 0.1; }
+                else if (grip) { leftArmAngle = 1.48; rightArmAngle = 1.48; leftArmBend = 0.15; rightArmBend = 0.15; }
+                else { leftArmAngle = 0.6; rightArmAngle = 2.5; leftArmBend = 0.2; rightArmBend = -0.3; torsoLean = -0.16; }
+            } else if (this.charType === 'TRAVELER') {
+                // one-hand grab, watch-wrist raised → a time-skip fling
+                if (reach) { leftArmAngle = 1.5; leftArmBend = 0.0; rightArmAngle = 1.05; rightArmBend = 1.35; torsoLean = 0.08; }
+                else if (grip) { leftArmAngle = 1.45; leftArmBend = 0.1; rightArmAngle = 1.1; rightArmBend = 1.3; headY += 1; }
+                else { leftArmAngle = 2.2; leftArmBend = -0.2; rightArmAngle = 1.4; rightArmBend = 0.2; torsoLean = 0.16; }
+            } else if (this.charType === 'GAMBLER') {
+                // jaunty one-hand snatch (other on hip) → an underhand "roll the dice" toss
+                if (reach) { rightArmAngle = 1.5; rightArmBend = -0.05; leftArmAngle = 0.5; leftArmBend = 1.2; torsoLean = 0.1; }
+                else if (grip) { rightArmAngle = 1.45; rightArmBend = 0.1; leftArmAngle = 0.5; leftArmBend = 1.2; headY -= 2; }
+                else { rightArmAngle = 0.35; rightArmBend = -0.2; leftArmAngle = 0.6; leftArmBend = 0.4; torsoLean = -0.1; }
+            } else {
+                if (reach) { rightArmAngle = 1.5; rightArmBend = 0.0; leftArmAngle = 1.45; leftArmBend = -0.1; torsoLean = 0.1; }
+                else if (grip) { rightArmAngle = 1.5; rightArmBend = 0.1; leftArmAngle = 1.45; leftArmBend = -0.1; torsoLean = 0.1; headY += 2; }
+                else { rightArmAngle = 2.5; rightArmBend = -0.4; leftArmAngle = 2.55; leftArmBend = -0.4; torsoLean = -0.18; headY += 2; }
             }
         }
 
@@ -6123,7 +6336,8 @@ class Fighter {
                           ll:leftLegAngle, rl:rightLegAngle, llb:leftLegBend, rlb:rightLegBend,
                           hy:headY, tl:torsoLean, cd:crouchDrop };
         }
-        let sm = this.idleGestureActive ? 0.85                              // idle gestures track tightly so fast actions read
+        let sm = (this.grab || this.grabWhiff > 0) ? 0.8                     // grabs read crisply
+               : this.idleGestureActive ? 0.85                              // idle gestures track tightly so fast actions read
                : this.state === 'ATTACK' ? 0.7                              // snappy strikes
                : (this.state === 'HITSTUN' || this.state === 'DEAD') ? 0.55
                : 0.4;
@@ -6141,7 +6355,8 @@ class Fighter {
         P.cd  += (crouchDrop - P.cd) * sm; crouchDrop = P.cd;
         ctx.rotate(torsoLean);
 
-        if (this.charType === 'BEAST_TAMER') this.drawBeastCompanion(ctx);
+        // The idle companion gives way to the grab-strike beast (drawn in drawGrabFx) during a grab.
+        if (this.charType === 'BEAST_TAMER' && !(this.grab || this.grabWhiff > 0)) this.drawBeastCompanion(ctx);
 
         // --- DRAWING ---
         ctx.beginPath();
@@ -6288,6 +6503,10 @@ class Fighter {
                 else if (ca.type === 'mistClaw') stretch = reach * 12;
             } else if (this.state === 'ULT' && this.ult && (this.ult.phase === 'rush' || this.ult.phase === 'seize' || this.ult.phase === 'shatter')) {
                 stretch = 44; // long grab arm, held out
+            } else if (this.grab || this.grabWhiff > 0) {
+                // both mist arms stretch the whole way out to seize the distant foe
+                let ext = this.grabHoldDist() - 26;
+                stretch = ext; leftStretch = ext;
             }
             lUp += leftStretch * 0.5; lLow += leftStretch * 0.5;
             rUp += stretch * 0.5; rLow += stretch * 0.5;
@@ -6317,6 +6536,9 @@ class Fighter {
         } else {
             ctx.stroke();
         }
+
+        // Per-character grab visual effects (spell beam, knife/gun, telekinesis, beasts…)
+        if (this.grab || this.grabWhiff > 0) this.drawGrabFx(ctx, rHandX, rHandY, leftArm.endX, leftArm.endY);
 
         if (this.charType === 'PHANTOM' && this.state === 'ATTACK' && this.currentAttack && this.currentAttack.type === 'graveDrag') {
             let ca = this.currentAttack;

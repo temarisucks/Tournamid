@@ -62,6 +62,11 @@ let pausedFromState = null;
 
 // Best-of-3 rounds (CPU / PVP)
 const ROUNDS_TO_WIN = 2;
+
+// 2v2 tag "red" health (Marvel-vs-Capcom style): a benched fighter slowly converts the
+// damage it took back into real health; its on-point partner's red drains away over time.
+const TEAM_RECOVER_RATE = 2.6;  // hp/sec a benched fighter recovers (slow, red only)
+const TEAM_RED_DECAY = 1.4;     // hp/sec the active fighter's recoverable red bleeds off
 let roundWins = [0, 0];
 let currentRound = 1;
 let roundAnnounce = null; // { text, t, dur } transient banner

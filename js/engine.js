@@ -791,6 +791,8 @@ function updateTeamHud() {
             let rowEl = document.getElementById(pfx + '-team-row-' + i);
             if (!f || !hpEl || !rowEl) continue;
             hpEl.style.width = Math.max(0, (f.hp / f.maxHp) * 100) + '%';
+            let recEl = document.getElementById(pfx + '-team-recover-' + i);
+            if (recEl) recEl.style.width = (f.hp > 0 ? Math.min(100, ((f.hp + (f.recoverableHp || 0)) / f.maxHp) * 100) : 0) + '%';
             setUltLine(pfx + '-team-ult-' + i, f, teams[1 - tm]); // threat = the opposing squad's ults
             rowEl.classList.toggle('active', i === activeIdx[tm]);
             rowEl.classList.toggle('downed', f.hp <= 0);
@@ -875,9 +877,18 @@ function updateBench(dt) {
     for (let tm = 0; tm < 2; tm++) {
         let benchI = 1 - activeIdx[tm];
         let bench = teams[tm][benchI];
-        if (bench && bench.hp > 0 && bench.hp < bench.maxHp) bench.hp = Math.min(bench.maxHp, bench.hp + 4 * dt);
-        // CPU auto-tag: swap out a badly hurt active fighter for a healthier rested one
         let cur = teams[tm][activeIdx[tm]];
+        // Benched fighter slowly regenerates ONLY its "red" (recoverable) health — never a full
+        // heal — converting red back into green a little at a time.
+        if (bench && bench.hp > 0 && bench.recoverableHp > 0) {
+            let heal = Math.min(bench.recoverableHp, TEAM_RECOVER_RATE * dt, bench.maxHp - bench.hp);
+            if (heal > 0) { bench.hp += heal; bench.recoverableHp -= heal; }
+        }
+        // The active fighter's red health drains away (use it or lose it — tag out to bank it).
+        if (cur && cur.hp > 0 && cur.recoverableHp > 0) {
+            cur.recoverableHp = Math.max(0, cur.recoverableHp - TEAM_RED_DECAY * dt);
+        }
+        // CPU auto-tag: swap out a badly hurt active fighter for a healthier rested one
         if (cur && cur.isAI && bench && bench.hp > 0 && cur.switchCooldown <= 0 &&
             cur.hp > 0 && cur.hp < cur.maxHp * 0.3 && bench.hp > cur.hp + 25 &&
             ['IDLE', 'WALK'].includes(cur.state) && Math.random() < 0.02) {
@@ -971,10 +982,10 @@ function resetFighterForRound(p, x, dir) {
     if (p.charType === 'GAMBLER') { p.gamblerInstall = false; p.gamblerStance = 'gambling'; p.gamblerLuck = 0; p.gamblerSavings = 0; p.gamblerMix = 0; p.gamblerJackpots = 0; p.gamblerDrainScale = 1; p.speed = p._baseSpeed; p.slotCd = 0; p.diceCd = 0; p.geyserCd = 0; p._slotFx = null; p._slotPending = null; p._installRoll = null; }
     p.comboHits = 0; p.comboHitTimer = 0; p._comboPop = 0;
     p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0;
-    p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
+    p.hp = p.maxHp; p.recoverableHp = 0; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
     p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
     p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
-    p.grab = null; p.grabbedBy = null; p.grabCd = 0; p.throwHold = null;
+    p.grab = null; p.grabbedBy = null; p.grabCd = 0; p.grabWhiff = 0; p.grabBuffer = 0; p.throwHold = null;
     p.overkillRed = false;
     p.pose = null;
 }
