@@ -399,9 +399,12 @@ function isMatchWinningUltimateKill(attacker) {
     if (!attacker || trainingMode || currentMode === 'PVE' || currentMode === 'TRAINING') return false;
     let winnerIdx = players.indexOf(attacker);
     if (winnerIdx !== 0 && winnerIdx !== 1) return false;
-    if (teamBattle) { // 2v2: overkill if this ult wipes the enemy squad
+    if (teamBattle) { // 2v2: overkill only if this ult wipes the enemy squad AND ends the match
         let enemy = teams[1 - winnerIdx];
-        return enemy && enemy.every(f => f.hp <= 0);
+        if (!enemy || !enemy.every(f => f.hp <= 0)) return false;
+        // Online ranked 2v2 is best-of-3 — early-round wipes are just rounds, not overkills.
+        if (currentMode === 'ONLINE' && onlineState.teamMatch) return roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
+        return true; // offline 2v2 is single-elimination: a wipe ends it
     }
     // A match-winning ultimate blow earns the overkill — including every Ladder rung.
     return roundWins[winnerIdx] + 1 >= ROUNDS_TO_WIN;
@@ -971,6 +974,7 @@ function resetFighterForRound(p, x, dir) {
     p.hp = p.maxHp; p.state = 'IDLE'; p.stateTimer = 0; // meter carries over between rounds
     p.dir = dir; p.blockHealth = p.blockMax; p.ledge = null;
     p.comboCount = 0; p.slowTimer = 0; p.slowFactor = 1; p.burnTimer = 0; p.burnTickTimer = 0; p.venomTimer = 0; p.venomTickTimer = 0; p.beastMarkedTimer = 0; p.invulnTimer = 0; p.ult = null; p._ringedOut = false; p._overkilled = false;
+    p.grab = null; p.grabbedBy = null; p.grabCd = 0; p.throwHold = null;
     p.overkillRed = false;
     p.pose = null;
 }
@@ -1498,10 +1502,12 @@ function updateGameplay(dt) {
             document.getElementById('timer').innerText = matchTimer;
             if (matchTimer <= 0) {
                 if (teamBattle) {
-                    // Time up — the squad with more total remaining health wins
+                    // Time up — the squad with more total remaining health takes it
                     let h0 = teams[0].reduce((s, f) => s + Math.max(0, f.hp), 0);
                     let h1 = teams[1].reduce((s, f) => s + Math.max(0, f.hp), 0);
-                    team2v2End(h0 > h1 ? 0 : h1 > h0 ? 1 : -1);
+                    // online ranked is best-of-3 (next round); offline 2v2 is single-elimination
+                    let teamEnd = (currentMode === 'ONLINE' && onlineState.teamMatch) ? teamRoundEnd : team2v2End;
+                    teamEnd(h0 > h1 ? 0 : h1 > h0 ? 1 : -1);
                 } else {
                     // Time up — award the round on remaining health
                     let p1 = players[0].hp / players[0].maxHp;

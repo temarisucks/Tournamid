@@ -571,8 +571,12 @@ function togglePause() {
 
 function backFromCharacterSelect() {
     if (currentMode === 'ONLINE') {
+        // Esc first unlocks / peels back your character pick; only leaves once nothing's selected
+        if (onlineUndoStep()) return;
+        let kind = onlineState.matchKind;
         onlineDisconnect();
-        showOnlineScreen();
+        if (kind === 'ranked' || kind === 'casual') showOnlineHub();
+        else showOnlineScreen();
         return;
     }
     offlineUndoStep(); // Esc cancels the current pick, steps back a confirmed one, or leaves

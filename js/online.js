@@ -575,6 +575,28 @@ function onlinePickCharacter(resolvedType) {
     updateOnlineSelectTitle();
 }
 
+// Esc on the online char-select: unlock, then peel back picks one at a time. Returns false
+// only when there's nothing left to undo (so the caller knows it may leave the match).
+function onlineUndoStep() {
+    if (currentMode !== 'ONLINE') return false;
+    if (onlineState.localLocked) {
+        onlineState.localLocked = false;
+        onlineSend('select', { picks: [...(onlineState.localPicks || [])], locked: false });
+        onlineRenderPicks();
+        updateOnlineSelectTitle();
+        return true;
+    }
+    if ((onlineState.localPicks || []).length > 0) {
+        onlineState.localPicks.pop();
+        markRosterSelection(onlineState.localPicks[0] || null, onlineLocalKey());
+        onlineSend('select', { picks: [...onlineState.localPicks], locked: false });
+        onlineRenderPicks();
+        updateOnlineSelectTitle();
+        return true;
+    }
+    return false; // nothing selected — caller may back out of the match
+}
+
 function onlineResetPicks() {
     onlineState.localPicks = [];
     onlineState.localLocked = false;

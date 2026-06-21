@@ -590,6 +590,9 @@ class Fighter {
         this.ult = null;          // active ultimate state machine
         this.isDummy = false;     // training dummy: stands still, never dies
         this.throwHold = null;    // { target, t, dmg } Dark Ruler grab-and-throw
+        this.grab = null;         // universal grab (light + block): { target, t, launched }
+        this.grabbedBy = null;    // set on a fighter currently held in someone's grab
+        this.grabCd = 0;          // recovery between grab attempts
 
         // Animation variables
         this.animTimer = 0;
@@ -738,6 +741,10 @@ class Fighter {
 
         // Dark Ruler grab-and-throw plays out over a couple frames
         if (this.throwHold) this.updateThrowHold(dt);
+
+        // Universal grab (light + block) plays out over a few frames
+        if (this.grabCd > 0) this.grabCd -= dt;
+        if (this.grab) this.updateGrab(dt);
 
         // An ultimate cinematic fully drives this fighter
         if (this.state === 'ULT') { this.updateUlt(dt); return; }
@@ -1000,6 +1007,96 @@ class Fighter {
             sfx.playDeath();
             this.throwHold = null;
         }
+    }
+
+    // ---------------- UNIVERSAL GRAB (light + block) ----------------
+    findGrabTarget() {
+        let best = null, bestDx = 999;
+        for (let other of players) {
+            if (!other || other === this || other.team === this.team) continue;
+            if (other.state === 'DEAD' || other.hp <= 0 || other.invulnTimer > 0) continue;
+            if (other.grabbedBy || other.throwHold || other.grab) continue;
+            if (other.state === 'ULT' || other.state === 'LEDGE') continue;
+            if (Math.abs(other.y - this.y) > 52) continue;   // roughly level
+            let dx = Math.abs(other.x - this.x);
+            if (dx > 66) continue;                            // within reach
+            if (dx < bestDx) { bestDx = dx; best = other; }
+        }
+        return best;
+    }
+
+    tryGrab() {
+        this.grabCd = 0.55; // recovery whether it lands or whiffs
+        let foe = this.findGrabTarget();
+        if (!foe) { spawnParticles(this.x + this.dir * 36, this.y - 44, 4, '#bbb'); return; }
+        this.dir = foe.x >= this.x ? 1 : -1;
+        this.state = 'IDLE'; this.stateTimer = 0; // leave BLOCK/WALK cleanly
+        this.grab = { target: foe, t: 0, launched: false };
+        foe.grabbedBy = this;
+        foe.state = 'HITSTUN'; foe.stateTimer = 0.3; foe.vx = 0; foe.vy = 0; foe.currentAttack = null;
+        this.vx = 0;
+        playAudio(attackSfx.punch);
+        spawnParticles(foe.x, foe.y - 40, 8, '#fff');
+    }
+
+    updateGrab(dt) {
+        let g = this.grab, tg = g.target;
+        if (!tg || this.state === 'DEAD') { this.releaseGrab(); return; }
+
+        // Post-launch (2v2): let them sail clear, then force the enemy squad to tag in
+        if (g.launched) {
+            g.t += dt;
+            this.vx *= 0.8;
+            if (g.t >= 0.36) {
+                if (teamBattle && tg.team != null) switchActive(tg.team, true);
+                this.grab = null; this.grabCd = 0.6;
+            }
+            return;
+        }
+
+        if (tg.state === 'DEAD' || tg.hp <= 0) { tg.grabbedBy = null; this.grab = null; this.grabCd = 0.4; return; }
+
+        g.t += dt;
+        this.vx = 0;
+        // hold the foe helpless out in front
+        tg.state = 'HITSTUN'; tg.stateTimer = Math.max(tg.stateTimer, 0.25);
+        tg.vx = 0; tg.vy = 0;
+        tg.x = this.x + this.dir * 50; tg.y = this.y; tg.dir = -this.dir; tg.grabbedBy = this;
+
+        // 2v2 TAG-LAUNCH: tilt a direction (with ≥⅓ meter) to hurl them out and force their tag
+        if (teamBattle && g.t > 0.15 && !this.gamblerInstall) {
+            let c = this.playerControls();
+            let cost = this.meterMax / 3;
+            let bench = teams[tg.team] && teams[tg.team][1 - activeIdx[tg.team]];
+            let dirPress = keys[c.r] ? 1 : keys[c.l] ? -1 : 0;
+            if (dirPress !== 0 && this.meter >= cost && bench && bench.hp > 0) {
+                this.meter = Math.max(0, this.meter - cost);
+                tg.grabbedBy = null;
+                tg.takeDamage(10, { x: 2400 * dirPress, y: -320 }, 0.85, this, { unblockable: true });
+                tg._thrown = 1.0; // low-friction so they actually clear the arena
+                spawnParticles(tg.x, tg.y - 40, 30, tg.team === 0 ? '#fff' : '#ff0033');
+                spawnParticles(tg.x, tg.y - 40, 16, '#ffd23f');
+                sfx.playDeath();
+                this.dir = dirPress;
+                g.launched = true; g.t = 0;
+                return;
+            }
+        }
+
+        // otherwise the standard grab-throw fires after the wind-up
+        if (g.t >= 0.4) {
+            tg.grabbedBy = null;
+            tg.takeDamage(12, { x: 1600 * this.dir, y: -280 }, 0.7, this, { unblockable: true });
+            tg._thrown = 0.5;
+            spawnParticles(this.x + this.dir * 46, this.y - 40, 18, '#fff');
+            sfx.playHit();
+            this.grab = null; this.grabCd = 0.5;
+        }
+    }
+
+    releaseGrab() {
+        if (this.grab && this.grab.target && this.grab.target.grabbedBy === this) this.grab.target.grabbedBy = null;
+        this.grab = null;
     }
 
     // ---------------- COPY CAT: Cat Dash pin & Piano Drop ----------------
@@ -2297,6 +2394,7 @@ class Fighter {
 
     handleInput() {
         if (this.catPin) return; // locked while pinning a foe with Cat Dash
+        if (this.grab) return;   // locked while gripping a foe
         let controls = this.playerControls();
         let grounded = this.isGrounded();
 
@@ -2305,6 +2403,14 @@ class Fighter {
 
         // Ultimate (highest priority — can be invoked from neutral states)
         if (keyPressed(controls.ult)) { this.tryUltimate(); return; }
+
+        // GRAB — light + block together (beats block). A throw in 1v1; in 2v2 a tilt during
+        // the grip spends ⅓ meter to hurl the foe out and force them to tag out.
+        if (grounded && this.grabCd <= 0 && !this.lumActive &&
+            ((keys[controls.block] && keyPressed(controls.atkL)) || (keyPressed(controls.block) && keys[controls.atkL]))) {
+            this.tryGrab();
+            return;
+        }
 
         // Blocking
         if (keys[controls.block] && grounded && !this.lumActive) { // Lumatrossia cannot block
@@ -3241,6 +3347,8 @@ class Fighter {
     // Returns true if a real (unblocked) hit landed — used for ultimate connects.
     takeDamage(amount, kb, stun, attacker, opts = {}) {
         if (this.state === 'DEAD') return false;
+        if (this.grab) this.releaseGrab();                                   // getting hit drops your grab
+        if (this.grabbedBy) { let gr = this.grabbedBy; this.grabbedBy = null; if (gr.grab && gr.grab.target === this && !gr.grab.launched) gr.grab = null; }
         kb = { x: kb.x, y: kb.y }; // local copy so scaling never mutates the source
         // The Gambler's stance + "MAX BET" install scale all of his outgoing damage
         if (attacker && attacker !== this && attacker.charType === 'GAMBLER' && attacker.gamblerDamageMult) amount *= attacker.gamblerDamageMult();
@@ -5976,6 +6084,20 @@ class Fighter {
                 let c = Math.sin(t * 3.2) * 0.08;
                 leftArmAngle = 1.32 + c - armSwing * 0.4; leftArmBend = -0.75;
                 rightArmAngle = -0.18 + c + armSwing * 0.25; rightArmBend = 0.38;
+            }
+        }
+
+        // Universal grab: clamp the foe out front, then heave/launch them
+        if (this.grab) {
+            if (this.grab.launched || this.grab.t >= 0.4) { // explosive release
+                rightArmAngle = 2.5; rightArmBend = -0.4;
+                leftArmAngle = 2.55; leftArmBend = -0.4;
+                torsoLean = -0.18; headY += 2;
+            } else { // clamped grip
+                rightArmAngle = 1.5; rightArmBend = 0.1;
+                leftArmAngle = 1.45; leftArmBend = -0.1;
+                leftLegAngle = -0.4; rightLegAngle = 0.42; leftLegBend = 0.45; rightLegBend = 0.45;
+                torsoLean = 0.1; headY += 2;
             }
         }
 
