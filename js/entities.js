@@ -593,6 +593,7 @@ class Fighter {
         // Animation variables
         this.animTimer = 0;
         this.inputTimer = 0;
+        this.idleTime = 0; // seconds held still & untouched → triggers the signature idle flourish
 
         // The Twins — spin up the second body right beside the first (drawn + synced, never self-driven)
         if (typeName === 'TWINS' && !isPartner) {
@@ -4052,9 +4053,118 @@ class Fighter {
         let walkLift = Math.abs(walkPhase);
         let isWalkingForward = Math.sign(this.vx || this.dir) === this.dir;
 
+        // Idle-flourish timer: a fighter left untouched & motionless slips into a signature
+        // idle after a few seconds. Tracked here in draw so it behaves the same online + off.
+        if (this.state === 'IDLE' && Math.abs(this.vx) < 6 && !this.isPreview) this.idleTime = (this.idleTime || 0) + (typeof frameRealDt === 'number' && frameRealDt > 0 ? Math.min(0.05, frameRealDt) : 0.016);
+        else this.idleTime = 0;
+
         // Animation States mapping
         if (this.state === 'IDLE') {
-            if (this.charType === 'BRAWLER') {
+            if (this.idleTime > 3.5 && !this.isPreview) {
+                // ===== SIGNATURE IDLE FLOURISH — plays once a fighter is left alone & still =====
+                let ft = this.idleTime - 3.5;
+                if (this.charType === 'BRAWLER') {
+                    // shadow-boxing: bobbing with alternating jabs
+                    let jab = Math.sin(ft * 5);
+                    headY += -2 + Math.abs(Math.sin(ft * 2.5)) * 4;
+                    leftArmAngle = 1.5; leftArmBend = -1.25 + Math.max(0, jab) * 1.2;
+                    rightArmAngle = 1.5; rightArmBend = -1.25 + Math.max(0, -jab) * 1.2;
+                    leftLegAngle = 0.46; rightLegAngle = -0.46; leftLegBend = -0.2; rightLegBend = 0.2;
+                    torsoLean = 0.1 + jab * 0.05;
+                } else if (this.charType === 'SWORDSMAN') {
+                    // a slow blade kata — the sword sweeps a measured arc
+                    let s = Math.sin(ft * 1.1);
+                    rightArmAngle = -0.8 + s * 1.7; rightArmBend = -0.3 + Math.cos(ft * 1.1) * 0.3;
+                    leftArmAngle = 0.55; leftArmBend = 0.5;
+                    leftLegAngle = 0.46; rightLegAngle = -0.42; leftLegBend = -0.5; rightLegBend = 0.5;
+                    headY += s * 2; torsoLean = -0.04 + s * 0.05;
+                } else if (this.charType === 'MAGE') {
+                    // hovers higher, hands weaving slow arcane circles
+                    let w = Math.sin(ft * 1.5);
+                    headY += -11 + w * 3;
+                    leftArmAngle = 1.1 + Math.sin(ft * 1.5) * 0.3; leftArmBend = 0.4;
+                    rightArmAngle = -0.3 + Math.cos(ft * 1.5) * 0.25; rightArmBend = 0.5;
+                    leftLegAngle = 0.08; rightLegAngle = -0.14; leftLegBend = 0.45; rightLegBend = -0.35;
+                    torsoLean = w * 0.04;
+                } else if (this.charType === 'RANGER') {
+                    // twirls the pistol on his trigger finger
+                    rightArmAngle = (ft * 7) % (Math.PI * 2) - Math.PI; rightArmBend = -0.3;
+                    leftArmAngle = 0.5; leftArmBend = 1.2;
+                    leftLegAngle = 0.28; rightLegAngle = -0.2; leftLegBend = -0.3; rightLegBend = 0.34;
+                    headY += Math.sin(ft * 3) * 1.5; torsoLean = -0.06;
+                } else if (this.charType === 'DARK_RULER') {
+                    // raises a hand wreathed in dark power, head bowed in contempt
+                    let r = (Math.sin(ft * 0.9) + 1) / 2;
+                    leftArmAngle = 1.2 + r * 0.7; leftArmBend = -0.3 - r * 0.3;
+                    rightArmAngle = -1.7; rightArmBend = -0.4;
+                    leftLegAngle = -0.4; rightLegAngle = 0.4; leftLegBend = 0.4; rightLegBend = 0.4;
+                    headY += -2 + Math.sin(ft * 1.2) * 1.2; torsoLean = 0.04;
+                } else if (this.charType === 'TELEPATH') {
+                    // floats higher, both hands tracing telekinetic circles
+                    let f = Math.sin(ft * 1.4);
+                    headY += -8 + f * 4;
+                    leftArmAngle = -1.0 + Math.sin(ft * 1.4) * 0.3; leftArmBend = -0.4;
+                    rightArmAngle = 1.0 + Math.cos(ft * 1.4) * 0.3; rightArmBend = 0.4;
+                    leftLegAngle = -0.06; rightLegAngle = 0.1; leftLegBend = 0.12; rightLegBend = 0.14;
+                    torsoLean = f * 0.03;
+                } else if (this.charType === 'BEAST_TAMER') {
+                    // idly cracks the whip — winds back, then snaps it forward
+                    let cyc = (ft * 0.8) % 1, snap = cyc < 0.72 ? cyc / 0.72 : (1 - cyc) / 0.28;
+                    rightArmAngle = 2.6 - snap * 1.5; rightArmBend = -0.4 + snap * 0.3;
+                    leftArmAngle = 1.4; leftArmBend = 0.4;
+                    leftLegAngle = -0.3; rightLegAngle = 0.32; leftLegBend = 0.3; rightLegBend = 0.3;
+                    torsoLean = 0.05 + snap * 0.08;
+                } else if (this.charType === 'PHANTOM') {
+                    // wraith drift — arms spread wide, the body swaying like smoke
+                    let drift = Math.sin(ft * 1.2);
+                    leftArmAngle = 0.5 + drift * 0.35; leftArmBend = 0.3;
+                    rightArmAngle = -0.5 - drift * 0.35; rightArmBend = -0.3;
+                    leftLegAngle = 0.1; rightLegAngle = -0.16; leftLegBend = 0.4; rightLegBend = -0.3;
+                    headY += Math.sin(ft * 0.9) * 3; torsoLean = drift * 0.05;
+                } else if (this.charType === 'COPYCAT') {
+                    // breaks into a groove — bouncing and swinging to a beat
+                    let beat = Math.sin(ft * 5), roll = Math.sin(ft * 2.5);
+                    headY += beat * 5;
+                    leftArmAngle = 0.9 + Math.sin(ft * 5 + 0.5) * 0.7; leftArmBend = 0.85 + beat * 0.3;
+                    rightArmAngle = -0.9 + Math.sin(ft * 5 - 0.5) * 0.7; rightArmBend = -0.85 - beat * 0.3;
+                    leftLegAngle = 0.28 + roll * 0.08; rightLegAngle = -0.28 + roll * 0.08; leftLegBend = -0.2; rightLegBend = 0.4;
+                    torsoLean = roll * 0.1;
+                } else if (this.charType === 'CULT') {
+                    // raises both arms skyward in slow worship, hood tipped back
+                    let r = (Math.sin(ft * 0.8) + 1) / 2;
+                    leftArmAngle = 2.2 + r * 0.5; leftArmBend = -0.3;
+                    rightArmAngle = 2.6 - r * 0.4; rightArmBend = -0.3;
+                    leftLegAngle = -0.28; rightLegAngle = 0.3; leftLegBend = 0.32; rightLegBend = 0.3;
+                    headY += -2 - r * 3 + Math.sin(ft * 1.5) * 1.5; torsoLean = Math.sin(ft * 1.2) * 0.04;
+                } else if (this.charType === 'TWINS') {
+                    // a confident synced stance — arms folded, slow shared bob
+                    headY += Math.sin(ft * 2) * 2;
+                    leftArmAngle = 1.55; leftArmBend = -1.25; rightArmAngle = 1.55; rightArmBend = 1.25;
+                    leftLegAngle = -0.3; rightLegAngle = 0.32; leftLegBend = 0.32; rightLegBend = 0.3;
+                    torsoLean = 0.02;
+                } else if (this.charType === 'TRAVELER') {
+                    // checks the holo-watch, unbothered, tapping the dial
+                    let g = Math.sin(ft * 1.4);
+                    headY += 2 + g;
+                    rightArmAngle = 1.05 + Math.sin(ft * 2.2) * 0.06; rightArmBend = 1.35;
+                    leftArmAngle = -0.2; leftArmBend = 0.15;
+                    leftLegAngle = -0.38; rightLegAngle = 0.2; leftLegBend = 0.2; rightLegBend = 0.55;
+                    torsoLean = -0.06 + g * 0.02;
+                } else if (this.charType === 'GAMBLER') {
+                    // flips a coin up off his thumb and catches it, over and over
+                    let toss = Math.abs(Math.sin(ft * 2.4));
+                    rightArmAngle = 0.35 + toss * 0.35; rightArmBend = -0.2;
+                    leftArmAngle = -0.22; leftArmBend = 0.18;
+                    leftLegAngle = -0.28; rightLegAngle = 0.28; leftLegBend = 0.4; rightLegBend = 0.4;
+                    headY += Math.sin(ft * 3) * 2 - 1; torsoLean = 0.02;
+                } else {
+                    // default — a slow look-around stretch
+                    let s = Math.sin(ft * 1.2);
+                    headY += s * 2;
+                    leftArmAngle = 0.4 + s * 0.2; rightArmAngle = -0.4 - s * 0.2;
+                    leftArmBend = 0.3; rightArmBend = -0.3; torsoLean = s * 0.03;
+                }
+            } else if (this.charType === 'BRAWLER') {
                 let bounce = Math.sin(t * 9);
                 headY += bounce * 3; // Fast boxer bounce
                 leftArmAngle = -1.25 + Math.sin(t * 9) * 0.16;
