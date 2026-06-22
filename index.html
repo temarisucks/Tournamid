@@ -58,7 +58,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.33.0</span>
+        <span class="menu-version">v0.33.1</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -109,8 +109,6 @@
         <div class="menu-bg-streak"></div>
         <h2 class="menu-sub-title">Account</h2>
         <div class="online-panel">
-            <label>Relay URL</label>
-            <input id="account-relay-url" type="text" placeholder="ws://localhost:8787 or wss://your-relay-host">
             <label>Username</label>
             <input id="account-username" type="text" maxlength="16" placeholder="3-16 letters / numbers">
             <label>Password</label>
@@ -138,15 +136,13 @@
         <div class="menu-bg-streak"></div>
         <h2 class="menu-sub-title">Custom Lobby</h2>
         <div class="online-panel">
-            <label>Relay URL</label>
-            <input id="online-relay-url" type="text" placeholder="ws://localhost:8787 or wss://your-relay-host">
             <label>Room Code</label>
             <input id="online-room-code" type="text" maxlength="8" placeholder="ABCDE">
             <div class="online-actions">
                 <button class="btn menu-btn primary" onclick="onlineHostRoom()">Host Room</button>
                 <button class="btn menu-btn" onclick="onlineJoinRoom()">Join Room</button>
             </div>
-            <p id="online-status">Enter a relay URL, then host or join a friend room.</p>
+            <p id="online-status">Host or join a friend room.</p>
         </div>
         <button class="btn menu-btn ghost" onclick="showOnlineHub()">Back</button>
     </div>

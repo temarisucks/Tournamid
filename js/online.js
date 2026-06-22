@@ -35,8 +35,10 @@ let onlineState = {
     slot: null,
     connected: false,
     peerConnected: false,
+    forcedRelayUrl: null,
     localSelection: null,
     remoteSelection: null,
+    remoteUsername: '',
     // host: guest-input queue; guest: input send bookkeeping
     inputQueue: [],
     lastGuestInput: null,
@@ -77,7 +79,7 @@ function onlineSameInput(a, b) {
 function onlineDefaultUrl() {
     if (window.TOURNAMID_WS_URL) return window.TOURNAMID_WS_URL;
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return 'ws://localhost:8787';
-    return localStorage.getItem('tournamidWsUrl') || '';
+    return '';
 }
 
 function onlineSetStatus(text) {
@@ -108,10 +110,7 @@ function onlineResetRuntimeStats() {
 }
 
 function onlineGetUrl() {
-    let el = document.getElementById('online-relay-url');
-    let url = (el && el.value.trim()) || onlineDefaultUrl();
-    if (url) localStorage.setItem('tournamidWsUrl', url);
-    return url;
+    return onlineDefaultUrl();
 }
 
 // ============================ ACCOUNTS / RANKED / LEADERBOARDS ============================
@@ -128,11 +127,8 @@ function rankLabel(p) {
     return `${p.tier} • ${p.mmr}`;
 }
 
-// the account screen has its own relay-URL field; fall back to the custom-lobby field / default
 function onlineResolveUrl() {
-    let a = document.getElementById('account-relay-url');
-    if (a && a.value.trim()) { localStorage.setItem('tournamidWsUrl', a.value.trim()); return a.value.trim(); }
-    return onlineGetUrl();
+    return onlineDefaultUrl();
 }
 
 function accountStatus(text) {
@@ -147,7 +143,8 @@ let onlinePendingAfterAuth = null; // action to run once a silent re-auth comple
 // re-send the token before matchmaking / leaderboard actions will be accepted.
 function onlineEnsureConnected(cb, onFail) {
     let url = onlineResolveUrl();
-    if (!url) { if (onFail) onFail('Enter a relay URL first.'); return; }
+    if (!url) { if (onFail) onFail('Online relay is not configured.'); return; }
+    onlineState.forcedRelayUrl = url;
     let run = () => {
         if (account && !onlineState.authed) {
             let saved = null;
@@ -157,8 +154,6 @@ function onlineEnsureConnected(cb, onFail) {
         cb();
     };
     if (onlineState.socket && onlineState.socket.readyState === WebSocket.OPEN) { run(); return; }
-    let input = document.getElementById('account-relay-url');
-    if (input && input.value.trim()) localStorage.setItem('tournamidWsUrl', input.value.trim());
     onlineConnect().then(() => run()).catch(() => { if (onFail) onFail('Could not reach the relay. Check the URL.'); });
 }
 
@@ -180,8 +175,6 @@ function showOnlineHub() {
     // show the account screen; if we have a stored token, try a silent re-login
     showScreen('account-screen');
     gameState = 'ONLINE_LOBBY';
-    let urlEl = document.getElementById('account-relay-url');
-    if (urlEl && !urlEl.value) urlEl.value = onlineDefaultUrl();
     accountStatus('Log in or create an account to play online.');
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('tournamidAuth')); } catch (e) {}
@@ -278,20 +271,18 @@ function showOnlineScreen() {
     currentMode = 'ONLINE';
     onlineState.matchKind = 'custom';
     gameState = 'ONLINE_LOBBY';
-    let input = document.getElementById('online-relay-url');
-    if (input) input.value = onlineDefaultUrl();
     let room = document.getElementById('online-room-code');
     if (room) room.value = '';
-    onlineSetStatus('Enter a relay URL, then host or join a friend room.');
+    onlineSetStatus('Host or join a friend room.');
     showScreen('online-screen');
 }
 
 function onlineConnect() {
     return new Promise((resolve, reject) => {
         if (onlineState.socket && onlineState.socket.readyState === WebSocket.OPEN) return resolve(onlineState.socket);
-        let url = onlineGetUrl();
+        let url = onlineState.forcedRelayUrl || onlineGetUrl();
         if (!url) {
-            onlineSetStatus('Relay URL required. Use ws://localhost:8787 for local testing.');
+            onlineSetStatus('Online relay is not configured.');
             return reject(new Error('Missing relay URL'));
         }
 
@@ -377,6 +368,7 @@ function onlineHandleMessage(event) {
     if (msg.type === 'mm-found') {
         onlineState.matchKind = msg.mode;
         onlineState.opponent = msg.opponent || null;
+        onlineState.remoteUsername = msg.opponent && msg.opponent.username ? msg.opponent.username : '';
         onlineState.roomCode = msg.code;
         onlineState.slot = Number(msg.slot);
         onlineState.active = true;
@@ -420,7 +412,7 @@ function onlineHandleMessage(event) {
     if (msg.type === 'peer-joined') {
         onlineState.peerConnected = true;
         onlineSetStatus(`Friend joined room ${onlineState.roomCode}.`);
-        if ((onlineState.localPicks || []).length) onlineSend('select', { picks: [...onlineState.localPicks], locked: !!onlineState.localLocked });
+        if ((onlineState.localPicks || []).length) onlineSend('select', { picks: [...onlineState.localPicks], locked: !!onlineState.localLocked, username: account ? account.username : '' });
         if (gameState === 'STAGE_SELECT') onlineSend('stage', { stageId: selectedStage });
         updateOnlineSelectTitle();
         return;
@@ -462,6 +454,7 @@ function onlineHandleMessage(event) {
         // squads (ranked 2v2) — fall back to single picks for casual/custom
         onlineState.p1Picks = Array.isArray(msg.p1Picks) && msg.p1Picks.length ? msg.p1Picks : (msg.p1Selection ? [msg.p1Selection] : (onlineState.p1Picks || []));
         onlineState.p2Picks = Array.isArray(msg.p2Picks) && msg.p2Picks.length ? msg.p2Picks : (msg.p2Selection ? [msg.p2Selection] : (onlineState.p2Picks || []));
+        if (msg.p1Username || msg.p2Username) onlineState.remoteUsername = Number(onlineState.slot) === 0 ? (msg.p2Username || onlineState.remoteUsername) : (msg.p1Username || onlineState.remoteUsername);
         onlineState.teamMatch = !!msg.team;
         p1Selection = onlineState.p1Picks[0] || p1Selection;
         p2Selection = onlineState.p2Picks[0] || p2Selection;
@@ -545,6 +538,14 @@ function onlineSquadLabel(picks, locked) {
     return picks.map(c => CHARACTERS[c] ? CHARACTERS[c].name.replace('THE ', '') : c).join(' + ') + (locked ? ' ✓' : '');
 }
 
+function onlineHudNameForTeam(teamIndex) {
+    if (currentMode !== 'ONLINE') return null;
+    let localTeam = Number(onlineState.slot);
+    if (teamIndex === localTeam) return account && account.username ? account.username : (teamIndex === 0 ? 'Player 1' : 'Player 2');
+    let remote = onlineState.remoteUsername || (onlineState.opponent && onlineState.opponent.username);
+    return remote || (teamIndex === 0 ? 'Player 1' : 'Player 2');
+}
+
 function onlineRenderPicks() {
     let localPicks = onlineState.localPicks || [], remotePicks = onlineState.remotePicks || [];
     let lk = onlineLocalKey(), rk = onlineRemoteKey();
@@ -570,7 +571,7 @@ function onlinePickCharacter(resolvedType) {
     playAudio(selectVoices[resolvedType]);
     markRosterSelection(resolvedType, onlineLocalKey());
     charSelectPreview[onlineLocalKey() + 'Burst'] = 1;
-    onlineSend('select', { picks: [...onlineState.localPicks], locked: false });
+    onlineSend('select', { picks: [...onlineState.localPicks], locked: false, username: account ? account.username : '' });
     onlineRenderPicks();
     updateOnlineSelectTitle();
 }
@@ -581,7 +582,7 @@ function onlineUndoStep() {
     if (currentMode !== 'ONLINE') return false;
     if (onlineState.localLocked) {
         onlineState.localLocked = false;
-        onlineSend('select', { picks: [...(onlineState.localPicks || [])], locked: false });
+        onlineSend('select', { picks: [...(onlineState.localPicks || [])], locked: false, username: account ? account.username : '' });
         onlineRenderPicks();
         updateOnlineSelectTitle();
         return true;
@@ -589,7 +590,7 @@ function onlineUndoStep() {
     if ((onlineState.localPicks || []).length > 0) {
         onlineState.localPicks.pop();
         markRosterSelection(onlineState.localPicks[0] || null, onlineLocalKey());
-        onlineSend('select', { picks: [...onlineState.localPicks], locked: false });
+        onlineSend('select', { picks: [...onlineState.localPicks], locked: false, username: account ? account.username : '' });
         onlineRenderPicks();
         updateOnlineSelectTitle();
         return true;
@@ -600,7 +601,7 @@ function onlineUndoStep() {
 function onlineResetPicks() {
     onlineState.localPicks = [];
     onlineState.localLocked = false;
-    onlineSend('select', { picks: [], locked: false });
+    onlineSend('select', { picks: [], locked: false, username: account ? account.username : '' });
     onlineRenderPicks();
     updateOnlineSelectTitle();
 }
@@ -608,7 +609,7 @@ function onlineResetPicks() {
 function onlineConfirmPicks() {
     if (onlineState.localLocked || (onlineState.localPicks || []).length !== onlineState.squadSize) return;
     onlineState.localLocked = true;
-    onlineSend('select', { picks: [...onlineState.localPicks], locked: true });
+    onlineSend('select', { picks: [...onlineState.localPicks], locked: true, username: account ? account.username : '' });
     onlineRenderPicks();
     updateOnlineSelectTitle();
     onlineMaybeAdvanceFromCharacterSelect();
@@ -619,6 +620,7 @@ function onlineApplyRemoteSelection(data) {
               : (data && CHARACTERS[data.charType] ? [data.charType] : []); // legacy single-char fallback
     onlineState.remotePicks = picks;
     onlineState.remoteLocked = !!(data && data.locked);
+    if (data && data.username) onlineState.remoteUsername = data.username;
     onlineState.peerConnected = true;
     onlineRenderPicks();
     updateOnlineSelectTitle();
@@ -678,6 +680,8 @@ function onlineStartGame() {
     onlineSend('start', {
         stageId: selectedStage, p1Picks, p2Picks,
         p1Selection: p1Picks[0], p2Selection: p2Picks[0],
+        p1Username: account && account.username ? account.username : '',
+        p2Username: onlineState.remoteUsername || (onlineState.opponent && onlineState.opponent.username) || '',
         team: onlineState.matchKind === 'ranked',
         entSeed: Math.floor(Math.random() * 1000)
     });
@@ -1356,8 +1360,10 @@ function onlineDisconnect() {
         slot: null,
         connected: false,
         peerConnected: false,
+        forcedRelayUrl: null,
         localSelection: null,
         remoteSelection: null,
+        remoteUsername: '',
         inputQueue: [],
         lastGuestInput: null,
         lastSentInput: null,

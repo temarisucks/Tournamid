@@ -301,7 +301,8 @@ const HOWTO = [
     { h: "Specials", lines: ["Hold a direction + Special for", "Up / Down / Side / Neutral moves.", "Each fighter has four — see Character Info."] },
     { h: "Combos", lines: ["Chain Light & Heavy (e.g. L-L-H)", "for unique combo finishers.", "Land hits to keep pressure."] },
     { h: "Block & Guard Break", lines: ["Hold Block to absorb hits, but every", "blocked hit drains your guard.", "Empty it and your guard SHATTERS — fully open."] },
-    { h: "Ultimate Meter", lines: ["Charge by dealing and (more so) taking damage.", "When full, press Ultimate to start a cinematic.", "Land the opener and the ultimate is guaranteed."] },
+    { h: "Grabs", lines: ["Press <b>Light + Block</b> together to grab, then throw.", "A grab beats a blocking foe, and every fighter", "grabs in their own unique style.", "<b>2v2:</b> grab + push a direction spends <b>1/3 meter</b>", "(see the lines on the meter) to launch the foe", "out of the arena and force them to tag out."] },
+    { h: "Ultimate Meter", lines: ["Charge by dealing and (more so) taking damage.", "When full, press Ultimate to start a cinematic.", "Land the opener and the ultimate is guaranteed.", "The two lines mark 1/3 &amp; 2/3 (for tag-out grabs)."] },
     { h: "Rounds", lines: ["Versus matches are <b>best of 3</b>.", "First to win two rounds takes the match."] },
     { h: "Stages & Ring Out", lines: ["On Sky Platform you can fall off the map.", "Falling = a loss; grab the ledge to survive,", "press Up to climb or away to drop."] }
 ];
@@ -662,6 +663,17 @@ function drawPreviewFighter(previewCtx, charType, x, team, dir, burst) {
     fighter.draw(previewCtx);
 }
 
+function previewTeamForSide(side) {
+    if (currentMode === 'ONLINE' && onlineState && onlineState.squadSize === 2) {
+        let local = onlineState.localPicks || [];
+        let remote = onlineState.remotePicks || [];
+        let isHost = Number(onlineState.slot) === 0;
+        return side === 0 ? (isHost ? local : remote) : (isHost ? remote : local);
+    }
+    if (isTeamSelectMode()) return side === 0 ? playerTeam : opponentTeam;
+    return side === 0 ? (charSelectPreview.p1 ? [charSelectPreview.p1] : []) : (charSelectPreview.p2 ? [charSelectPreview.p2] : []);
+}
+
 function drawCharacterSelectPreview(dt) {
     if (gameState !== 'CHAR_SELECT') return;
 
@@ -687,8 +699,18 @@ function drawCharacterSelectPreview(dt) {
     previewCtx.textAlign = 'center';
     previewCtx.fillText('VS', previewCanvas.width / 2, 104);
 
-    drawPreviewFighter(previewCtx, charSelectPreview.p1, 270, 0, 1, charSelectPreview.p1Burst);
-    if (currentMode !== 'PVE') drawPreviewFighter(previewCtx, charSelectPreview.p2, 690, 1, -1, charSelectPreview.p2Burst);
+    let teamPreview = isTeamSelectMode() || (currentMode === 'ONLINE' && onlineState && onlineState.squadSize === 2);
+    if (teamPreview) {
+        let leftTeam = previewTeamForSide(0);
+        let rightTeam = previewTeamForSide(1);
+        drawPreviewFighter(previewCtx, leftTeam[0] || null, 228, 0, 1, charSelectPreview.p1Burst);
+        drawPreviewFighter(previewCtx, leftTeam[1] || null, 318, 0, 1, charSelectPreview.p1Burst * 0.8);
+        drawPreviewFighter(previewCtx, rightTeam[0] || null, 732, 1, -1, charSelectPreview.p2Burst);
+        drawPreviewFighter(previewCtx, rightTeam[1] || null, 642, 1, -1, charSelectPreview.p2Burst * 0.8);
+    } else {
+        drawPreviewFighter(previewCtx, charSelectPreview.p1, 270, 0, 1, charSelectPreview.p1Burst);
+        if (currentMode !== 'PVE') drawPreviewFighter(previewCtx, charSelectPreview.p2, 690, 1, -1, charSelectPreview.p2Burst);
+    }
 }
 
 function goToCharSelect(mode) {
@@ -888,8 +910,10 @@ function buildTeams(p1chars, p2chars, cpuLevel, p1AI = false, p2AI = true) {
     activeIdx = [0, 0];
     pendingTag = [0, 0];
     players = [teams[0][0], teams[1][0]];
-    document.getElementById('p1-name').innerText = (p1AI ? "CPU - " : "") + CHARACTERS[p1chars[0]].name;
-    document.getElementById('p2-name').innerText = (p2AI ? "CPU - " : "P2 - ") + CHARACTERS[p2chars[0]].name;
+    let onlineP1 = typeof onlineHudNameForTeam === 'function' ? onlineHudNameForTeam(0) : null;
+    let onlineP2 = typeof onlineHudNameForTeam === 'function' ? onlineHudNameForTeam(1) : null;
+    document.getElementById('p1-name').innerText = onlineP1 || ((p1AI ? "CPU - " : "") + CHARACTERS[p1chars[0]].name);
+    document.getElementById('p2-name').innerText = onlineP2 || ((p2AI ? "CPU - " : "P2 - ") + CHARACTERS[p2chars[0]].name);
 }
 
 function startGame() {
@@ -943,7 +967,9 @@ function startGame() {
         document.getElementById('timer').innerText = matchTimer;
     } else {
         players.push(new Fighter('P1', WIDTH/4, p1Selection, currentMode === 'CPU_WATCH', 0));
-        document.getElementById('p1-name').innerText = (currentMode === 'CPU_WATCH' ? "CPU - " : "") + CHARACTERS[p1Selection].name;
+        let onlineP1 = typeof onlineHudNameForTeam === 'function' ? onlineHudNameForTeam(0) : null;
+        let onlineP2 = typeof onlineHudNameForTeam === 'function' ? onlineHudNameForTeam(1) : null;
+        document.getElementById('p1-name').innerText = onlineP1 || ((currentMode === 'CPU_WATCH' ? "CPU - " : "") + CHARACTERS[p1Selection].name);
 
         if (trainingMode) {
             // Standing dummy to practice combos / ultimates on
@@ -963,7 +989,7 @@ function startGame() {
         } else {
             players.push(new Fighter('P2', WIDTH*0.75, p2Selection, currentMode === 'CPU' || currentMode === 'CPU_WATCH', 1));
             players.forEach(p => { if (p.isAI && !p.isDummy) p.aiLevel = cpuLevelValue(); }); // covers CPU + both watch-mode fighters
-            document.getElementById('p2-name').innerText = (currentMode === 'CPU' || currentMode === 'CPU_WATCH') ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name;
+            document.getElementById('p2-name').innerText = onlineP2 || ((currentMode === 'CPU' || currentMode === 'CPU_WATCH') ? "CPU - " + CHARACTERS[p2Selection].name : "P2 - " + CHARACTERS[p2Selection].name);
             document.getElementById('timer').classList.remove('hidden');
             document.getElementById('wave-counter').classList.add('hidden');
             matchTimer = 99;
