@@ -24,6 +24,7 @@
         h1 { font-size: 4rem; letter-spacing: 10px; color: #fff; text-transform: uppercase; margin-bottom: 10px; text-shadow: 4px 4px 0 #900; }
         h2 { font-size: 2rem; margin-bottom: 30px; }
         p.subtitle { color: #aaa; margin-bottom: 40px; }
+        p.ranked-result { min-height: 1.35em; margin: -20px 0 18px; color: #ffd27f; letter-spacing: 1px; }
         
         .btn { background: transparent; border: 2px solid #fff; color: #fff; padding: 15px 40px; font-size: 1.2rem; font-family: inherit; text-transform: uppercase; cursor: pointer; margin: 10px; transition: all 0.2s; min-width: 300px; }
         .btn:hover { background: #fff; color: #000; font-weight: bold; }

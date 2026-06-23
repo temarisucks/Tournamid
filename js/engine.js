@@ -1057,6 +1057,8 @@ function endGame(title, subtitle) {
     gameState = 'END';
     document.getElementById('end-title').innerText = title;
     document.getElementById('end-subtitle').innerText = subtitle;
+    let rankedResultEl = document.getElementById('end-ranked-result');
+    if (rankedResultEl && !(currentMode === 'ONLINE' && onlineState.matchKind === 'ranked')) rankedResultEl.innerText = '';
     let gear = document.getElementById('settings-btn'); if (gear) gear.classList.remove('hidden');
 
     // The match is over — tear down any in-progress ultimate cinematic. updateUlt

@@ -24,9 +24,11 @@ const ONLINE_REMOTE_BINDINGS = {
 const ONLINE_ACTIONS = ['l', 'r', 'u', 'd', 'block', 'atkL', 'atkH', 'special', 'ult', 'tag'];
 const ONLINE_TAP_ACTIONS = ['u', 'atkL', 'atkH', 'special', 'ult', 'tag']; // edge-triggered — never drop these
 const ONLINE_SNAPSHOT_RATE = 1 / 30; // host → guest state, 30x/sec
+const ONLINE_TEAM_SNAPSHOT_RATE = 1 / 24; // ranked 2v2 carries more state; prediction fills the gaps
 const ONLINE_INPUT_HEARTBEAT = 0.05; // guest → host inputs re-sent at least this often
 const ONLINE_PING_RATE = 1.0;
 const ONLINE_REMOTE_STALE_MS = 300;  // no traffic for this long → treat remote input as released
+const ONLINE_MAX_SYNC_BUFFER = 48 * 1024; // avoid seconds of queued stale snapshots on ranked 2v2
 
 let onlineState = {
     active: false,
@@ -56,9 +58,13 @@ let onlineState = {
     lastRemoteInputAt: 0,
     lastRemoteInputMs: null,
     remoteInputStale: false,
+    lastHpSig: null,
+    lastImpactAt: 0,
     postMatchLocal: null,
     postMatchRemote: null,
     disconnecting: false,
+    rankedResult: null,
+    droppedSyncs: 0,
     status: ''
 };
 
@@ -102,9 +108,14 @@ function onlineResetRuntimeStats() {
     onlineState.lastRemoteInputAt = 0;
     onlineState.lastRemoteInputMs = null;
     onlineState.remoteInputStale = false;
+    onlineState.lastHpSig = null;
+    onlineState.lastImpactAt = 0;
     onlineState.postMatchLocal = null;
     onlineState.postMatchRemote = null;
     onlineState.disconnecting = false;
+    onlineState.rankedResult = null;
+    onlineState.droppedSyncs = 0;
+    onlineRenderRankedResult();
     onlineMarkRemoteTraffic();
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });
 }
@@ -125,6 +136,31 @@ onlineState.queueMode = null;       // which queue we're sitting in, if any
 function rankLabel(p) {
     if (!p) return '';
     return `${p.tier} • ${p.mmr}`;
+}
+
+function onlineRankedResultText(result) {
+    if (!result || result.mode !== 'ranked') return '';
+    let delta = Number(result.delta) || 0;
+    let sign = delta > 0 ? '+' : '';
+    let outcome = result.won ? 'WIN' : 'LOSS';
+    let tier = result.newTier || (account && account.tier) || '';
+    let mmr = Number.isFinite(Number(result.newMmr)) ? Number(result.newMmr) : (account && account.mmr);
+    let rank = tier && mmr != null ? `${tier} (${mmr})` : (tier || (mmr != null ? String(mmr) : ''));
+    return rank
+        ? `${outcome} ${sign}${delta} ELO - Current rank: ${rank}`
+        : `${outcome} ${sign}${delta} ELO`;
+}
+
+function onlineRenderRankedResult() {
+    let el = document.getElementById('end-ranked-result');
+    if (!el) return;
+    if (currentMode !== 'ONLINE' || onlineState.matchKind !== 'ranked') {
+        el.innerText = '';
+        return;
+    }
+    el.innerText = onlineState.rankedResult
+        ? onlineRankedResultText(onlineState.rankedResult)
+        : 'Updating ranked result...';
 }
 
 function onlineResolveUrl() {
@@ -215,9 +251,25 @@ function accountLogout() {
     showOnlineHub();
 }
 
-function applyProfile(p) {
+function applyProfile(p, result) {
+    if (result && result.mode === 'ranked') {
+        onlineState.rankedResult = result;
+    } else if (onlineState.matchKind === 'ranked' && account && p &&
+               Number.isFinite(Number(account.mmr)) && Number.isFinite(Number(p.mmr)) &&
+               Number(account.mmr) !== Number(p.mmr)) {
+        onlineState.rankedResult = {
+            mode: 'ranked',
+            won: Number(p.mmr) > Number(account.mmr),
+            oldMmr: Number(account.mmr),
+            newMmr: Number(p.mmr),
+            delta: Number(p.mmr) - Number(account.mmr),
+            oldTier: account.tier,
+            newTier: p.tier
+        };
+    }
     account = p;
     refreshAccountUI();
+    onlineRenderRankedResult();
 }
 
 // reflect the current login state across the menus
@@ -333,6 +385,21 @@ function onlineSend(type, data = {}) {
     ws.send(JSON.stringify({ type, ...data }));
 }
 
+function onlineSnapshotInterval() {
+    return teamBattle ? ONLINE_TEAM_SNAPSHOT_RATE : ONLINE_SNAPSHOT_RATE;
+}
+
+function onlineSendSnapshot(force = false) {
+    let ws = onlineState.socket;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    if (!force && ws.bufferedAmount > ONLINE_MAX_SYNC_BUFFER) {
+        onlineState.droppedSyncs = (onlineState.droppedSyncs || 0) + 1;
+        return false;
+    }
+    onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
+    return true;
+}
+
 function onlineHandleMessage(event) {
     let msg;
     try { msg = JSON.parse(event.data); } catch (e) { return; }
@@ -357,7 +424,7 @@ function onlineHandleMessage(event) {
         if (gameState === 'ONLINE_LOBBY') showScreen('account-screen');
         return;
     }
-    if (msg.type === 'rank-update') { applyProfile(msg.profile); return; }
+    if (msg.type === 'rank-update') { applyProfile(msg.profile, msg.result); return; }
 
     // ---- matchmaking ----
     if (msg.type === 'mm-status') {
@@ -732,6 +799,7 @@ function onlineBeginPostMatch() {
     if (c) c.innerText = 'Change Character';
     if (m) m.innerText = 'Leave';
     onlineSetEndButtonsDisabled(false);
+    onlineRenderRankedResult();
     let status = document.getElementById('end-status');
     if (status) status.innerText = '';
     onlineUpdatePostMatchUI();   // show any choice that already arrived
@@ -861,9 +929,9 @@ function onlineTick(dt) {
     if (onlineState.slot === 0) {
         onlineState.snapTimer += dt;
         // no snapshots during the entrance ceremony — each side runs it locally
-        if (onlineState.snapTimer >= ONLINE_SNAPSHOT_RATE && !entranceSeq) {
+        if (onlineState.snapTimer >= onlineSnapshotInterval() && !entranceSeq) {
             onlineState.snapTimer = 0;
-            onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
+            onlineSendSnapshot(false);
         }
     } else if (onlineState.lastSnapAt) {
         onlineState.snapAgeMs = performance.now() - onlineState.lastSnapAt;
@@ -895,7 +963,7 @@ function onlineFixedUpdate(realDt) {
                 (dying || now - (onlineState.lastImpactAt || 0) >= 40)) {
                 onlineState.lastImpactAt = now;
                 onlineState.snapTimer = 0;
-                onlineSend('sync', { snap: onlineHostCaptureSnapshot() });
+                onlineSendSnapshot(dying);
             }
         }
     } else {
@@ -930,6 +998,17 @@ const ONLINE_FIGHTER_FIELDS = [
     'overkillRed', '_overkilled'
 ];
 
+const ONLINE_BENCH_FIELDS = [
+    'x', 'y', 'vx', 'vy', 'dir', 'state', 'stateTimer', 'animTimer',
+    'hp', 'maxHp', 'recoverableHp', 'meter', 'meterMax', 'blockHealth', 'blockMax',
+    'charType', 'invulnTimer', 'switchCooldown', 'ultUnlocked',
+    'devotion', 'lumActive', 'lumTimer', 'maskId',
+    'symBuff', 'twinOffset',
+    'beastIndex', 'gamblerLuck', 'gamblerSavings', 'gamblerInstall',
+    'gamblerTimer', 'gamblerMix', 'gamblerJackpots',
+    'overkillRed', '_overkilled'
+];
+
 function onlineCapturePlain(value) { // tiny deep clone for small plain objects
     return value == null ? null : JSON.parse(JSON.stringify(value, (k, v) => (typeof v === 'function' ? undefined : v)));
 }
@@ -949,6 +1028,17 @@ function onlineHostCaptureFighter(p) {
         x: p.partner.x, y: p.partner.y, dir: p.partner.dir, state: p.partner.state,
         stateTimer: p.partner.stateTimer, animTimer: p.partner.animTimer,
         tumbleTimer: p.partner.tumbleTimer, _tumbleAngle: p.partner._tumbleAngle
+    } : null;
+    return out;
+}
+
+function onlineHostCaptureBenchFighter(p) {
+    if (!p) return null;
+    let out = {};
+    ONLINE_BENCH_FIELDS.forEach(k => { out[k] = p[k]; });
+    out.partner = p.partner ? {
+        x: p.partner.x, y: p.partner.y, dir: p.partner.dir, state: p.partner.state,
+        stateTimer: p.partner.stateTimer, animTimer: p.partner.animTimer
     } : null;
     return out;
 }
@@ -980,7 +1070,7 @@ function onlineHostCaptureSnapshot() {
             let ok = teamBattle && teams[0] && teams[0].length === 2 && teams[1] && teams[1].length === 2;
             if (!ok) return { tb: false, ai: null, bench: null };
             return { tb: true, ai: [activeIdx[0], activeIdx[1]],
-                bench: [onlineHostCaptureFighter(teams[0][1 - activeIdx[0]]), onlineHostCaptureFighter(teams[1][1 - activeIdx[1]])] };
+                bench: [onlineHostCaptureBenchFighter(teams[0][1 - activeIdx[0]]), onlineHostCaptureBenchFighter(teams[1][1 - activeIdx[1]])] };
         })()
     };
 }
@@ -1070,6 +1160,12 @@ function onlineGuestApplySnapshot(snap) {
 // States where the host's word is law even for the predicted local fighter
 const ONLINE_FORCED_STATES = ['HITSTUN', 'DEAD', 'BLOCKBREAK', 'ULT', 'LEDGE'];
 
+function onlineApplyFighterFields(p, src) {
+    ONLINE_FIGHTER_FIELDS.forEach(k => {
+        if (Object.prototype.hasOwnProperty.call(src, k)) p[k] = src[k];
+    });
+}
+
 function onlineGuestApplyFighter(p, src, isOwn) {
     // derive local feedback from the diffs BEFORE overwriting
     let hpDrop = p.hp - src.hp;
@@ -1089,7 +1185,7 @@ function onlineGuestApplyFighter(p, src, isOwn) {
         // and poses instantly; the host stays authoritative for combat results.
         let keepX = p.x, keepY = p.y, keepVx = p.vx, keepVy = p.vy, keepDir = p.dir;
         let keepState = p.state, keepTimer = p.stateTimer, keepAtk = p.currentAttack;
-        ONLINE_FIGHTER_FIELDS.forEach(k => { p[k] = src[k]; });
+        onlineApplyFighterFields(p, src);
         if (ONLINE_FORCED_STATES.includes(src.state) || ONLINE_FORCED_STATES.includes(keepState)) {
             // getting hit / dying / ulting: the host's version wins outright
             p.currentAttack = src.atk || null;
@@ -1123,14 +1219,16 @@ function onlineGuestApplyFighter(p, src, isOwn) {
             }
         }
     } else {
-        ONLINE_FIGHTER_FIELDS.forEach(k => { p[k] = src[k]; });
-        p.currentAttack = src.atk || null;
+        onlineApplyFighterFields(p, src);
+        if (Object.prototype.hasOwnProperty.call(src, 'atk')) p.currentAttack = src.atk || null;
     }
-    p.ult = src.ult ? { ...src.ult, target: players[src.ult.targetIndex] || null } : null;
-    p.tether = src.tether ? { ...src.tether } : null;
-    p.puppet = src.puppet
-        ? { hist: [{ x: src.puppet.x, dir: p.dir, state: 'IDLE', atk: null, st: 0, anim: 0, y: stageGroundYAt(src.puppet.x, GROUND_Y) }], t: 0, delay: 13, fall: src.puppet.fall }
-        : null;
+    if (Object.prototype.hasOwnProperty.call(src, 'ult')) p.ult = src.ult ? { ...src.ult, target: players[src.ult.targetIndex] || null } : null;
+    if (Object.prototype.hasOwnProperty.call(src, 'tether')) p.tether = src.tether ? { ...src.tether } : null;
+    if (Object.prototype.hasOwnProperty.call(src, 'puppet')) {
+        p.puppet = src.puppet
+            ? { hist: [{ x: src.puppet.x, dir: p.dir, state: 'IDLE', atk: null, st: 0, anim: 0, y: stageGroundYAt(src.puppet.x, GROUND_Y) }], t: 0, delay: 13, fall: src.puppet.fall }
+            : null;
+    }
     if (p.partner && src.partner) {
         Object.assign(p.partner, src.partner);
         p.partner.hp = p.hp; p.partner.maxHp = p.maxHp; p.partner.team = p.team; p.partner.symBuff = p.symBuff;
@@ -1378,9 +1476,13 @@ function onlineDisconnect() {
         lastRemoteInputAt: 0,
         lastRemoteInputMs: null,
         remoteInputStale: false,
+        lastHpSig: null,
+        lastImpactAt: 0,
         postMatchLocal: null,
         postMatchRemote: null,
         disconnecting: false,
+        rankedResult: null,
+        droppedSyncs: 0,
         status: ''
     };
     ONLINE_ACTIONS.forEach(action => { keys[ONLINE_REMOTE_BINDINGS[action]] = false; });

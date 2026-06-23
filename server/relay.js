@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 
 const PORT = Number(process.env.PORT || 8787);
 const rooms = new Map();
+const MAX_SYNC_BUFFER = Number(process.env.MAX_SYNC_BUFFER || 64 * 1024);
 
 // ============================ PERSISTENT STORE ============================
 // Accounts + leaderboards live in a JSON file. The path is configurable so the
@@ -227,6 +228,8 @@ function handleMatchResult(ws, msg, room) {
   const hostWon = Number(msg.winner) === 0; // winner is 0 (host) or 1 (guest)
   const winnerAcc = hostWon ? hostAcc : guestAcc;
   const loserAcc = hostWon ? guestAcc : hostAcc;
+  const hostBefore = { mmr: hostAcc.mmr, tier: tierFromMmr(hostAcc.mmr) };
+  const guestBefore = { mmr: guestAcc.mmr, tier: tierFromMmr(guestAcc.mmr) };
 
   if (mode === 'ranked') {
     applyEloResult(winnerAcc, loserAcc);
@@ -235,8 +238,20 @@ function handleMatchResult(ws, msg, room) {
     winnerAcc.casualWins++; loserAcc.casualLosses++;
   }
   saveStore();
-  if (room.clients[0]) send(room.clients[0], 'rank-update', { profile: publicProfile(hostAcc) });
-  if (room.clients[1]) send(room.clients[1], 'rank-update', { profile: publicProfile(guestAcc) });
+  const hostProfile = publicProfile(hostAcc);
+  const guestProfile = publicProfile(guestAcc);
+  const hostResult = mode === 'ranked' ? {
+    mode, won: hostWon,
+    oldMmr: hostBefore.mmr, newMmr: hostAcc.mmr, delta: hostAcc.mmr - hostBefore.mmr,
+    oldTier: hostBefore.tier, newTier: hostProfile.tier
+  } : { mode, won: hostWon };
+  const guestResult = mode === 'ranked' ? {
+    mode, won: !hostWon,
+    oldMmr: guestBefore.mmr, newMmr: guestAcc.mmr, delta: guestAcc.mmr - guestBefore.mmr,
+    oldTier: guestBefore.tier, newTier: guestProfile.tier
+  } : { mode, won: !hostWon };
+  if (room.clients[0]) send(room.clients[0], 'rank-update', { profile: hostProfile, result: hostResult });
+  if (room.clients[1]) send(room.clients[1], 'rank-update', { profile: guestProfile, result: guestResult });
 }
 
 // ============================ LEADERBOARDS ============================
@@ -283,6 +298,7 @@ function roomCode() {
 
 function send(ws, type, data = {}) {
   if (!ws || ws.readyState !== ws.OPEN) return;
+  if (type === 'sync' && ws.bufferedAmount > MAX_SYNC_BUFFER) return;
   ws.send(JSON.stringify({ type, ...data }));
 }
 
