@@ -97,6 +97,20 @@ let infiniteMeter = false; // training toggle: ultimates always ready
 let trainingMode = false;  // dummy opponent
 let dummyBehavior = 'idle'; // training dummy behavior: idle|center|forward|backward|jump|light|heavy|block|cpu
 let timeScale = 1;         // global slow-motion factor (cinematics)
+let hitStopTimer = 0;      // ordinary-hit impact freeze (seconds, counted in real time)
+let cameraShake = 0;       // short screen-space impact impulse
+let cameraShakePower = 0;
+
+function triggerImpactFeedback(damage, kind = 'hit') {
+    // Online remains host-authoritative and does not pause simulation; snapshots would
+    // otherwise turn a cosmetic freeze into extra network latency.
+    if (currentMode === 'ONLINE' || ultActive) return;
+    let freeze = kind === 'break' ? 0.115 : kind === 'block' ? 0.035
+        : damage >= 14 ? 0.095 : damage >= 9 ? 0.07 : 0.045;
+    hitStopTimer = Math.max(hitStopTimer, freeze);
+    cameraShake = Math.max(cameraShake, kind === 'break' ? 0.18 : freeze + 0.035);
+    cameraShakePower = Math.max(cameraShakePower, kind === 'break' ? 10 : damage >= 14 ? 7 : damage >= 9 ? 4.5 : 2.5);
+}
 let ultBanner = null;      // { owner, line, t, dur } cinematic title card
 let ultCamera = null;      // { x, y, zoom, t, dur } cinematic camera focus
 let ultActive = null;      // the Fighter currently performing an ultimate
@@ -1000,10 +1014,12 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys[e.code] = false);
 
+
 function createAttackVariant(fighter, variant) {
     const baseLight = fighter.attacks.light;
     const baseHeavy = fighter.attacks.heavy || baseLight;
-    const comboScale = fighter.charType === 'SWORDSMAN' ? 1.12 : fighter.charType === 'MAGE' ? 0.92 : fighter.charType === 'RANGER' ? 1.0 : fighter.charType === 'TWINS' ? 0.62 : 1.18; // Twins land twice, so each combo hit is smaller
+    const profile = NORMAL_PROFILES[fighter.charType] || {};
+    const comboScale = profile.comboScale || 1;
     const melee = (source, overrides) => ({ ...source, isProj: false, pSpeed: undefined, pLife: undefined, ...overrides });
 
     const variants = {
@@ -1011,14 +1027,31 @@ function createAttackVariant(fighter, variant) {
         airHeavy: melee(baseHeavy, { startup: 0.18, active: 0.18, recovery: 0.34, dmg: 12, w: 62, h: 52, ox: 22, oy: -52, kb: {x: 180, y: 220}, stun: 0.38, type: 'airHeavy' }),
         lowLight: melee(baseLight, { startup: 0.08, active: 0.12, recovery: 0.18, dmg: 5, w: 52, h: 18, ox: 16, oy: -24, kb: {x: 90, y: 20}, stun: 0.22, type: 'lowLight' }),
         lowHeavy: melee(baseHeavy, { startup: 0.2, active: 0.18, recovery: 0.32, dmg: 11, w: 74, h: 22, ox: 18, oy: -22, kb: {x: 210, y: -80}, stun: 0.38, type: 'lowHeavy' }),
+        chainLL: melee(baseLight, { startup: 0.07, active: 0.12, recovery: 0.19, dmg: Math.round(5 * comboScale), w: 58, h: 28, ox: 20, oy: -52, kb: {x: 115, y: -55}, stun: 0.25, type: 'chainLL', combo: 'LL' }),
+        chainHH: melee(baseHeavy, { startup: 0.16, active: 0.16, recovery: 0.27, dmg: Math.round(10 * comboScale), w: 72, h: 46, ox: 22, oy: -56, kb: {x: 205, y: -125}, stun: 0.38, type: 'chainHH', combo: 'HH' }),
+        chainHL: melee(baseLight, { startup: 0.09, active: 0.13, recovery: 0.2, dmg: Math.round(6 * comboScale), w: 62, h: 30, ox: 22, oy: -48, kb: {x: 135, y: -80}, stun: 0.28, type: 'chainHL', combo: 'HL' }),
         comboLLL: melee(baseLight, { startup: 0.08, active: 0.18, recovery: 0.28, dmg: Math.round(10 * comboScale), w: 70, h: 34, ox: 22, oy: -54, kb: {x: 290, y: -120}, stun: 0.42, type: 'comboLLL', combo: 'LLL' }),
         comboLLH: melee(baseHeavy, { startup: 0.14, active: 0.2, recovery: 0.34, dmg: Math.round(13 * comboScale), w: 66, h: 62, ox: 18, oy: -70, kb: {x: 170, y: -520}, stun: 0.5, type: 'comboLLH', combo: 'LLH' }),
         comboLH: melee(baseHeavy, { startup: 0.12, active: 0.17, recovery: 0.28, dmg: Math.round(9 * comboScale), w: 66, h: 34, ox: 22, oy: -48, kb: {x: 240, y: -80}, stun: 0.34, type: 'comboLH', combo: 'LH' }),
         comboLHL: melee(baseLight, { startup: 0.1, active: 0.18, recovery: 0.3, dmg: Math.round(12 * comboScale), w: 82, h: 24, ox: 18, oy: -30, kb: {x: 260, y: -220}, stun: 0.46, type: 'comboLHL', combo: 'LHL' }),
+        comboLHH: melee(baseHeavy, { startup: 0.15, active: 0.2, recovery: 0.34, dmg: Math.round(14 * comboScale), w: 76, h: 54, ox: 22, oy: -58, kb: {x: 315, y: -230}, stun: 0.5, type: 'comboLHH', combo: 'LHH' }),
         comboHLL: melee(baseHeavy, { startup: 0.13, active: 0.2, recovery: 0.34, dmg: Math.round(14 * comboScale), w: 58, h: 54, ox: 20, oy: -58, kb: {x: 330, y: -180}, stun: 0.5, type: 'comboHLL', combo: 'HLL' }),
         comboHLH: melee(baseHeavy, { startup: 0.16, active: 0.2, recovery: 0.36, dmg: Math.round(15 * comboScale), w: 72, h: 60, ox: 22, oy: -60, kb: {x: 300, y: -320}, stun: 0.54, type: 'comboHLH', combo: 'HLH' }),
-        comboHHL: melee(baseLight, { startup: 0.12, active: 0.2, recovery: 0.34, dmg: Math.round(13 * comboScale), w: 88, h: 28, ox: 20, oy: -34, kb: {x: 340, y: -210}, stun: 0.5, type: 'comboHHL', combo: 'HHL' })
+        comboHHL: melee(baseLight, { startup: 0.12, active: 0.2, recovery: 0.34, dmg: Math.round(13 * comboScale), w: 88, h: 28, ox: 20, oy: -34, kb: {x: 340, y: -210}, stun: 0.5, type: 'comboHHL', combo: 'HHL' }),
+        comboHHH: melee(baseHeavy, { startup: 0.2, active: 0.22, recovery: 0.4, dmg: Math.round(17 * comboScale), w: 86, h: 62, ox: 24, oy: -62, kb: {x: 390, y: -260}, stun: 0.58, type: 'comboHHH', combo: 'HHH' })
     };
+
+    // Profile data wins over the universal fallback. Preserve the semantic type so the
+    // state machine still recognizes low/aerial moves, while carrying a pose/name for UI.
+    if (profile[variant] && variants[variant]) {
+        variants[variant] = { ...variants[variant], ...profile[variant], type: variant };
+    }
+    if (variant.startsWith('combo') && variants[variant]) {
+        let pattern = variants[variant].combo;
+        variants[variant].displayName = profile.comboNames && profile.comboNames[pattern]
+            ? profile.comboNames[pattern] : pattern;
+        variants[variant].pose = 'combo' + pattern;
+    }
 
     if (fighter.charType === 'MAGE' && variant.startsWith('combo')) {
         variants[variant].w += 12;

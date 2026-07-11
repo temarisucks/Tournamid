@@ -220,14 +220,22 @@ const CHAR_INFO = [
 
 function showCharInfo() {
     let grid = document.getElementById('info-grid');
-    grid.innerHTML = CHAR_INFO.map(c => `
+    grid.innerHTML = CHAR_INFO.map(c => {
+        let type = Object.keys(CHARACTERS).find(k => CHARACTERS[k].name === c.name);
+        let profile = NORMAL_PROFILES[type] || {};
+        let normals = ['lowLight','lowHeavy','airLight','airHeavy'].map(k => profile[k] && profile[k].displayName).filter(Boolean);
+        let strings = ['LLL','LLH','LH','HLL','HHH'].map(k => [k, profile.comboNames && profile.comboNames[k]]).filter(x => x[1]);
+        return `
         <div class="info-card">
             <h3>${c.name}</h3>
             <div class="role">${c.role}</div>
             <div class="passive">${c.passive}</div>
             <ul>${c.specials.map(s => `<li><span class="dir">${s[0]}</span> <b>${s[1]}</b> — ${s[2]}</li>`).join('')}</ul>
+            <div class="normal-list"><b>Normals:</b> ${normals.join(' · ')}</div>
+            <div class="combo-list"><b>Starter strings:</b> ${strings.map(([keys,name]) => `${keys} ${name}`).join(' · ')}</div>
             ${c.ult ? `<div class="passive">${c.ult}</div>` : ''}
-        </div>`).join('');
+        </div>`;
+    }).join('');
     document.getElementById('info-controls').innerHTML =
         "Specials = the special key + a held direction. &nbsp; P1: <b>L</b> + W/A·D/S &nbsp;|&nbsp; P2: <b>/</b> + Arrow keys. &nbsp; No direction = Neutral.";
     gameState = 'INFO';
@@ -299,7 +307,7 @@ const HOWTO = [
     { h: "Player 1", lines: ["<b>WASD</b> Move / Jump / Crouch", "<b>I</b> Block &nbsp; <b>J</b> Light &nbsp; <b>K</b> Heavy", "<b>L + direction</b> Special", "<b>O</b> Ultimate"] },
     { h: "Player 2", lines: ["<b>Arrows</b> Move / Jump / Crouch", "<b>U</b> Block &nbsp; <b>O</b> Light &nbsp; <b>P</b> Heavy", "<b>/ + direction</b> Special", "<b>.</b> (period) Ultimate"] },
     { h: "Specials", lines: ["Hold a direction + Special for", "Up / Down / Side / Neutral moves.", "Each fighter has four — see Character Info."] },
-    { h: "Combos", lines: ["Chain Light & Heavy (e.g. L-L-H)", "for unique combo finishers.", "Land hits to keep pressure."] },
+    { h: "Combos", lines: ["Buffer Light & Heavy during an attack", "to cancel into character-named strings.", "L-L-L and H-H-H are core routes; branch", "with L/H for launchers, sweeps, and knockback."] },
     { h: "Block & Guard Break", lines: ["Hold Block to absorb hits, but every", "blocked hit drains your guard.", "Empty it and your guard SHATTERS — fully open."] },
     { h: "Grabs", lines: ["Press <b>Light + Block</b> together to grab, then throw.", "A grab beats a blocking foe, and every fighter", "grabs in their own unique style.", "<b>2v2:</b> grab + push a direction spends <b>1/3 meter</b>", "(see the lines on the meter) to launch the foe", "out of the arena and force them to tag out."] },
     { h: "Ultimate Meter", lines: ["Charge by dealing and (more so) taking damage.", "When full, press Ultimate to start a cinematic.", "Land the opener and the ultimate is guaranteed.", "The two lines mark 1/3 &amp; 2/3 (for tag-out grabs)."] },
@@ -534,6 +542,10 @@ function updateTouchControlsVisibility() {
 }
 
 function handleEscape() {
+    if (trainingMode && typeof trainingMenuOpen !== 'undefined' && trainingMenuOpen) {
+        toggleDummyPanel();
+        return;
+    }
     if (gameState === 'PLAYING' || gameState === 'PAUSED') {
         togglePause();
     } else if (gameState === 'CHAR_SELECT') {
@@ -590,7 +602,7 @@ function updateSelectionLabels() {
 }
 
 function getRandomCharacter() {
-    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER'];
+    const roster = ['BRAWLER', 'SWORDSMAN', 'MAGE', 'RANGER', 'DARK_RULER', 'TELEPATH', 'BEAST_TAMER', 'PHANTOM', 'COPYCAT', 'CULT', 'TWINS', 'TRAVELER', 'GAMBLER'];
     return roster[Math.floor(Math.random() * roster.length)];
 }
 
@@ -740,6 +752,13 @@ function selectCharacter(charType, cardEl) {
     if (currentMode === 'ONLINE') { onlinePickCharacter(resolvedType); return; } // online has its own pick→lock flow
     offlinePickCharacter(resolvedType);
 }
+
+document.querySelectorAll('.char-card').forEach(card => {
+    card.tabIndex = 0; card.setAttribute('role', 'button');
+    card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); }
+    });
+});
 
 // ---- Offline character select: pick → confirm. You choose freely (and can change your
 // mind) until you press Confirm — no more instant commit/auto-advance. ----
@@ -931,7 +950,7 @@ function startGame() {
     bloodStains = [];
     bodyParts = [];
     overkillFx = null;
-    ultActive = null; timeScale = 1; ultBanner = null; ultCamera = null;
+    ultActive = null; timeScale = 1; hitStopTimer = 0; cameraShake = 0; cameraShakePower = 0; ultBanner = null; ultCamera = null;
     camNow.x = WIDTH / 2; camNow.y = HEIGHT / 2; camNow.zoom = 1;
     initStageActors(); // animated background figures for the chosen stage
 
@@ -940,8 +959,10 @@ function startGame() {
                  (currentMode === 'ONLINE' && onlineState.teamMatch); // ranked online = 2v2 tag
     infiniteMeter = false;
     document.getElementById('training-ui').classList.toggle('hidden', !trainingMode);
+    document.getElementById('training-readout').classList.toggle('hidden', !trainingMode);
     document.getElementById('training-panel').classList.add('hidden'); // panel opens via the button
     if (trainingMode) {
+        if (typeof resetTrainingLabSession === 'function') resetTrainingLabSession();
         let btn = document.getElementById('train-meter-toggle');
         btn.classList.remove('on'); btn.innerText = 'Infinite Meter: OFF';
         dummyBehavior = 'idle';
@@ -1130,6 +1151,7 @@ function startLadderBattle(index) {
     initStageActors();
     trainingMode = false; infiniteMeter = false;
     document.getElementById('training-ui').classList.add('hidden');
+    document.getElementById('training-readout').classList.add('hidden');
 
     let geo = getStageGeo();
     let lx = geo.ringOut ? geo.main.left + (geo.main.right - geo.main.left) * 0.28 : WIDTH / 4;
@@ -1286,6 +1308,7 @@ function returnToMenu() {
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('training-ui').classList.add('hidden');
+    document.getElementById('training-readout').classList.add('hidden');
     document.getElementById('settings-btn').classList.remove('hidden');
     showScreen('menu-screen');
     music.play('menu');
@@ -1318,6 +1341,7 @@ function returnToCharacterSelect() {
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('end-screen').classList.add('hidden');
     document.getElementById('training-ui').classList.add('hidden');
+    document.getElementById('training-readout').classList.add('hidden');
     goToCharSelect(currentMode);
 }
 
@@ -1331,16 +1355,200 @@ function toggleInfiniteMeter() {
 
 // Open/close the training settings popup from its dedicated button.
 function toggleDummyPanel() {
-    document.getElementById('training-panel').classList.toggle('hidden');
+    let panel = document.getElementById('training-panel');
+    trainingMenuOpen = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !trainingMenuOpen);
+    // Keep the persistent gameplay readout independent from the settings layout.
+    // It returns immediately when the settings close.
+    document.getElementById('training-readout').classList.toggle('hidden', trainingMenuOpen);
 }
 
 // Training panel — choose what the dummy does. Highlights the active option.
 function setDummyBehavior(mode, btn) {
     dummyBehavior = mode;
+    trainingRecording.playback = false;
     document.querySelectorAll('#dummy-settings .dummy-btn').forEach(b => b.classList.toggle('on', b === btn));
+    setTrainingRecordStatus('Dummy behavior set to ' + btn.innerText.toLowerCase() + '.');
     // drop the dummy out of any locked state so the new behavior takes over cleanly
     let dummy = players.find(p => p && p.isDummy);
     if (dummy && (dummy.state === 'BLOCK')) dummy.changeState('IDLE');
+}
+
+// --- TRAINING LAB ---
+const trainingOptions = { hitboxes: false };
+let trainingGuardMode = 'off';
+let trainingMenuOpen = false;
+let trainingInputHistory = [];
+let trainingDamage = { hits: 0, total: 0, lastAt: -99, blocked: 0 };
+let trainingRecording = { active: false, frames: [], playback: false, index: 0, elapsed: 0 };
+let trainingPlaybackFrame = null;
+let trainingPlaybackPrev = {};
+
+function toggleTrainingOption(key, btn) {
+    trainingOptions[key] = !trainingOptions[key];
+    btn.classList.toggle('on', trainingOptions[key]);
+    btn.setAttribute('aria-pressed', String(trainingOptions[key]));
+    let label = { hitboxes: 'Hitbox Display' }[key];
+    btn.innerText = label + ': ' + (trainingOptions[key] ? 'ON' : 'OFF');
+}
+
+function setTrainingGuard(mode, btn) {
+    trainingGuardMode = mode;
+    document.querySelectorAll('[data-training-guard]').forEach(b => {
+        let selected = b.dataset.trainingGuard === mode;
+        b.classList.toggle('on', selected); b.setAttribute('aria-pressed', String(selected));
+    });
+    let dummy = players.find(p => p && p.isDummy);
+    if (dummy) { dummy._trainingWasHit = false; if (dummy.state === 'BLOCK') dummy.changeState('IDLE'); }
+}
+
+function setTrainingRecordStatus(message) {
+    let status = document.getElementById('training-record-status');
+    if (status) status.innerText = message;
+}
+
+function recordTrainingInput(fighter, input) {
+    if (!trainingMode || !fighter || fighter.isDummy) return;
+    trainingInputHistory.push({ input, at: performance.now() });
+    if (trainingInputHistory.length > 12) trainingInputHistory.shift();
+}
+
+function registerTrainingHit(attacker, victim, amount, blocked) {
+    if (!trainingMode || !victim || !victim.isDummy) return;
+    let now = performance.now() / 1000;
+    if (now - trainingDamage.lastAt > 1.25) trainingDamage = { hits: 0, total: 0, lastAt: now, blocked: 0 };
+    trainingDamage.hits++;
+    trainingDamage.total += blocked ? amount * 0.2 : amount;
+    if (blocked) trainingDamage.blocked++;
+    trainingDamage.lastAt = now;
+}
+
+function updateTrainingTools(dt) {
+    if (!trainingMode) return;
+    let readout = document.getElementById('training-readout');
+    if (!readout) return;
+    readout.classList.remove('hidden');
+    let fighter = players.find(p => p && !p.isDummy && p.team === 0);
+    let dummy = players.find(p => p && p.isDummy);
+
+    if (trainingRecording.active && fighter) {
+        let c = fighter.playerControls();
+        trainingRecording.frames.push({ dt: Math.min(0.05, dt), l:!!keys[c.l], r:!!keys[c.r], u:!!keys[c.u], d:!!keys[c.d],
+            L:!!keys[c.atkL], H:!!keys[c.atkH], block:!!keys[c.block], special:!!keys[c.special] });
+        if (trainingRecording.frames.length >= 720) toggleTrainingRecord(document.getElementById('train-record-toggle'));
+    }
+    if (trainingRecording.playback && trainingRecording.frames.length) {
+        trainingRecording.elapsed += dt;
+        let frame = trainingRecording.frames[trainingRecording.index];
+        if (trainingRecording.elapsed >= frame.dt) {
+            trainingRecording.elapsed = 0;
+            trainingRecording.index++;
+            if (trainingRecording.index >= trainingRecording.frames.length) trainingRecording.index = 0;
+            trainingPlaybackFrame = trainingRecording.frames[trainingRecording.index];
+        }
+    }
+
+    if (dummy && fighter && fighter.comboHitTimer <= 0 && performance.now()/1000 - trainingDamage.lastAt > 1.25) {
+        dummy._trainingWasHit = false;
+    }
+    let dmg = document.getElementById('training-combo-data');
+    let scaling = fighter && fighter.comboDamageScale != null ? Math.round(fighter.comboDamageScale * 100) : 100;
+    dmg.innerText = trainingDamage.hits + ' HITS  ' + Math.round(trainingDamage.total) + ' DAMAGE  SCALE ' + scaling + '%' +
+        (trainingDamage.blocked ? '  (' + trainingDamage.blocked + ' BLOCKED)' : '');
+
+    let fd = document.getElementById('training-frame-data');
+    if (fighter) {
+        let label = fighter.state;
+        if (fighter.state === 'ATTACK' && fighter.currentAttack) {
+            let a = fighter.currentAttack, t = fighter.stateTimer;
+            let phase = t < a.startup ? 'STARTUP' : t < a.startup + a.active ? 'ACTIVE' : 'RECOVERY';
+            let advantage = fighter.currentAttackConnected
+                ? Math.round(((a.stun || 0) - Math.max(0, a.startup + a.active + a.recovery - t)) * 60) : null;
+            label = (a.displayName || a.name || a.type || 'ATTACK').toUpperCase() + '  ' + phase + ' ' + Math.floor(t * 60) + 'F';
+            if (advantage !== null) label += '  ADV ' + (advantage >= 0 ? '+' : '') + advantage;
+        }
+        fd.innerText = label;
+    }
+
+    let hist = document.getElementById('training-input-history');
+    hist.innerText = trainingInputHistory.length ? trainingInputHistory.map(i => i.input).join('  ') : 'NO INPUTS YET';
+}
+
+function resetTrainingPosition() {
+    if (!trainingMode) return;
+    let fighter = players.find(p => p && !p.isDummy && p.team === 0);
+    let dummy = players.find(p => p && p.isDummy);
+    [[fighter, WIDTH * 0.34, 1], [dummy, WIDTH * 0.66, -1]].forEach(([p, x, dir]) => {
+        if (!p) return;
+        p.x = x; p.y = stageGroundYAt(x, GROUND_Y); p.vx = 0; p.vy = 0; p.hp = p.maxHp;
+        p.blockHealth = p.blockMax; p.currentAttack = null; p.comboSequence = ''; p.queuedAttackInputs = [];
+        p._trainingWasHit = false; p.state = 'IDLE'; p.stateTimer = 0; p.dir = dir;
+    });
+    hitboxes = []; projectiles = []; particles = []; trainingDamage = { hits:0, total:0, lastAt:-99, blocked:0 };
+    trainingInputHistory = []; updateHUD();
+    setTrainingRecordStatus('Fighters reset to their starting positions.');
+}
+
+function toggleTrainingRecord(btn) {
+    trainingRecording.active = !trainingRecording.active;
+    trainingRecording.playback = false;
+    let play = document.getElementById('train-playback-btn');
+    if (trainingRecording.active) {
+        trainingRecording.frames = []; trainingRecording.index = 0; btn.innerText = 'Stop Recording';
+        if (play) play.disabled = true;
+        setTrainingRecordStatus('Recording your actions… press Stop Recording when finished.');
+    } else {
+        btn.innerText = 'Start Recording';
+        if (play) play.disabled = trainingRecording.frames.length === 0;
+        setTrainingRecordStatus(trainingRecording.frames.length ? 'Recording ready. Select Play Recording to test it.' : 'Nothing was recorded.');
+    }
+    btn.classList.toggle('on', trainingRecording.active);
+}
+
+function playTrainingRecording() {
+    if (!trainingRecording.frames.length) return;
+    trainingRecording.active = false; trainingRecording.playback = true; trainingRecording.index = 0; trainingRecording.elapsed = 0;
+    trainingPlaybackFrame = trainingRecording.frames[0]; trainingPlaybackPrev = {};
+    dummyBehavior = 'playback';
+    document.querySelectorAll('#dummy-settings .dummy-btn').forEach(b => b.classList.remove('on'));
+    let rec = document.getElementById('train-record-toggle'); rec.classList.remove('on'); rec.innerText = 'Start Recording';
+    setTrainingRecordStatus('Playing the recording on a loop. Choose a behavior to stop playback.');
+}
+
+function applyTrainingPlayback(dummy, dt) {
+    let f = trainingPlaybackFrame;
+    if (!f) { dummy.vx = 0; return; }
+    let foe = dummy.getClosestEnemy();
+    if (foe) dummy.dir = foe.x > dummy.x ? 1 : -1;
+    let grounded = dummy.isGrounded();
+    let neutral = ['IDLE','WALK','CROUCH','BLOCK'].includes(dummy.state);
+    let horizontal = f.l ? 1 : f.r ? -1 : 0; // mirror the recorded player's screen direction
+    if (horizontal && neutral) { dummy.vx = dummy.speed * horizontal; dummy.changeState('WALK'); }
+    else if (neutral && dummy.state === 'WALK') { dummy.vx = 0; dummy.changeState('IDLE'); }
+    if (f.block && grounded && neutral) dummy.changeState('BLOCK');
+    else if (dummy.state === 'BLOCK' && !f.block) dummy.changeState('IDLE');
+    if (f.u && !trainingPlaybackPrev.u && grounded && neutral) { dummy.vy = dummy.jumpForce; dummy.changeState('JUMP'); }
+    if (f.L && !trainingPlaybackPrev.L && neutral) dummy.startPlayerAttack('L', f.d);
+    else if (f.H && !trainingPlaybackPrev.H && neutral) dummy.startPlayerAttack('H', f.d);
+    else if (f.special && !trainingPlaybackPrev.special && neutral) {
+        let move = f.u ? 'specUp' : f.d ? 'specDown' : (f.l || f.r) ? 'specSide' : 'specNeutral';
+        dummy.startAttack(move);
+    }
+    trainingPlaybackPrev = f;
+}
+
+function resetTrainingLabSession() {
+    trainingGuardMode = 'off'; trainingInputHistory = [];
+    trainingDamage = { hits:0, total:0, lastAt:-99, blocked:0 };
+    trainingRecording = { active:false, frames:[], playback:false, index:0, elapsed:0 };
+    trainingPlaybackFrame = null; trainingPlaybackPrev = {};
+    trainingMenuOpen = false;
+    document.querySelectorAll('[data-training-guard]').forEach(b => b.classList.toggle('on', b.dataset.trainingGuard === 'off'));
+    let record = document.getElementById('train-record-toggle');
+    if (record) { record.classList.remove('on'); record.innerText = 'Start Recording'; }
+    let play = document.getElementById('train-playback-btn');
+    if (play) play.disabled = true;
+    setTrainingRecordStatus('Record your actions, then replay them through the dummy.');
 }
 
 function restartMatch() {

@@ -217,21 +217,49 @@
         @keyframes meterPulse { from { box-shadow: 0 0 6px rgba(255,255,255,0.5); } to { box-shadow: 0 0 16px rgba(255,0,51,0.9); } }
         /* Training panel */
         /* Training controls live behind a dedicated button instead of cluttering the battle screen */
-        #training-ui { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 11; pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        #training-ui { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 11; pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
         #dummy-settings-btn { background: rgba(0,0,0,0.6); border: 2px solid #6cf; color: #6cf; font-family: inherit; font-size: 0.85rem; padding: 8px 18px; cursor: pointer; letter-spacing: 1px; text-transform: uppercase; }
         #dummy-settings-btn:hover { background: #6cf; color: #000; }
-        #training-panel { display: flex; flex-direction: column; align-items: center; gap: 8px; background: rgba(0,0,0,0.88); border: 1px solid #6cf; box-shadow: 0 0 18px rgba(0,0,0,0.6); padding: 12px 16px; }
-        .dummy-title { color: #6cf; font-size: 0.9rem; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+        #training-panel { width: min(900px, calc(100vw - 48px)); max-height: 470px; overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px; background: rgba(5,8,12,0.96); border: 1px solid #6cf; box-shadow: 0 0 28px rgba(0,0,0,0.8); padding: 14px 16px; color: #ddd; }
+        .training-panel-header { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:9px; border-bottom:1px solid #345; }
+        .training-panel-header p, .training-section p { margin:2px 0 0; color:#94a4b3; font:600 12px 'Rajdhani',sans-serif; letter-spacing:.3px; }
+        .training-close { width:30px; height:30px; padding:0; border:1px solid #567; background:#111820; color:#d9efff; font-size:22px; line-height:26px; cursor:pointer; }
+        .training-close:hover { border-color:#6cf; background:#6cf; color:#071018; }
+        .training-section-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+        .training-section { min-width:0; padding:10px; border:1px solid #2c3d49; background:rgba(15,23,30,.78); }
+        .training-section h4 { margin:0; color:#dff5ff; font:700 15px 'Bebas Neue','Courier New',monospace; letter-spacing:2px; text-transform:uppercase; }
+        .training-section-wide { width:100%; }
+        .training-choice-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+        .training-section-grid .training-choice-row { align-items:stretch; }
+        .training-section-grid .dummy-btn, .training-section-grid .train-toggle { flex:1 1 auto; }
+        .training-segmented { flex-wrap:nowrap; gap:0; }
+        .training-segmented .dummy-btn { border-right-width:0; }
+        .training-segmented .dummy-btn:last-child { border-right-width:1px; }
+        .training-recording { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+        .training-recording .training-choice-row { flex-wrap:nowrap; margin-top:0; }
+        .training-footer { display:flex; justify-content:space-between; align-items:center; color:#718493; font-size:11px; letter-spacing:1px; text-transform:uppercase; }
+        #training-readout { position:absolute; top:88px; left:18px; z-index:10; width:245px; padding:10px 12px; background:rgba(0,0,0,0.72); border-left:3px solid #6cf; color:#fff; font:700 14px 'Rajdhani',sans-serif; letter-spacing:1px; text-align:left; pointer-events:none; }
+        #training-combo-data { color:#ffd23f; font-size:18px; }
+        #training-frame-data { color:#6cf; margin-top:3px; }
+        #training-input-history { margin-top:6px; color:#ddd; min-height:18px; word-spacing:5px; }
+        .dummy-title { color: #6cf; font-size: 1.05rem; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
         .dummy-close { background: rgba(0,0,0,0.5); border: 1px solid #888; color: #ddd; font-family: inherit; font-size: 0.75rem; padding: 5px 18px; cursor: pointer; letter-spacing: 1px; text-transform: uppercase; }
         .dummy-close:hover { background: #fff; color: #000; }
         .train-toggle { background: rgba(0,0,0,0.6); border: 1px solid #888; color: #fff; font-family: inherit; font-size: 0.85rem; padding: 8px 16px; cursor: pointer; letter-spacing: 1px; text-transform: uppercase; }
         .train-toggle:hover { background: #fff; color: #000; }
         .train-toggle.on { border-color: #6cf; color: #6cf; box-shadow: 0 0 10px rgba(120,210,255,0.5); }
-        #dummy-settings { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 5px; max-width: 680px; background: rgba(0,0,0,0.55); border: 1px solid #555; padding: 6px 8px; }
-        #dummy-settings .dummy-label { color: #6cf; font-size: 0.72rem; letter-spacing: 1px; text-transform: uppercase; margin-right: 4px; }
-        .dummy-btn { background: rgba(0,0,0,0.5); border: 1px solid #777; color: #ddd; font-family: inherit; font-size: 0.72rem; padding: 5px 9px; cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase; }
+        #dummy-settings { max-width:none; }
+        .dummy-btn { background: rgba(0,0,0,0.5); border: 1px solid #60717d; color: #ddd; font-family: inherit; font-size: 0.72rem; padding: 7px 10px; cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase; }
         .dummy-btn:hover { background: #fff; color: #000; }
         .dummy-btn.on { border-color: #6cf; color: #6cf; box-shadow: 0 0 8px rgba(120,210,255,0.45); }
+        .dummy-btn:disabled { opacity:.35; cursor:not-allowed; background:#0b0d0f; color:#77828a; }
+        .dummy-btn:disabled:hover { background:#0b0d0f; color:#77828a; }
+        @media (max-width: 760px) {
+            #training-panel { width:calc(100vw - 24px); max-height:440px; padding:10px; }
+            .training-section-grid { grid-template-columns:1fr; }
+            .training-recording { align-items:flex-start; flex-direction:column; }
+        }
+        .char-card:focus-visible, .stage-card:focus-visible, .btn:focus-visible, .dummy-btn:focus-visible, .touch-btn:focus-visible { outline:3px solid #6cf; outline-offset:3px; }
         #online-net-panel { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.62); color: #bbb; font-size: 0.68rem; letter-spacing: 1px; text-transform: uppercase; }
         #online-net-panel span { min-width: 74px; text-align: center; }
         #online-net-panel.good { border-color: rgba(120,255,190,0.45); color: #bfffe2; }
@@ -275,6 +303,8 @@
         #info-screen h2 { font-size: 2rem; letter-spacing: 4px; margin-bottom: 6px; text-transform: uppercase; }
         #info-controls { font-size: 0.82rem; color: #9a9a9a; margin-bottom: 16px; text-align: center; max-width: 880px; line-height: 1.5; }
         .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; width: 100%; max-width: 900px; margin-bottom: 18px; }
+        .normal-list, .combo-list { margin-top:8px; padding-top:7px; border-top:1px solid #333; font-size:.86rem; color:#ddd; }
+        .normal-list b, .combo-list b { color:#6cf; }
         .info-card { border: 1px solid #555; background: #101013; padding: 14px 16px; text-align: left; }
         .info-card h3 { color: #ff3333; margin-bottom: 4px; letter-spacing: 2px; }
         .info-card .role { color: #ccc; font-size: 0.78rem; margin-bottom: 4px; font-style: italic; }

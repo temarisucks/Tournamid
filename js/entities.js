@@ -112,7 +112,13 @@ class Hitbox {
         if (this.lifeTime <= 0) this.active = false;
     }
     draw(ctx) {
-        // Debug draw could go here
+        if (!trainingMode || typeof trainingOptions === 'undefined' || !trainingOptions.hitboxes) return;
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 70, 70, 0.22)';
+        ctx.strokeStyle = '#ff4a4a'; ctx.lineWidth = 2;
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.strokeRect(this.x, this.y, this.w, this.h);
+        ctx.restore();
     }
 }
 
@@ -520,6 +526,7 @@ class Fighter {
         // Universal combo counter (consecutive hits while the foe can't recover)
         this.comboHits = 0;
         this.comboHitTimer = 0;
+        this.comboDamageScale = 1;
         this._comboPop = 0;           // brief scale-pop when the count ticks up
         this.posHistory = [];         // rolling 3s record of {x, y, hp} for Rewind + the after-echo
         this._echoHit = null;         // Tachyon Echo re-hit pending on this fighter { t, dmg, owner }
@@ -548,6 +555,10 @@ class Fighter {
         this.stateTimer = 0;
         this.hasSpawnedHitbox = false;
         this.comboInputBuffer = [];
+        this.comboSequence = '';
+        this.queuedAttackInputs = [];
+        this.lastComboInputTime = -99;
+        this.currentAttackConnected = false;
         
         // Passives & Buffs
         this.comboCount = 0;
@@ -687,7 +698,7 @@ class Fighter {
             if (this._slotPending && this._slotFx.t >= 0.78) { this.resolveSlotRoll(this._slotPending.result); this._slotPending = null; }
             if (this._slotFx.t > 1.25) this._slotFx = null;
         }
-        if (this.comboHitTimer > 0) { this.comboHitTimer -= dt; if (this.comboHitTimer <= 0) this.comboHits = 0; } // combo window lapsed
+        if (this.comboHitTimer > 0) { this.comboHitTimer -= dt; if (this.comboHitTimer <= 0) { this.comboHits = 0; this.comboDamageScale = 1; } } // combo window lapsed
         if (this._comboPop > 0) this._comboPop -= dt;
         if (this._skipHide > 0) this._skipHide -= dt;
         if (this.charType === 'TRAVELER') {
@@ -827,6 +838,7 @@ class Fighter {
             case 'ATTACK':
                 this.x += this.vx * dt;
                 if (this.vy === 0) this.vx *= 0.9; // Friction on ground attacks
+                if (!this.isAI) this.captureAttackBuffer();
                 this.stateTimer += dt;
                 this.processAttack();
                 break;
@@ -2608,21 +2620,34 @@ class Fighter {
             return;
         }
 
-        this.comboInputBuffer = this.comboInputBuffer.filter(entry => this.inputTimer - entry.time < 1.0);
-        this.comboInputBuffer.push({ input, time: this.inputTimer });
-        let pattern = this.comboInputBuffer.map(entry => entry.input).join('').slice(-3);
-        const routes = {
-            LLL: 'comboLLL',
-            LLH: 'comboLLH',
-            LH: 'comboLH',
-            LHL: 'comboLHL',
-            HLL: 'comboHLL',
-            HLH: 'comboHLH',
-            HHL: 'comboHHL'
-        };
-        let comboName = routes[pattern] || (input === 'L' ? 'light' : 'heavy');
-        this.startAttack(comboName);
-        if (comboName.length > 5 && comboName !== 'comboLH') this.comboInputBuffer = [];
+        // A grounded neutral press starts a fresh string. Further presses are captured
+        // during startup/active/recovery and consumed by that move's cancel window.
+        this.comboSequence = input;
+        this.queuedAttackInputs = [];
+        this.lastComboInputTime = this.inputTimer;
+        this.startAttack(input === 'L' ? 'light' : 'heavy');
+        if (typeof recordTrainingInput === 'function') recordTrainingInput(this, input);
+    }
+
+    captureAttackBuffer() {
+        if (!this.currentAttack || this.comboSequence.length >= 3) return;
+        let c = this.playerControls();
+        let input = keyPressed(c.atkL) ? 'L' : keyPressed(c.atkH) ? 'H' : null;
+        if (!input || this.queuedAttackInputs.length >= 2) return;
+        this.queuedAttackInputs.push({ input, time: this.inputTimer });
+        if (typeof recordTrainingInput === 'function') recordTrainingInput(this, input);
+    }
+
+    consumeAttackBuffer() {
+        if (!this.queuedAttackInputs.length || this.comboSequence.length >= 3) return false;
+        let queued = this.queuedAttackInputs.shift();
+        if (this.inputTimer - queued.time > 0.32) return false; // forgiving ~19-frame buffer
+        this.comboSequence = (this.comboSequence + queued.input).slice(-3);
+        this.lastComboInputTime = this.inputTimer;
+        let next = COMBO_ROUTES[this.comboSequence] || (queued.input === 'L' ? 'light' : 'heavy');
+        this.startAttack(next, null, true);
+        if (this.comboSequence.length >= 3) this.queuedAttackInputs = [];
+        return true;
     }
 
     handleAI(dt) {
@@ -2957,8 +2982,8 @@ class Fighter {
         return closest;
     }
 
-    startAttack(atkName, overrideAtk = null) {
-        if (this.state === 'ATTACK' || this.state === 'HITSTUN' || this.state === 'BLOCK') return;
+    startAttack(atkName, overrideAtk = null, chainCancel = false) {
+        if ((this.state === 'ATTACK' && !chainCancel) || this.state === 'HITSTUN' || this.state === 'BLOCK') return;
 
         // Copy Cat — the neutral special MIMICS the OPPONENT's most recent special.
         if (!overrideAtk && this.charType === 'COPYCAT' && atkName === 'specNeutral') {
@@ -2993,14 +3018,17 @@ class Fighter {
         this.currentAttack.active *= spdMult;
         this.currentAttack.recovery *= spdMult;
 
-        this.changeState('ATTACK');
+        if (chainCancel) { this.state = 'ATTACK'; this.stateTimer = 0; }
+        else this.changeState('ATTACK');
         this.hasSpawnedHitbox = false;
+        this.currentAttackConnected = false;
         this.specialDone = false;
         this._qdShots = 0; // Quickdraw shot counter
         this._crashed = false; this._diving = false; // Telepath dive-bomb state
 
         // Note: melee swing sounds now play on contact (see checkCollisions),
-        // so whiffed attacks are silent. Projectiles still sound on fire.
+        // while a light movement whoosh makes committed whiffs readable too.
+        if (!atk.isProj && atk.w > 0 && !suppressRollbackEffects) sfx.playSwing();
 
         // Special movement / setup on attack start
         const t = atk.type;
@@ -3031,10 +3059,14 @@ class Fighter {
         }
         if (t === 'beastBruteUpper') { this.vy = -520; this.vx = 70 * this.dir; }
         if (t === 'beastRavenLift') { this.vy = -720; this.vx = 130 * this.dir; this.invulnTimer = 0.16; this.beastRavenGlideTimer = 2.4; }
-        if (t === 'airHeavy') this.vy = Math.max(this.vy, 120);
+        if (t === 'airHeavy') this.vy = Math.max(this.vy, atk.dive || 120);
         if (t === 'lowHeavy') this.vx = 80 * this.dir;
         if (atk.combo === 'LLH') this.vx = 120 * this.dir;
         if (atk.combo === 'HLL') this.vx = 180 * this.dir;
+        if (chainCancel && atk.combo) {
+            let step = atk.combo.endsWith('H') ? 135 : 75;
+            this.vx = step * this.dir; // root motion keeps strings connected without teleporting
+        }
         // The Cult specials — the leader stays put and directs the flock
         if (t === 'procession') { this.vx = 0; this.spawnProcessionTrap(); }    // cultists run out, plant a snare
         if (t === 'cultPuppet') { this.vx = 0; if (this.puppet) this.explodePuppet(); else this.spawnPuppet(); } // summon or detonate
@@ -3134,6 +3166,13 @@ class Fighter {
         let atk = this.currentAttack;
         let t = this.stateTimer;
         let inActive = t >= atk.startup && t < atk.startup + atk.active;
+
+        // Normal strings cancel near impact rather than waiting for the complete recovery.
+        // Specials and low/aerial attacks remain committed unless a move explicitly opts in.
+        if (this.comboSequence && this.queuedAttackInputs.length && !(atk.type || '').startsWith('spec')) {
+            let cancelAt = atk.startup + atk.active * (this.currentAttackConnected ? 0.28 : 0.62);
+            if (t >= cancelAt && this.consumeAttackBuffer()) return;
+        }
 
         // Quickdraw: exactly 3 evenly-spaced shots across the active window
         if (atk.type === 'quickDraw' && inActive) {
@@ -3266,6 +3305,8 @@ class Fighter {
                 if (atk.type === 'cataclysm') { spawnParticles(this.x, GROUND_Y - 12, 34, '#ff0033'); spawnParticles(this.x, GROUND_Y - 12, 20, '#888'); }
             }
         } else if (t >= atk.startup + atk.active + atk.recovery) {
+            this.comboSequence = '';
+            this.queuedAttackInputs = [];
             this.changeState(this.y < GROUND_Y ? (this.vy < 0 ? 'JUMP' : 'FALL') : 'IDLE');
         }
     }
@@ -3465,6 +3506,7 @@ class Fighter {
         proj.ownerTeam = this.team;
         proj.ownerCharType = this.charType;
         proj.subtype = subtype; proj.slow = slow; proj.explode = explode; proj.homing = homing; proj.pierce = pierce;
+        if (atk.gravity) proj.gravity = atk.gravity;
         if (subtype === 'fire') proj.burn = 3.2;
         if (subtype === 'frost') proj.slowFactor = 0.18;
         if (subtype === 'spark' || subtype === 'beam') proj.lightningStun = subtype === 'beam' ? 0.65 : 0.55;
@@ -3484,6 +3526,13 @@ class Fighter {
         if (this.grab) this.releaseGrab();                                   // getting hit drops your grab
         if (this.grabbedBy) { let gr = this.grabbedBy; this.grabbedBy = null; if (gr.grab && gr.grab.target === this && !gr.grab.launched) gr.grab = null; }
         kb = { x: kb.x, y: kb.y }; // local copy so scaling never mutates the source
+        // Standard combo proration keeps long cancel strings expressive without letting
+        // every extra branch deal full standalone damage. Ultimates retain authored damage.
+        if (attacker && attacker !== this && !opts.isUlt) {
+            let proration = Math.max(0.45, 1 - Math.max(0, attacker.comboHits || 0) * 0.08);
+            attacker.comboDamageScale = proration;
+            amount *= proration;
+        }
         // The Gambler's stance + "MAX BET" install scale all of his outgoing damage
         if (attacker && attacker !== this && attacker.charType === 'GAMBLER' && attacker.gamblerDamageMult) amount *= attacker.gamblerDamageMult();
 
@@ -3597,6 +3646,12 @@ class Fighter {
             else blocked = true;
         }
 
+        if (attacker && attacker !== this) {
+            attacker.currentAttackConnected = true;
+            if (typeof registerTrainingHit === 'function') registerTrainingHit(attacker, this, amount, blocked);
+        }
+        triggerImpactFeedback(amount, guardBroke ? 'break' : blocked ? 'block' : 'hit');
+
         if (blocked) {
             amount *= 0.2; kb.x *= 0.2; kb.y *= 0.5; stun *= 0.3;
             playAudio(attackSfx.block);
@@ -3616,6 +3671,7 @@ class Fighter {
         } else {
             this.rootTimer = 0; // being struck breaks the Grave Grasp hold
             this.catPin = null; // and breaks a Cat Dash pin if the cat gets interrupted
+            if (this.isDummy) this._trainingWasHit = true;
             // The Twins — a hit only stuns/knocks the body that was actually struck; the other
             // twin keeps fighting. HP (below) is still shared.
             let hb = (this.charType === 'TWINS' && opts.hitBody === 'partner' && this.partner) ? this.partner : this;
@@ -3749,6 +3805,11 @@ class Fighter {
     // Only acts from a neutral, grounded state so attacks/jumps/hitstun play out.
     updateDummy(dt) {
         let mode = (typeof dummyBehavior !== 'undefined') ? dummyBehavior : 'idle';
+        if (trainingMode && typeof trainingGuardMode !== 'undefined') {
+            if (trainingGuardMode === 'all') mode = 'block';
+            else if (trainingGuardMode === 'after' && this._trainingWasHit) mode = 'block';
+        }
+        if (mode === 'playback' && typeof applyTrainingPlayback === 'function') { applyTrainingPlayback(this, dt); return; }
         if (mode === 'cpu') { this.handleAI(dt); return; } // "fight back" — full CPU
         let foe = this.getClosestEnemy();
         let neutral = (this.state === 'IDLE' || this.state === 'WALK' || this.state === 'BLOCK');
@@ -5363,13 +5424,22 @@ class Fighter {
             let s = atk.startup, a = atk.active, r = atk.recovery;
             let total = s + a + r;
             let p = st / total;
-            // Strike curve: 0 = wound up, 1 = fully committed (impact), back to 0
-            // through recovery. Smoothstepped for weight; the per-frame easing
-            // layer further softens it.
-            let ex = st < s ? (s > 0 ? st / s : 1)
-                   : st < s + a ? 1
-                   : Math.max(0, 1 - (st - s - a) / (r || 0.0001));
-            ex = ex * ex * (3 - 2 * ex);
+            // Five-beat strike curve: settle into anticipation, accelerate late, overshoot
+            // on contact, then follow through instead of simply reversing the startup.
+            let ex;
+            if (st < s) {
+                let q = s > 0 ? st / s : 1;
+                q = q < 0.32 ? 0 : (q - 0.32) / 0.68;
+                ex = q * q * (3 - 2 * q);
+            } else if (st < s + a) {
+                let q = (st - s) / Math.max(0.001, a);
+                let heavy = atk.name === 'heavy' || atk.name === 'airHeavy' || atk.name === 'lowHeavy' || (atk.combo && atk.combo.includes('H'));
+                ex = 1 + Math.sin(q * Math.PI) * (heavy ? 0.14 : 0.07);
+            } else {
+                let q = Math.min(1, (st - s - a) / Math.max(0.001, r));
+                q = q * q * (3 - 2 * q);
+                ex = 1 - q * 0.82; // finish past the target; idle transition settles the rest
+            }
             let snap = Math.sin(Math.min(1, p) * Math.PI);
             const mix = (u, v, k) => u + (v - u) * k;
 
@@ -5730,7 +5800,7 @@ class Fighter {
                     rightArmAngle = mix(2.1, 1.45, ex); rightArmBend = mix(-0.3, 0.35, ex);
                     leftArmAngle = 2.0; leftArmBend = -0.45; // other hand at temple
                     torsoLean = mix(-0.04, 0.14, ex);
-                } else if (atk.type === 'psyBlade' || atk.name === 'heavy') {
+                } else if (atk.type === 'psyBlade' || atk.name === 'heavy' || (atk.combo && atk.combo.endsWith('H'))) {
                     // A wide horizontal hand-sweep summoning the psy-blade arc
                     rightArmAngle = mix(2.4, 1.2, ex); rightArmBend = mix(-0.5, -0.2, ex);
                     leftArmAngle = 0.8; leftArmBend = 0.3; torsoLean = mix(0.16, -0.1, ex);
@@ -5740,7 +5810,7 @@ class Fighter {
                     leftArmAngle = 0.8; leftArmBend = 0.3; torsoLean = mix(0.0, 0.1, ex);
                 }
             } else if (this.charType === 'DARK_RULER') {
-                let overhead = atk.name === 'heavy' || atk.combo === 'LLH' || atk.combo === 'HLL' || atk.combo === 'LHL';
+                let overhead = atk.name === 'heavy' || ['LLH','HLL','LHL','LHH','HLH','HHH'].includes(atk.combo);
                 if (overhead) {
                     // HEAVY: a colossal two-handed overhead slam — reared straight up,
                     // crashing down to the ground as he drops his whole weight in.
@@ -5804,11 +5874,18 @@ class Fighter {
                 // Slash family — each move has its own arc [windAng, strikeAng, windBend, strikeBend, lean]
                 let k = [2.7, 1.05, -0.55, -0.12, 0.16];                  // default overhead diagonal
                 if (atk.name === 'light')        k = [2.35, 1.25, -0.40, -0.10, 0.12]; // quick flick slash
+                else if (atk.combo === 'LL')     k = [1.85, 1.48, -0.30, -0.06, 0.10]; // returning second cut
+                else if (atk.combo === 'HH')     k = [3.10, 1.18, -0.48, -0.08, 0.28]; // second committed cleave
+                else if (atk.combo === 'HL')     k = [0.95, 2.10, -0.18, -0.55, 0.14]; // reverse cut
                 else if (atk.combo === 'LLL')    k = [2.85, 0.90, -0.50, -0.08, 0.24]; // strong downward finish
                 else if (atk.combo === 'LH')     k = [2.20, 1.75, -0.75, -0.25, 0.20]; // horizontal cross-slash
                 else if (atk.combo === 'LLH')    k = [1.55, 3.00, -0.30, -0.10,-0.06]; // rising upward slash
                 else if (atk.combo === 'LHL')    k = [2.95, 1.00, -0.30, -0.05, 0.22]; // overhead chop
                 else if (atk.combo === 'HLL')    k = [2.85, 1.10, -0.50, -0.10, 0.28]; // wide power slash
+                else if (atk.combo === 'LHH')    k = [3.25, 0.72, -0.40, 0.02, 0.34];  // planted execution cut
+                else if (atk.combo === 'HLH')    k = [0.65, 2.72, -0.20, -0.42, -0.08];// rising reverse finisher
+                else if (atk.combo === 'HHL')    k = [2.05, 1.62, -0.72, -0.20, 0.25]; // long low cross-cut
+                else if (atk.combo === 'HHH')    k = [3.45, 0.58, -0.35, 0.04, 0.42];  // full-weight final cleave
                 else if (atk.name === 'heavy')   k = [2.95, 0.95, -0.45, -0.08, 0.26]; // big overhead
                 else if (atk.type === 'dashSlash') k = [2.30, 1.45, -0.55, 0.00, 0.18]; // forward lunging thrust
                 else if (atk.type === 'knifeRush') k = [2.55, 1.25, -0.50, -0.12, 0.22];// rapid stabs
@@ -5820,11 +5897,18 @@ class Fighter {
                 // Punch family — each move has its own throw [windAng, strikeAng, windBend, strikeBend, lean, headLift]
                 let k = [2.3, 1.45, -1.15, 0.05, 0.18, 0];                // default straight
                 if (atk.name === 'light')        k = [2.05, 1.55, -0.80, 0.05, 0.10, 0]; // fast jab
+                else if (atk.combo === 'LL')     k = [1.70, 1.47, -0.45, 0.02, 0.12, 0]; // opposite-hand straight
+                else if (atk.combo === 'HH')     k = [2.85, 1.25, -1.15, -0.05, 0.28, 1]; // loaded cross
+                else if (atk.combo === 'HL')     k = [0.65, 1.65, 0.35, 0.02, 0.18, 0]; // backfist return
                 else if (atk.combo === 'LLL')    k = [2.55, 1.42, -1.20, 0.00, 0.24, 0]; // hard straight finish
                 else if (atk.combo === 'LH')     k = [2.80, 1.20, -0.55,-0.35, 0.32, 0]; // looping hook
                 else if (atk.combo === 'LLH')    k = [1.40, 3.00, -0.50,-0.05,-0.05,-3]; // rising launcher
                 else if (atk.combo === 'LHL')    k = [2.95, 1.10, -0.45, 0.00, 0.22, 0]; // overhead smash
                 else if (atk.combo === 'HLL')    k = [2.60, 1.48, -1.10, 0.00, 0.30, 0]; // heavy finisher
+                else if (atk.combo === 'LHH')    k = [3.10, 1.05, -0.72, -0.12, 0.38, 2]; // overhand finish
+                else if (atk.combo === 'HLH')    k = [1.20, 2.85, -0.55, -0.08,-0.04,-2]; // rising hook
+                else if (atk.combo === 'HHL')    k = [2.45, 1.30, -1.25, 0.05, 0.34, 1]; // driving body blow
+                else if (atk.combo === 'HHH')    k = [3.20, 1.02, -1.05, 0.02, 0.44, 3]; // full-body haymaker
                 else if (atk.name === 'heavy')   k = [2.60, 1.40, -1.25, 0.00, 0.24, 0]; // big cross
                 rightArmAngle = mix(k[0], k[1], ex); rightArmBend = mix(k[2], k[3], ex);
                 torsoLean = mix(-0.04, k[4], ex); headY += k[5] * ex;
@@ -5839,9 +5923,35 @@ class Fighter {
                 rightArmBend = mix(-0.55, -0.05, ex);
                 leftArmAngle = 1.4; leftArmBend = 0.3;
                 torsoLean = -0.05;
+                if (atk.pose === 'sweep' || atk.pose === 'beastSweep') {
+                    rightLegAngle = mix(-0.75, 1.42, ex); rightLegBend = mix(1.15, 0.05, ex);
+                    rightArmAngle = 2.25; leftArmAngle = 2.45; torsoLean = -0.18;
+                } else if (atk.pose === 'lowSlash' || atk.pose === 'sweepSlash' || atk.pose === 'lowKnife') {
+                    rightArmAngle = mix(2.65, 0.85, ex); rightArmBend = mix(-0.5, -0.08, ex);
+                    torsoLean = mix(-0.16, 0.22, Math.min(1, ex));
+                } else if (atk.pose === 'lowCast' || atk.pose === 'groundCast' || atk.pose === 'ritualSweep') {
+                    rightArmAngle = mix(2.15, 1.25, ex); leftArmAngle = mix(2.5, 1.35, ex);
+                    torsoLean = mix(-0.12, 0.12, Math.min(1, ex));
+                }
             } else if (atk.type === 'airLight' || atk.type === 'airHeavy') {
                 leftLegAngle = -0.35; rightLegAngle = 0.5; leftLegBend = 0.7; rightLegBend = 0.6;
                 torsoLean = 0.2 + ex * 0.1;
+                if (atk.pose === 'knee') {
+                    rightLegAngle = mix(-0.65, 1.15, ex); rightLegBend = mix(1.25, 0.45, ex);
+                    leftLegAngle = -0.5; leftLegBend = 0.55; torsoLean = 0.28;
+                } else if (atk.pose === 'axeKick' || atk.pose === 'beastDrop' || atk.pose === 'leverDrop' || atk.pose === 'flashKick') {
+                    rightLegAngle = mix(2.75, 0.35, ex); rightLegBend = mix(0.25, 0.05, ex);
+                    leftLegAngle = -0.5; leftLegBend = 0.85; torsoLean = mix(-0.2, 0.34, Math.min(1, ex));
+                } else if (atk.pose === 'airSlash' || atk.pose === 'downSlash' || atk.pose === 'airKnife') {
+                    rightArmAngle = mix(3.0, 0.72, ex); rightArmBend = mix(-0.5, -0.05, ex);
+                    leftArmAngle = 1.45; torsoLean = mix(-0.12, 0.3, Math.min(1, ex));
+                } else if (atk.pose === 'airCast' || atk.pose === 'downCast') {
+                    rightArmAngle = mix(2.7, 1.2, ex); leftArmAngle = mix(2.25, 1.35, ex);
+                    leftLegAngle = -0.15; rightLegAngle = 0.2; torsoLean = 0.06;
+                } else if (atk.pose === 'airClaw' || atk.pose === 'downClaw' || atk.pose === 'airWhip') {
+                    rightArmAngle = mix(2.85, 0.95, ex); leftArmAngle = mix(0.6, 1.7, ex);
+                    torsoLean = mix(-0.1, 0.32, Math.min(1, ex));
+                }
             }
 
             // The Brawler's heavy is a front kick, not a punch
@@ -6336,9 +6446,15 @@ class Fighter {
                           ll:leftLegAngle, rl:rightLegAngle, llb:leftLegBend, rlb:rightLegBend,
                           hy:headY, tl:torsoLean, cd:crouchDrop };
         }
+        let attackEase = 0.7;
+        if (this.state === 'ATTACK' && this.currentAttack) {
+            let ca = this.currentAttack;
+            attackEase = this.stateTimer < ca.startup ? 0.34
+                : this.stateTimer < ca.startup + ca.active ? 0.9 : 0.52;
+        }
         let sm = (this.grab || this.grabWhiff > 0) ? 0.8                     // grabs read crisply
                : this.idleGestureActive ? 0.85                              // idle gestures track tightly so fast actions read
-               : this.state === 'ATTACK' ? 0.7                              // snappy strikes
+               : this.state === 'ATTACK' ? attackEase                       // load, snap, follow-through
                : (this.state === 'HITSTUN' || this.state === 'DEAD') ? 0.55
                : 0.4;
         let P = this.pose;

@@ -907,6 +907,10 @@ function team2v2End(winnerIdx) {
 
 function checkWinCondition() {
     if (gameState !== 'PLAYING') return;
+    if (trainingMode && typeof trainingMenuOpen !== 'undefined' && trainingMenuOpen) {
+        Object.assign(previousKeys, keys);
+        return;
+    }
     if (trainingMode) return; // training never ends
     if (currentMode === 'ONLINE' && onlineState.slot !== 0) return; // host owns match outcomes
 
@@ -1136,7 +1140,8 @@ function loop(timestamp) {
         gameState === 'END' || gameState === 'PAUSED' || gameState === 'LADDER_SCREEN';
     if (activeCanvasState) {
         updateCinematics(realDt);
-        if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
+        if (hitStopTimer > 0 && currentMode !== 'ONLINE') hitStopTimer = Math.max(0, hitStopTimer - realDt);
+        else if (currentMode === 'ONLINE') onlineFixedUpdate(realDt);
         else update(realDt * timeScale); // gameplay runs in slow-mo during ultimates
         draw();
     }
@@ -1159,6 +1164,10 @@ function updateCinematics(realDt) {
     if (ultBanner) { ultBanner.t += realDt; if (ultBanner.t > ultBanner.dur) ultBanner = null; }
     if (roundAnnounce) { roundAnnounce.t += realDt; if (roundAnnounce.t > roundAnnounce.dur) roundAnnounce = null; }
     if (overkillFx) { overkillFx.t += realDt; if (overkillFx.t > overkillFx.dur) overkillFx = null; }
+    if (cameraShake > 0) {
+        cameraShake = Math.max(0, cameraShake - realDt);
+        if (cameraShake === 0) cameraShakePower = 0;
+    }
     if (gameState === 'LADDER_SCREEN') updateLadderScreen(realDt);
     updateStageActors(realDt);
     updateIntroSequence(realDt);
@@ -1561,6 +1570,7 @@ function updateGameplay(dt) {
 
     if (gameState === 'PLAYING') checkCollisions();
     updateHUD(); // keep meters/health live (meter charges continuously)
+    if (typeof updateTrainingTools === 'function') updateTrainingTools(dt);
     Object.assign(previousKeys, keys);
 }
 
@@ -2923,6 +2933,11 @@ function draw() {
     camNow.zoom += (tz - camNow.zoom) * 0.12;
 
     ctx.save();
+    if (cameraShake > 0) {
+        let falloff = Math.min(1, cameraShake / 0.09);
+        ctx.translate((Math.random() * 2 - 1) * cameraShakePower * falloff,
+                      (Math.random() * 2 - 1) * cameraShakePower * 0.55 * falloff);
+    }
     ctx.translate(WIDTH / 2, HEIGHT / 2);
     ctx.scale(camNow.zoom, camNow.zoom);
     ctx.translate(-camNow.x, -camNow.y);
@@ -2964,6 +2979,19 @@ function draw() {
     drawTravelerBurstFx(ctx); // Traveler vortex + echo detonation
     projectiles.forEach(p => p.draw(ctx));
     hitboxes.forEach(h => h.draw(ctx));
+    if (trainingMode && typeof trainingOptions !== 'undefined' && trainingOptions.hitboxes) {
+        ctx.save(); ctx.lineWidth = 2;
+        for (let p of players) {
+            if (!p || p.state === 'DEAD') continue;
+            ctx.strokeStyle = '#57d6ff'; ctx.fillStyle = 'rgba(87,214,255,0.12)';
+            ctx.fillRect(p.x - p.width/2, p.y - p.height, p.width, p.height);
+            ctx.strokeRect(p.x - p.width/2, p.y - p.height, p.width, p.height);
+        }
+        for (let p of projectiles) {
+            ctx.strokeStyle = '#ffd23f'; ctx.strokeRect(p.x, p.y, p.w, p.h);
+        }
+        ctx.restore();
+    }
     particles.forEach(p => p.draw(ctx));
     if (settings.blood) bodyParts.forEach(p => p.draw(ctx));
     drawUltWorldFx(ctx);

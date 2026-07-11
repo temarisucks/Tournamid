@@ -58,7 +58,7 @@
             <button class="btn menu-btn" onclick="showHowTo()">How to Play</button>
             <button class="btn menu-btn" onclick="showCharInfo()">Character Info</button>
         </div>
-        <span class="menu-version">v0.33.5</span>
+        <span class="menu-version">v0.34.0</span>
     </div>
 
     <!-- Game Mode Select -->
@@ -328,23 +328,69 @@
             <div class="hud-row"><div class="round-pips hidden" id="p2-rounds"></div><div class="char-name" id="p2-name">CPU</div></div>
         </div>
 
+        <div id="training-readout" class="hidden" aria-live="polite">
+            <div id="training-combo-data">0 DAMAGE</div>
+            <div id="training-frame-data">NEUTRAL</div>
+            <div id="training-input-history">NO INPUTS YET</div>
+        </div>
         <div id="training-ui" class="hidden">
             <div id="training-panel" class="hidden">
-                <h3 class="dummy-title">Training Settings</h3>
-                <button class="train-toggle" id="train-meter-toggle" onclick="toggleInfiniteMeter()">Infinite Meter: OFF</button>
-                <div id="dummy-settings">
-                    <span class="dummy-label">Dummy</span>
+                <div class="training-panel-header">
+                    <div><h3 class="dummy-title">Training Settings</h3><p>Configure the arena and practice dummy.</p></div>
+                    <button class="training-close" onclick="toggleDummyPanel()" aria-label="Close training settings">×</button>
+                </div>
+                <div class="training-section-grid">
+                    <section class="training-section">
+                        <h4>Practice</h4>
+                        <p>Resources and positioning.</p>
+                        <div class="training-choice-row">
+                            <button class="train-toggle" id="train-meter-toggle" onclick="toggleInfiniteMeter()">Infinite Meter: OFF</button>
+                            <button class="dummy-btn" onclick="resetTrainingPosition()">Reset Fighters</button>
+                        </div>
+                    </section>
+                    <section class="training-section">
+                        <h4>Display</h4>
+                        <p>Input history and frame data stay visible during Training.</p>
+                        <div class="training-choice-row">
+                            <button class="dummy-btn" id="train-hitbox-toggle" onclick="toggleTrainingOption('hitboxes', this)">Hitbox Display: OFF</button>
+                        </div>
+                    </section>
+                    <section class="training-section">
+                        <h4>Dummy Guard</h4>
+                        <p>When should the dummy begin blocking?</p>
+                        <div class="training-choice-row training-segmented">
+                            <button class="dummy-btn on" data-training-guard="off" onclick="setTrainingGuard('off', this)">Never</button>
+                            <button class="dummy-btn" data-training-guard="after" onclick="setTrainingGuard('after', this)">After First Hit</button>
+                            <button class="dummy-btn" data-training-guard="all" onclick="setTrainingGuard('all', this)">Always</button>
+                        </div>
+                    </section>
+                </div>
+                <section class="training-section training-section-wide">
+                    <h4>Dummy Behavior</h4>
+                    <p>Choose one repeating action. “Fight Back” uses the selected CPU difficulty.</p>
+                    <div id="dummy-settings" class="training-choice-row">
                     <button class="dummy-btn on" data-dummy="idle" onclick="setDummyBehavior('idle', this)">Idle</button>
                     <button class="dummy-btn" data-dummy="center" onclick="setDummyBehavior('center', this)">Return to Center</button>
                     <button class="dummy-btn" data-dummy="forward" onclick="setDummyBehavior('forward', this)">Walk Forward</button>
                     <button class="dummy-btn" data-dummy="backward" onclick="setDummyBehavior('backward', this)">Walk Backward</button>
                     <button class="dummy-btn" data-dummy="jump" onclick="setDummyBehavior('jump', this)">Jump</button>
-                    <button class="dummy-btn" data-dummy="light" onclick="setDummyBehavior('light', this)">Attack (Light)</button>
-                    <button class="dummy-btn" data-dummy="heavy" onclick="setDummyBehavior('heavy', this)">Attack (Heavy)</button>
+                    <button class="dummy-btn" data-dummy="light" onclick="setDummyBehavior('light', this)">Light Attack</button>
+                    <button class="dummy-btn" data-dummy="heavy" onclick="setDummyBehavior('heavy', this)">Heavy Attack</button>
                     <button class="dummy-btn" data-dummy="block" onclick="setDummyBehavior('block', this)">Block</button>
-                    <button class="dummy-btn" data-dummy="cpu" onclick="setDummyBehavior('cpu', this)">Fight Back (CPU)</button>
+                    <button class="dummy-btn" data-dummy="cpu" onclick="setDummyBehavior('cpu', this)">Fight Back</button>
+                    </div>
+                </section>
+                <section class="training-section training-section-wide training-recording">
+                    <div><h4>Record &amp; Playback</h4><p id="training-record-status">Record your actions, then replay them through the dummy.</p></div>
+                    <div class="training-choice-row">
+                        <button class="dummy-btn" id="train-record-toggle" onclick="toggleTrainingRecord(this)">Start Recording</button>
+                        <button class="dummy-btn" id="train-playback-btn" onclick="playTrainingRecording()" disabled>Play Recording</button>
+                    </div>
+                </section>
+                <div class="training-footer">
+                    <span>Changes apply immediately.</span>
+                    <button class="dummy-close" onclick="toggleDummyPanel()">Done</button>
                 </div>
-                <button class="dummy-close" onclick="toggleDummyPanel()">Close</button>
             </div>
             <button id="dummy-settings-btn" onclick="toggleDummyPanel()">&#9881; Training Settings</button>
         </div>
@@ -417,6 +463,7 @@
     <canvas id="gameCanvas" width="1024" height="576"></canvas>
 </div>
 
+<script src="js/combat-data.js"></script>
 <script src="js/setup.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/engine.js"></script>
